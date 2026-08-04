@@ -172,10 +172,10 @@ Feasible and wanted, but kept off the RCM for three reasons:
 2. **BLE proximity is relay-attackable** — the well-known passive-keyless-entry attack.
    Bare RSSI proximity is not enough; it needs challenge-response with a shared secret, and
    ideally an explicit app action rather than "phone is near".
-3. **⚠ NFC has an iOS problem.** Host card emulation is heavily restricted on iPhone and
-   only recently opened with conditions; on Android it is straightforward. **Which phone is
-   used largely decides whether NFC is viable at all** — if iPhone, BLE is the realistic
-   route. Settle this before spending effort.
+3. ~~NFC has an iOS problem.~~ **RESOLVED 2026-08-04: the user is on Android**, where host
+   card emulation works properly. So **NFC is viable and is the preferred route over BLE** —
+   centimetre range makes it inherently resistant to the relay attack in (2), and tapping is
+   a deliberate act rather than passive proximity.
 
 **The real blocker is power, not the radio.** Phone-as-key needs something permanently
 awake, which fights the parked-off architecture. An ESP32-C3 duty-cycling BLE is ~10–100µA
@@ -258,16 +258,100 @@ I/O, which no LQFP-48 provides alongside CAN and a crystal. Use shift registers 
 channel count decouples from MCU pins entirely. Scaling 20 → 16 then becomes a board-space
 decision, not a re-architecture, which is exactly the flexibility the target asks for.
 
-### Proposed channel plan
+### Channel plan: 21 UNIVERSAL channels (revised 2026-08-04)
 
-- **21 low-side outputs** — 3× `TPL7407L`
-- **21 internal sense taps** on the output nodes (coil-circuit integrity)
-- **16 external inputs** with optional pull-ups (buttons in the keypad role)
+Supersedes an earlier "21 outputs + 16 separate inputs" plan. **Every channel's terminal
+serves as either an output or an input**, because the sense node *is* the driver node and a
+`TPL7407L` output is open-drain — a channel that is never driven simply floats, and the
+terminal behaves as a pure input:
 
-Sense inputs total 37, so 5× `74HC165` ($0.33) covers it with spare bits. At that price
-each channel gets *both* an internal tap and, where relevant, an external terminal, and
-firmware decides what a given board is. **Keypad role uses 8 outputs + 8 external inputs;
-RCM role uses all 21 outputs.**
+| Build | Pull-up | Terminal behaves as |
+|---|---|---|
+| RCM coil | not fitted | driven output + coil-circuit sense |
+| Keypad LED | not fitted | driven output |
+| Keypad button | **fitted** | input; driver never driven for that channel |
+
+This removes ~16 terminal positions and drops the shift registers from 8 to 6. The only
+cost is the driver's off-state leakage (~µA) sitting on an input node — negligible. If
+firmware ever drives a channel wired as a button, the pull-up simply sources ~12µA to
+ground; harmless.
+
+**Final channel plan:**
+
+- **21 universal channels** — 3× `TPL7407L` (7 each)
+- **3× `74HC595`** (24 outputs, 21 used)
+- **3× `74HC165`** (24 inputs — 21 channels + 3 dedicated board inputs e.g. ignition sense)
+- per channel: 2 divider resistors + 1 **optional** pull-up
+
+RCM role uses all 21 as outputs; keypad role uses ~8 as LED outputs and ~8 as button
+inputs, from the same 21.
+
+### Three identical 7-channel tiles
+
+The above falls out naturally into **three identical tiles**, each = 1 `TPL7407L` +
+1 `74HC595` + 1 `74HC165` + 7 channels' dividers + 7 terminal positions. The tiles
+daisy-chain on a 3-wire shift-register bus.
+
+This is the concrete form of the routing argument for keeping shift registers: each tile's
+registers sit **directly behind the terminals they serve**, so only 3 signals cross between
+tiles instead of 21+ radiating from a central QFP. It is what plausibly keeps the board at
+**2 layers**, and it makes layout a copy-paste of one tile — the same approach that worked
+on `pdm14-revB`'s channel clusters.
+
+## Assembly: PCBA, with 0805 passives for repairability (decided 2026-08-04)
+
+**JLC PCBA, not hand-build.** ~300 hand joints on a 21-channel board is ~300 chances for a
+cold joint to hunt down later, and PCBA makes the `ESP32-C3` module and any fine-pitch part
+trivial to fit.
+
+**Passives are 0805, not 0402 — deliberately.** Costs ~8% of component area, accepted by
+the user so that a failed part can actually be replaced by hand. Consistent with the
+serviceability bias applied throughout this project.
+
+⚠ **The screw terminals and buck header pins are THT**, which JLC surcharges and restricts.
+Plan on the realistic split: **JLC places all SMD, the THT terminals are hand-fitted.** That
+is a handful of easy joints, not 300 — but do not assume "PCBA" covers the whole board.
+
+**Minimise *unique* part numbers, not part count.** At qty 1 the per-unique-extended-part
+fee is a fixed cost, so the divider network should use only 2–3 distinct resistor values
+across all 24 inputs, and one terminal family throughout.
+
+### Reconsidered and kept: shift registers over a big MCU
+
+PCBA removes the "fine-pitch is hard to solder" objection, so a single LQFP-100 STM32
+(~80 GPIO) could drive all I/O directly and delete the 6 registers — marginally fewer
+unique parts and slightly less area. **Kept the registers anyway** for the routing/2-layer
+reason above. Revisit for a rev B of this board once the first one is built and the real
+routing density is known.
+
+## Floorplan and size estimate
+
+Component area at 0805, roughly:
+
+| | area |
+|---|---:|
+| ~30 terminal positions (3.5mm pitch × ~10mm deep) | ~1050 mm² |
+| Waveshare buck module (33×16 + clearance) | ~600 mm² |
+| 6 shift registers + 3 drivers + MCU + CAN + IMU | ~670 mm² |
+| optional `ESP32-C3` module | ~220 mm² |
+| ~72 divider/pull-up resistors + decoupling @ 0805 | ~460 mm² |
+| misc (protection, LDO, crystal, LEDs, SWD) | ~200 mm² |
+
+≈ **32 cm²** of parts; at a typical 2–3× for routing and spacing that lands around
+**70–100 cm², i.e. roughly 100 × 80mm** — against revB's 216 × 148mm = 320 cm², a ~4×
+reduction. Note this comes mostly from losing the high-current copper, not from PCBA.
+
+Proposed edge allocation:
+
+| Edge | Contents | positions |
+|---|---|---:|
+| South | 3 channel tiles × 7 | 21 |
+| West | power in (2) + commons +12V/GND for keypad LED+/switch returns (4) | 6 |
+| East | CAN in/out (2× 3P, daisy-chain) + 3 dedicated inputs | 9 |
+| North | buck module + `ESP32-C3`, no terminals | — |
+
+~36 positions ≈ 126mm of terminal edge against ~360mm of perimeter — comfortable, which is
+why spreading across edges matters more for grouping than for fit.
 
 ### Why shift registers and not a resistor ladder
 
@@ -343,13 +427,11 @@ relay out immediately. Probably a safety plus, but it is a behaviour change.
 
 1. **Which STM32.** Needs CAN, ~6 pins for the register chains, I2C/SPI for the IMU, SWD.
    Almost anything qualifies — pick on toolchain preference.
-2. **Which phone** (iPhone vs Android) — decides whether NFC is viable for the future
-   auth node at all. Does not block this board.
-3. **Which revB features survive** — microSD logging, USB-C, EEPROM config store, SIM7600
+2. **Which revB features survive** — microSD logging, USB-C, EEPROM config store, SIM7600
    COMMS header, ignition latch. At this firmware scope most are candidates to drop, and at
    qty 1 each one also carries unique-part fees.
-4. **Exact terminal grouping** — how the 37 signal positions split across edges, settled at
-   layout once channel count is final.
+3. **Coil supply commons** — whether the board distributes +12V for keypad-role LED+ and
+   switch returns, or those come from the loom. Affects the west-edge terminal count.
 
 ### Settled
 
@@ -359,8 +441,12 @@ relay out immediately. Probably a safety plus, but it is a behaviour change.
 - **Driver: TPL7407L** ×3 (21 channels), not ULN2803 — dissipation *and* 5V-logic inputs.
 - **Outputs low-side only**; switching polarity comes from the relay contacts.
 - **Inputs switchable** earth/positive via an optional pull-up resistor.
-- **Channel plan: 21 out / 21 internal sense / 16 external in.**
-- **I/O via `74HC595`/`74HC165` shift registers**, not a resistor ladder.
+- **Channel plan: 21 UNIVERSAL channels**, each terminal an output or an input.
+- **Three identical 7-channel tiles** (driver + 2 registers + 7 channels each).
+- **I/O via `74HC595`/`74HC165` shift registers**, not a resistor ladder — kept over a
+  big-pin-count MCU for routing/2-layer reasons; revisit for a rev B.
+- **PCBA (not hand-build), 0805 passives** for repairability; THT terminals hand-fitted.
+- **Phone-as-key uses NFC, not BLE** (user is on Android) — still a separate node.
 - **Connectors: `KF2EDG` 3.5mm pluggable**, multiple edges.
 - **Buck: Waveshare DC5-36-TO-DC3V3-5** from revB (not the keypad's WeAct), socketed.
 - **MCU: an STM32, plus an optional `ESP32-C3-MINI-1` co-processor footprint.**
