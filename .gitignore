@@ -1,0 +1,20 @@
+# KiCad backups / autosave / locks
+*-backups/
+*.kicad_pcb-bak
+*.kicad_sch-bak
+*.kicad_prl
+~*.lck
+_autosave-*
+fp-info-cache
+.history/
+
+# Generated artifacts — regenerable, keep the repo small.
+# The one and only manufacturing package is mfg/ (lesson from pdm: a stale output/
+# folder holding old-rev gerbers and a mirrored CPL is an active hazard).
+output/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+scratchpad/
