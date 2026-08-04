@@ -1,12 +1,17 @@
-# rcm — Relay Control Module
+# rcm — Relay Control Module (and Keypad, same board)
 
 CAN-controlled driver for an **external relay / fuse box**. A cost-reduction pivot from
 [`../pdm`](../pdm) (`pdm14-revB`): same system role, but instead of 15 on-board Infineon
 PROFET smart high-side switches carrying load current, this board drives **relay coils**
 and lets an off-the-shelf relay/fuse box carry the load.
 
-Status: **repo created 2026-08-04, architecture not yet fixed.** See `DESIGN.md` for the
-cost analysis that motivated the pivot and the open decisions.
+**This one PCB also builds as the keypad node**, superseding the separate `../keypad`
+design — the two roles are the same circuit (low-side sink outputs + divider inputs), and
+one design halves the fixed cost that dominates at qty 1. See `DESIGN.md` "ONE BOARD, TWO
+ROLES".
+
+Status: **architecture agreed 2026-08-04, nothing drawn yet.** See `DESIGN.md` for the cost
+analysis behind the pivot, the agreed architecture, and what is still open.
 
 ## Why this exists
 
@@ -39,8 +44,10 @@ proven; MIT-style headers). `C:\github\Cortex` is the Avalonia C# PC config app,
 **But the firmware scope here is deliberately tiny** (user, 2026-08-04): CAN in → relay
 on/off, plus IMU data out on CAN. Undecided between butchering joesbox's firmware down to
 that and writing something simple in the Arduino IDE. Because the program is small either
-way, **firmware reuse is not a real constraint on the MCU choice** — pick the chip on cost,
-size and CAN support. See `DESIGN.md` "Firmware scope" and the MCU table.
+way, **firmware reuse is not a real constraint on the MCU choice** — and with shift
+registers absorbing the I/O, neither is pin count. Pick the STM32 on toolchain preference.
+Wireless is handled by an *optional* `ESP32-C3-MINI-1` co-processor footprint rather than
+by making the main MCU an ESP32. See `DESIGN.md` "MCU".
 
 What *is* worth preserving whichever route is taken: **CAN message compatibility** with the
 existing DBC (`../SynapsePDM/SynapsePDM/CAN DB/`) and the Cortex app, so the `../keypad`

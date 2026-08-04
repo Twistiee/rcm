@@ -1,8 +1,7 @@
-# RCM — Relay Control Module
+# RCM — Relay Control Module (and Keypad, same board)
 
-> **Status 2026-08-04: repo just created. Architecture is NOT fixed.** This document
-> records the cost analysis that motivated the pivot, what carries over, and the decisions
-> still open. Nothing here has been drawn yet.
+> **Status 2026-08-04: architecture agreed, nothing drawn yet.** This document records the
+> cost analysis that motivated the pivot, the agreed architecture, and what is still open.
 
 ## The pivot
 
@@ -10,6 +9,49 @@
 board. This board instead **drives relay coils** and lets an external relay/fuse box carry
 the load current — turning an ordinary automotive relay/fuse box into a CAN-controlled
 unit.
+
+## ONE BOARD, TWO ROLES (agreed 2026-08-04)
+
+The same PCB builds as either the **relay control module** or the **keypad node**
+(superseding the separate `../keypad` design). This is driven by the qty-1 economics
+below: two designs means two fab runs, two stencils, two assembly setups and 10 boards to
+get the 2 that are needed — one design means one setup, 5 boards, 2 used, and the spares
+are genuinely sellable *because* they are the flexible variant.
+
+It works because the two roles are already the same circuit:
+
+| | Keypad role | RCM role |
+|---|---|---|
+| output stage | low-side sink → LED− | low-side sink → coil− |
+| input stage | button to GND or +12V | coil-return voltage sense |
+| MCU, CAN, buck, IMU, terminals | identical | identical |
+
+### The input stage that unifies them
+
+One series resistor + divider to GND per input, plus an **optional pull-up to +12V**
+(DNP by default). That single resistor position covers all three cases:
+
+| Pull-up | Reads | Use |
+|---|---|---|
+| not fitted | 12V = circuit intact, 0V = open | **RCM coil / fuse sense** |
+| **fitted** | 12V = open, 0V = pressed | **keypad, earth-switching buttons** |
+| not fitted | 0V = open, 12V = pressed | **keypad, positive-switching buttons** |
+
+So earth-switching vs positive-switching **inputs** are a fit/no-fit choice, per channel or
+board-wide. That answers the "whole board mode" question for the input side for pennies.
+
+### Outputs are low-side only — and that is the right answer
+
+You cannot get high-side switching out of a sink array; it would need a P-FET plus gate
+drive per channel (~$8 for 20, but ~60 extra placements, which matters when hand-building).
+
+**For the RCM role it is moot** — the board drives *coils*, and the relay's own contacts
+provide whatever switching polarity the load needs. Coil-drive polarity is invisible to the
+load, so "positive switching" is a wiring decision at the relay, not a board capability.
+
+It would only bite driving LEDs directly in the keypad role, and 12V LED rings are
+essentially always common-anode (LED+ to 12V, LED− switched) — i.e. low-side. **So:
+low-side board-wide, no P-FETs.**
 
 ## Where the $500 goes (measured, 2026-08-04)
 
@@ -57,8 +99,8 @@ explicit:
 
 | PROFET feature | Relay equivalent |
 |---|---|
-| Per-channel **current sense** (`IS` pin, `kILIS`) | **none inherently** — needs added shunt+amp or hall sensors, or drop the feature. This is the biggest open decision |
-| Open-load detection | none inherently (revB used the RPD/ROL/T1 tap) |
+| Per-channel **current sense** (`IS` pin, `kILIS`) | **dropped deliberately** — the fuses do overcurrent. See the coil-circuit sense below, which is a continuity check, not a measurement |
+| Open-load detection | replaced by **coil-circuit sense** (below), which detects a broken coil circuit but not a broken *load* |
 | **PWM / soft-start** | not possible on a mechanical relay |
 | Overcurrent / overtemp / short-circuit shutdown | delegated to the **fuse box's fuses** |
 | Reverse-polarity, ~35V clamp per channel | delegated to input protection |
@@ -95,14 +137,51 @@ than to re-invent, even in fresh firmware.
 more board area, which is the thing actually driving cost here. Pick it for WiFi/BT as a
 feature, not to save money. Both still need an external CAN transceiver.
 
-### MCU decision at qty 1: pick G431 for commonality (2026-08-04)
+### MCU: STM32 base + an OPTIONAL ESP32-C3 co-processor (decided 2026-08-04)
 
-Given the quantity reframe below, the spread between these parts is **~$2 on the whole
-project**. That makes cost a non-criterion and leaves ecosystem consistency: the
-`../keypad` node is already **STM32G431CBT6** (LQFP-48, `C529355`, $2.85, 67k stock) — same
-family, same FDCAN peripheral, one toolchain, and CAN/config code shared between the two
-nodes on the same bus. **Use the G431 unless something else forces a change.** The F103's
-$1.04 is no longer worth a second ecosystem, and the ESP32 is a WiFi/BT decision only.
+At qty 1 the spread between all these parts is **~$2 on the whole project**, so cost is a
+non-criterion. Two earlier arguments are withdrawn:
+
+- ~~"Pick G431 for commonality with the keypad."~~ **Retracted** — that rested on the keypad
+  being fixed, and it is not; the keypad is being folded into this board instead.
+- ~~"STM32 is the more performant part."~~ **Not true.** The classic ESP32 is 240MHz
+  dual-core with 520KB RAM against an STM32G431's 170MHz single M4 with 32KB.
+
+Where STM32 actually wins is I/O *quality*, not capability: **5V-tolerant pins** (ESP32 has
+none), a far better ADC, **mature CAN** (bxCAN/FDCAN vs ESP32's TWAI, which has an errata
+history), and deterministic timing that the ESP32's RF stack can disturb. For switching
+relays only the CAN maturity and 5V tolerance really matter.
+
+**So do not choose.** Put an STM32 on the board for the reliable CAN/relay job, and add a
+footprint + UART header for an optional **`ESP32-C3-MINI-1-N4`** (`C2838502`, $2.79,
+16.6×13.2mm, 16k stock) as a WiFi/BLE co-processor. Fitted only when wireless is wanted, a
+4-pin header otherwise. Costs almost nothing unpopulated, and it means the wireless
+question does not have to be settled before layout.
+
+Note the specific STM32 is still open — with shift registers absorbing the I/O, the part
+only needs CAN, ~6 pins for the register chains, I2C/SPI for the IMU, and SWD. Almost
+anything qualifies, so pick on toolchain preference.
+
+### Phone-as-key — deliberately a SEPARATE future node, not this board
+
+Feasible and wanted, but kept off the RCM for three reasons:
+
+1. **It is a security function on a body controller.** The RCM should stay a dumb, reliable
+   actuator. Far better for an auth node to publish an authenticated "unlocked" message on
+   CAN and let something else gate ignition.
+2. **BLE proximity is relay-attackable** — the well-known passive-keyless-entry attack.
+   Bare RSSI proximity is not enough; it needs challenge-response with a shared secret, and
+   ideally an explicit app action rather than "phone is near".
+3. **⚠ NFC has an iOS problem.** Host card emulation is heavily restricted on iPhone and
+   only recently opened with conditions; on Android it is straightforward. **Which phone is
+   used largely decides whether NFC is viable at all** — if iPhone, BLE is the realistic
+   route. Settle this before spending effort.
+
+**The real blocker is power, not the radio.** Phone-as-key needs something permanently
+awake, which fights the parked-off architecture. An ESP32-C3 duty-cycling BLE is ~10–100µA
+— negligible against a ~50Ah battery — but the **buck module's quiescent draw will dominate
+and is likely milliamps**, i.e. ~1–2Ah over a fortnight. The always-on portion needs its own
+low-Iq rail. That is a further argument for making it a small separate node.
 
 ## Quantity: these are ONE-OFFS (user, 2026-08-04)
 
@@ -138,12 +217,12 @@ chips for one board makes it a non-issue.
 
 ## Relay drive: the saving is larger than the PROFET line suggests
 
-An octal Darlington/MOSFET sink array replaces both the switch **and** the flyback diodes:
+A MOSFET sink array replaces both the switch **and** the flyback diodes:
 
 | | revB | RCM |
 |---|---|---|
-| switching | 15× PROFET, **$17.25** | 2× **ULN2803A** (16 ch), `C845537`, $0.14 ea = **$0.29** |
-| flyback | n/a | **integral** — the ULN2803's `COM` pin clamps all 8 channels, so 14 discrete diodes disappear |
+| switching | 15× PROFET, **$17.25** | 3× **TPL7407L** (21 ch), `C2149827`, $0.39 ea = **$1.17** |
+| flyback | n/a | **integral** — the array's `COM` pin clamps every channel, so ~20 discrete diodes disappear |
 | per-channel support parts | RS/RP/DZ/CS/RG/RIP/CO/CV | none |
 
 ### DECIDED: TPL7407L, not ULN2803 — the Darlington cannot hold all channels on
@@ -162,10 +241,11 @@ LEDs, and that is where the Darlington falls over:
 replacement, not ULN2803), so **3 chips give 21 channels** for $1.17. Stock is thin
 (32–48 units per variant) but irrelevant at qty 1.
 
-**The keypad keeps its ULN2803A** — see `../keypad/CLAUDE.md`. It drives 12V LED rings
-totalling ~0.2–0.4A, nowhere near the dissipation limit, and the part is socketed DIP-18
-against the user's own chip stock; TPL7407L has no DIP package. The MOSFET part is better
-for *coils*, not for that load.
+**The keypad role uses the same TPL7407L** (superseding the earlier note that the standalone
+`../keypad` board keeps its ULN2803A — that board is being folded into this one). Two
+reasons beyond dissipation: the **ULN2803's input resistors are sized for 5V logic**, so
+3.3V drive is marginal at coil currents, and the socketed-DIP rationale no longer applies
+now that a specific package is not required. One driver part covers both roles.
 
 ## Channel count: target 18–20 (user, 2026-08-04)
 
@@ -177,6 +257,57 @@ I/O, which no LQFP-48 provides alongside CAN and a crystal. Use shift registers 
 `74HC595` for outputs, `74HC165` for sense inputs (`C22384789`, $0.065, 3.7k stock) — and
 channel count decouples from MCU pins entirely. Scaling 20 → 16 then becomes a board-space
 decision, not a re-architecture, which is exactly the flexibility the target asks for.
+
+### Proposed channel plan
+
+- **21 low-side outputs** — 3× `TPL7407L`
+- **21 internal sense taps** on the output nodes (coil-circuit integrity)
+- **16 external inputs** with optional pull-ups (buttons in the keypad role)
+
+Sense inputs total 37, so 5× `74HC165` ($0.33) covers it with spare bits. At that price
+each channel gets *both* an internal tap and, where relevant, an external terminal, and
+firmware decides what a given board is. **Keypad role uses 8 outputs + 8 external inputs;
+RCM role uses all 21 outputs.**
+
+### Why shift registers and not a resistor ladder
+
+Asked and worth recording. **The decisive reason is simultaneity, not level shifting.** A
+ladder encodes N switches as N voltage levels on one ADC pin, so two closed at once gives an
+ambiguous middle voltage. Both roles need all states at once — a keypad must handle
+multi-button presses, and the RCM must continuously read 21 independent coil states. A
+ladder fundamentally cannot do that.
+
+Secondary: with a 3.3V ADC and 16 levels each step is ~200mV, which is uncomfortably tight
+against resistor tolerance and automotive noise on long wires, whereas a digital threshold
+just has to be crossed. And a ladder needs precision resistors anyway, so it is not even
+cheaper than a $0.065 register. The per-input divider is needed either way — the register
+replaces the *discrimination* scheme, not the level shift.
+
+⚠ `74HC165` inputs are **not Schmitt-triggered**, so heavily RC-filtered inputs give slow
+edges. Fine in practice here (transitions are infrequent and firmware debounces anyway),
+but if bench testing shows chatter, a `74HC14` Schmitt buffer ahead of it is the fix — do
+not blame the wiring first.
+
+## Connectors: 3.5mm pluggable, spread over multiple edges (2026-08-04)
+
+User: smallest sensible edge terminals, **not** revB's power-handling blocks, and spreading
+across 2–4 edges to shrink the board is fine.
+
+**Family: `KF2EDG` / `15EDG` 3.5mm pluggable** — a board header plus a removable screw plug:
+
+| Part | LCSC | Price |
+|---|---|---|
+| `KF2EDGVM-3.5-2P` board header | `C441407` | $0.12 |
+| `KF2EDGK-3.5-2P` screw plug | `C440847` | $0.18 |
+
+3.5mm pitch, ~8–10A, 16–24AWG — right for coil, LED and button wires, and far smaller than
+revB's 5.0mm KF301 power blocks. **The pluggable part matters more than the size**: the
+whole loom unplugs from the board for service, consistent with how the rest of this project
+is built.
+
+Density is not the constraint — 3.5mm × ~40 positions is ~140mm of edge against ~360mm of
+perimeter on a 100×80mm board. **Spread across 2–3 edges anyway** and group by function
+(outputs one edge, inputs another, power/CAN a third) rather than purely to save space.
 
 ## Fuse/coil-circuit detection — user's idea, adopted (2026-08-04)
 
@@ -210,21 +341,36 @@ relay out immediately. Probably a safety plus, but it is a behaviour change.
 
 ## Open decisions
 
-1. **Relay box** — which box, and its internal topology (see the fuse-sense constraint
-   above). This is now the gating unknown: it drives channel count, connector and pinout.
-2. **Coil supply routing** — does the module feed coil power, or only sink the coil return?
-   Low-side sink is assumed throughout.
+1. **Which STM32.** Needs CAN, ~6 pins for the register chains, I2C/SPI for the IMU, SWD.
+   Almost anything qualifies — pick on toolchain preference.
+2. **Which phone** (iPhone vs Android) — decides whether NFC is viable for the future
+   auth node at all. Does not block this board.
 3. **Which revB features survive** — microSD logging, USB-C, EEPROM config store, SIM7600
-   COMMS header, ignition latch, analogue/digital inputs. At this firmware scope most are
-   candidates to drop, and at qty 1 each one also carries unique-part fees.
+   COMMS header, ignition latch. At this firmware scope most are candidates to drop, and at
+   qty 1 each one also carries unique-part fees.
+4. **Exact terminal grouping** — how the 37 signal positions split across edges, settled at
+   layout once channel count is final.
 
 ### Settled
 
-- **No load current sensing** — the fuses do that job. Coil-circuit sense above is *not* a
+- **One board, two roles** — RCM and keypad build variants of the same PCB.
+- **No load current sensing** — the fuses do that job. Coil-circuit sense is *not* a
   current measurement.
-- **MCU: STM32G431CBT6**, for commonality with the keypad node.
-- **Driver: TPL7407L** ×3 (21 channels), not ULN2803 — see the dissipation numbers above.
-- **Channel target: 18–20.**
+- **Driver: TPL7407L** ×3 (21 channels), not ULN2803 — dissipation *and* 5V-logic inputs.
+- **Outputs low-side only**; switching polarity comes from the relay contacts.
+- **Inputs switchable** earth/positive via an optional pull-up resistor.
+- **Channel plan: 21 out / 21 internal sense / 16 external in.**
+- **I/O via `74HC595`/`74HC165` shift registers**, not a resistor ladder.
+- **Connectors: `KF2EDG` 3.5mm pluggable**, multiple edges.
+- **Buck: Waveshare DC5-36-TO-DC3V3-5** from revB (not the keypad's WeAct), socketed.
+- **MCU: an STM32, plus an optional `ESP32-C3-MINI-1` co-processor footprint.**
+- **Phone-as-key: separate future node**, not this board.
+
+### Relay box — no longer a gating unknown
+
+The fuse-sense topology risk is resolved: the box is **fully re-pinnable** (currently a
+Haltech, possibly replaced or self-built), so the required arrangement — battery → fuse →
+relay pin 30, coil fed from that same fused node — can simply be wired that way.
 
 ## Parked
 
