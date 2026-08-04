@@ -95,6 +95,47 @@ than to re-invent, even in fresh firmware.
 more board area, which is the thing actually driving cost here. Pick it for WiFi/BT as a
 feature, not to save money. Both still need an external CAN transceiver.
 
+### MCU decision at qty 1: pick G431 for commonality (2026-08-04)
+
+Given the quantity reframe below, the spread between these parts is **~$2 on the whole
+project**. That makes cost a non-criterion and leaves ecosystem consistency: the
+`../keypad` node is already **STM32G431CBT6** (LQFP-48, `C529355`, $2.85, 67k stock) — same
+family, same FDCAN peripheral, one toolchain, and CAN/config code shared between the two
+nodes on the same bus. **Use the G431 unless something else forces a change.** The F103's
+$1.04 is no longer worth a second ecosystem, and the ESP32 is a WiFi/BT decision only.
+
+## Quantity: these are ONE-OFFS (user, 2026-08-04)
+
+**Not production, not for sale — ideally one of each board.** This changes the objective
+function, and it retires several earlier concerns.
+
+Per-unit BOM cost is now nearly irrelevant. At qty 1 the cost is dominated by:
+
+1. **Board area** — fab is priced by area, so shrinking the outline is still the top lever.
+2. **Layer count, copper weight, surface finish** — 2-layer / 1oz / HASL vs revB's
+   4-layer / 2oz / ENIG.
+3. **Number of unique *extended* parts** — JLC charges a per-unique-extended-part handling
+   fee, which is a fixed cost paid once no matter how few boards you build. **revB has 33
+   extended lines out of 59.** Consolidating values and preferring Basic/Preferred parts is
+   a real lever at qty 1 that did not matter at volume. (Check JLC's current fee schedule —
+   the terms change — but the structure holds.)
+4. **Placement count and fixed setup/stencil fees.**
+
+⚠ **You cannot actually order one.** JLC's PCB minimum is typically 5 pcs (sometimes 2) and
+PCBA minimum around 2. The practical shape is: fab ~5, **assemble 1–2, keep the rest bare
+as spares** — you only pay components and placement for what is assembled.
+
+**Worth evaluating for this board specifically: skip PCBA and hand-build.** The RCM should
+land near ~100–150 placements (against revB's 315), which is a long evening by hand and
+removes the assembly and per-part fees entirely. A middle option is JLC placing the
+fine-pitch SMD and hand-fitting the THT connectors, which JLC surcharges anyway.
+
+### Concerns this retires
+
+All the stock-depth caps flagged earlier were volume constraints and are now moot:
+BTS7008 (10 boards), BTS7002 (36), and **TPL7407L's thin 32–48 unit stock** — needing 3
+chips for one board makes it a non-issue.
+
 ## Relay drive: the saving is larger than the PROFET line suggests
 
 An octal Darlington/MOSFET sink array replaces both the switch **and** the flyback diodes:
@@ -105,29 +146,85 @@ An octal Darlington/MOSFET sink array replaces both the switch **and** the flyba
 | flyback | n/a | **integral** — the ULN2803's `COM` pin clamps all 8 channels, so 14 discrete diodes disappear |
 | per-channel support parts | RS/RP/DZ/CS/RG/RIP/CO/CV | none |
 
-Two caveats to check when this is drawn:
+### DECIDED: TPL7407L, not ULN2803 — the Darlington cannot hold all channels on
 
-- **Darlington drop.** ULN2803 `Vce(sat)` is ~1.1–1.6V at 200mA, so the coil sees ~10.5V of
-  a 12V supply, and 8 channels on at once dissipates ~2W in a SOP-18 — fine for typical
-  duty, not for all-on-continuous. **`TPL7407LAPWR`** (`C2149827`, $0.39, TSSOP-16) is the
-  modern MOSFET-based equivalent with ~0.1V drop and near-zero dissipation, and is the
-  better part *if stock recovers* — it was at only 32 units on 2026-08-04.
-- **3.3V drive.** ULN2803 input resistors are sized for 5V logic; verify drive margin at
-  3.3V for the chosen coil current. The TPL7407L is explicitly 3.3V-friendly.
+The user flagged this and was right. Relay coils are ~150–200mA each, unlike the keypad's
+LEDs, and that is where the Darlington falls over:
+
+| | ULN2803A (**8**ch, SOP-18) | **TPL7407L** (**7**ch, TSSOP-16) |
+|---|---|---|
+| drop @ 200mA | 1.1–1.6V `Vce(sat)` | ~0.1–0.25V (MOSFET) |
+| per channel | ~0.26W | ~0.05W |
+| **all channels on** | **~2.1W ⇒ ~200°C rise** — not survivable | ~0.35W — fine |
+| 3.3V logic drive | input resistors sized for 5V, needs checking | explicitly 3.3V-friendly |
+
+`TPL7407LAPWR` = `C2149827`, $0.39, TSSOP-16. Note it is **7-channel** (a ULN2003
+replacement, not ULN2803), so **3 chips give 21 channels** for $1.17. Stock is thin
+(32–48 units per variant) but irrelevant at qty 1.
+
+**The keypad keeps its ULN2803A** — see `../keypad/CLAUDE.md`. It drives 12V LED rings
+totalling ~0.2–0.4A, nowhere near the dissipation limit, and the part is socketed DIP-18
+against the user's own chip stock; TPL7407L has no DIP package. The MOSFET part is better
+for *coils*, not for that load.
+
+## Channel count: target 18–20 (user, 2026-08-04)
+
+"Aim for 18–20 outputs; pull back if something doesn't work." With `TPL7407L` being a
+**7-channel** part, 3 chips = **21 channels**, which covers the target with one spare.
+
+**I/O expansion makes the count cheap to change.** 20 outputs + 20 fuse-sense inputs = 40
+I/O, which no LQFP-48 provides alongside CAN and a crystal. Use shift registers —
+`74HC595` for outputs, `74HC165` for sense inputs (`C22384789`, $0.065, 3.7k stock) — and
+channel count decouples from MCU pins entirely. Scaling 20 → 16 then becomes a board-space
+decision, not a re-architecture, which is exactly the flexibility the target asks for.
+
+## Fuse/coil-circuit detection — user's idea, adopted (2026-08-04)
+
+**The idea:** feed the relay coil from the *fused* terminal and have the board switch the
+coil's ground, so a blown fuse is detectable.
+
+**It works, and needs no extra wires.** Sense the low-side switch drain — the coil-return
+wire already present. With the channel OFF no current flows, so there is no drop across the
+coil and the node sits at rail voltage; the sense divider's lower leg doubles as the
+pulldown that defines 0V when the feed is dead. **Two resistors per channel plus one
+`74HC165` input, ~$0.15 for all 20.**
+
+Four constraints:
+
+1. **Off-state diagnostic only.** With the channel on, our own switch holds the node near
+   0V. Every *off* channel can be monitored continuously; a channel cannot be tested while
+   driving.
+2. **It detects any coil-circuit break** — blown fuse, missing relay, open coil, broken
+   wire. Report it as *coil circuit integrity*, not "fuse blown".
+3. **⚠ Topology is the real risk — verify against the actual box before committing.** This
+   requires the fuse **upstream**: battery → fuse → relay pin 30, coil fed from that same
+   fused node. Many relay/fuse boxes instead run relay pin 87 → fuse → load; there the coil
+   could never get power to close the relay in the first place (chicken-and-egg) and the
+   scheme does not work.
+4. **Parked drain.** A 100k/22k divider is ~0.1mA/channel, ~2mA over 20 channels,
+   permanently. The revB ignition latch exists precisely to kill that, so use ~1M/220k
+   (~0.24mA total) or feed the dividers from the switched rail.
+
+Side effect to be aware of: with the coil on the fused node, a blown fuse drops its own
+relay out immediately. Probably a safety plus, but it is a behaviour change.
 
 ## Open decisions
 
-Nothing below is settled — these change the architecture, not just values.
-
-1. **Channel count**, and whether channels are uniform (relays are, unlike revB's 3 tiers).
-2. **Current sensing** — keep per-channel, sense only a few channels, or drop entirely and
-   rely on fuses? Biggest remaining cost/area fork.
-3. **MCU** — see table above. Leaning F103C8T6 now that firmware reuse is not a constraint.
-4. **Relay box interface** — connector and pinout, and whether the module feeds coil power
-   or only sinks the coil return (low-side sink is assumed above).
-5. **Which revB features survive** — microSD logging, USB-C, EEPROM config store, SIM7600
+1. **Relay box** — which box, and its internal topology (see the fuse-sense constraint
+   above). This is now the gating unknown: it drives channel count, connector and pinout.
+2. **Coil supply routing** — does the module feed coil power, or only sink the coil return?
+   Low-side sink is assumed throughout.
+3. **Which revB features survive** — microSD logging, USB-C, EEPROM config store, SIM7600
    COMMS header, ignition latch, analogue/digital inputs. At this firmware scope most are
-   candidates to drop.
+   candidates to drop, and at qty 1 each one also carries unique-part fees.
+
+### Settled
+
+- **No load current sensing** — the fuses do that job. Coil-circuit sense above is *not* a
+  current measurement.
+- **MCU: STM32G431CBT6**, for commonality with the keypad node.
+- **Driver: TPL7407L** ×3 (21 channels), not ULN2803 — see the dissipation numbers above.
+- **Channel target: 18–20.**
 
 ## Parked
 
