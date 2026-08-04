@@ -67,20 +67,73 @@ explicit:
 The fuse box handling overcurrent is arguably the point: fuses are cheaper, field
 replaceable, and understood by anyone working on the car.
 
+## Firmware scope (user, 2026-08-04) — deliberately much smaller than SynapsePDM
+
+The functional requirement is **"turn things on and off via CAN, plus put IMU data on
+CAN"**. That is it. Route is undecided between **butchering joesbox's firmware down to
+that** and **writing something simple in the Arduino IDE**.
+
+**This is the decision that reframes the MCU choice.** The earlier argument for staying on
+an STM32F4 was firmware reuse — if the firmware is a few hundred lines either way, reuse
+stops being the constraint and the MCU should be chosen on cost, size and CAN support.
+
+What is still worth preserving regardless of chip or language: **CAN message compatibility**
+with the existing DBC (`../SynapsePDM/SynapsePDM/CAN DB/`) and the Cortex PC app, so the
+`../keypad` node and any existing tooling keep working. Message layout is cheaper to keep
+than to re-invent, even in fresh firmware.
+
+### MCU options at this scope (live prices 2026-08-04)
+
+| Part | Price | Package | Notes |
+|---|---:|---|---|
+| **STM32F103C8T6** | **$1.04** | LQFP-48 7×7 | bxCAN on-chip, Arduino via STM32duino, 214k stock. 64KB flash is ample for this scope. Cheapest and smallest |
+| STM32F446RET6 | $4.93 | LQFP-64 10×10 | only worth it if joesbox's firmware is kept substantially intact |
+| STM32F446ZET6 | $5.40 | LQFP-144 20×20 | revB's part. No reason to carry 144 pins here |
+| ESP32-WROOM-32E-N4 | $3.34 | module 25.5×18mm | **more expensive than the F103, and physically much larger.** One placement, native Arduino, TWAI CAN, and WiFi/BT if wanted |
+
+**The ESP32 is not the cost win it looks like** — it is 3× the F103's price and takes far
+more board area, which is the thing actually driving cost here. Pick it for WiFi/BT as a
+feature, not to save money. Both still need an external CAN transceiver.
+
+## Relay drive: the saving is larger than the PROFET line suggests
+
+An octal Darlington/MOSFET sink array replaces both the switch **and** the flyback diodes:
+
+| | revB | RCM |
+|---|---|---|
+| switching | 15× PROFET, **$17.25** | 2× **ULN2803A** (16 ch), `C845537`, $0.14 ea = **$0.29** |
+| flyback | n/a | **integral** — the ULN2803's `COM` pin clamps all 8 channels, so 14 discrete diodes disappear |
+| per-channel support parts | RS/RP/DZ/CS/RG/RIP/CO/CV | none |
+
+Two caveats to check when this is drawn:
+
+- **Darlington drop.** ULN2803 `Vce(sat)` is ~1.1–1.6V at 200mA, so the coil sees ~10.5V of
+  a 12V supply, and 8 channels on at once dissipates ~2W in a SOP-18 — fine for typical
+  duty, not for all-on-continuous. **`TPL7407LAPWR`** (`C2149827`, $0.39, TSSOP-16) is the
+  modern MOSFET-based equivalent with ~0.1V drop and near-zero dissipation, and is the
+  better part *if stock recovers* — it was at only 32 units on 2026-08-04.
+- **3.3V drive.** ULN2803 input resistors are sized for 5V logic; verify drive margin at
+  3.3V for the chosen coil current. The TPL7407L is explicitly 3.3V-friendly.
+
 ## Open decisions
 
 Nothing below is settled — these change the architecture, not just values.
 
 1. **Channel count**, and whether channels are uniform (relays are, unlike revB's 3 tiers).
 2. **Current sensing** — keep per-channel, sense only a few channels, or drop entirely and
-   rely on fuses? Drives cost, board area, and how much firmware carries over.
-3. **MCU** — smaller STM32 (keeps firmware + Cortex app) vs ESP32 (rewrite; buys WiFi/BT).
-4. **Coil drive topology** — low-side N-FET / octal sink (ULN2803-class) / dedicated relay
-   driver, and where the flyback diode lives (on the module or in the relay box).
-5. **Relay box interface** — connector and pinout, and whether the module feeds coil power
-   or only sinks the coil return.
-6. **Which revB features survive** — microSD logging, USB-C, EEPROM config store, SIM7600
-   COMMS header, ignition latch, analogue/digital inputs.
+   rely on fuses? Biggest remaining cost/area fork.
+3. **MCU** — see table above. Leaning F103C8T6 now that firmware reuse is not a constraint.
+4. **Relay box interface** — connector and pinout, and whether the module feeds coil power
+   or only sinks the coil return (low-side sink is assumed above).
+5. **Which revB features survive** — microSD logging, USB-C, EEPROM config store, SIM7600
+   COMMS header, ignition latch, analogue/digital inputs. At this firmware scope most are
+   candidates to drop.
+
+## Parked
+
+- `5.0SMDJ20A` (`C2990361`), the revB load-dump TVS on `D15`/`D16`, went to **0 stock** at
+  JLC on 2026-08-04. Not urgent — the revB order is on hold pending this board — but it
+  needs a substitute before that BOM is ever uploaded.
 
 ## Carried over
 

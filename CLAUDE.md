@@ -36,11 +36,15 @@ Upstream is joesbox's SynapsePDM (`C:\github\SynapsePDM`, STM32F446 PlatformIO, 
 proven; MIT-style headers). `C:\github\Cortex` is the Avalonia C# PC config app,
 `C:\github\SynapsePDM-SD-Bootloader` the signed-update bootloader.
 
-**This is the main argument against an ESP32.** The MCU is ~$5.40 of a ~$100/board cost,
-so an MCU swap is not a meaningful cost lever, but moving off STM32 discards a working,
-vehicle-tested firmware stack and its PC tooling. If the MCU changes for cost, prefer a
-**smaller STM32** (the LQFP-144 F446ZET6 exists because Synapse needed 144 pins; a relay
-module does not) over a different architecture. See `DESIGN.md` open decisions.
+**But the firmware scope here is deliberately tiny** (user, 2026-08-04): CAN in → relay
+on/off, plus IMU data out on CAN. Undecided between butchering joesbox's firmware down to
+that and writing something simple in the Arduino IDE. Because the program is small either
+way, **firmware reuse is not a real constraint on the MCU choice** — pick the chip on cost,
+size and CAN support. See `DESIGN.md` "Firmware scope" and the MCU table.
+
+What *is* worth preserving whichever route is taken: **CAN message compatibility** with the
+existing DBC (`../SynapsePDM/SynapsePDM/CAN DB/`) and the Cortex app, so the `../keypad`
+node and existing tooling keep working.
 
 ## Conventions inherited from the pdm work
 
