@@ -25,7 +25,10 @@ import sys
 
 import pcbnew
 
-PAD_RE = re.compile(r"Pad (\S+) \[([^\]]*)\] of (\S+)")
+# DRC writes "PTH pad 5 [GND] of J_SWD" for through-hole and "Pad 12 [GND] of U1"
+# for SMD. Matching only the latter made this silently report "nothing to do"
+# while every THT violation remained.
+PAD_RE = re.compile(r"(?:PTH |NPTH )?[Pp]ad (\S+) \[([^\]]*)\] of (\S+)")
 
 
 def starved_pads(report):
