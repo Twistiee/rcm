@@ -929,7 +929,7 @@
    "ref": "J_USB",
    "lib": "Connector:USB_C_Receptacle_USB2.0_16P",
    "value": "USB-C",
-   "footprint": "Connector_USB:USB_C_Receptacle_USB2.0_16P"
+   "footprint": "Connector_USB:USB_C_Receptacle_HCTL_HC-TYPE-C-16P-01A"
   },
   {
    "ref": "R_CC1",

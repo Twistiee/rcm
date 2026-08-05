@@ -253,3 +253,46 @@ and R57 (0R, fitted) pulls SDO to GND for 0x68 with R58 (DNP) as the 0x69 altern
   full-speed edges if EMI turns out not to matter.
 - Terminal body dimensions for `KF2EDG-3.5` came from catalogue figures, not a dimensioned
   drawing — they affect silk/courtyard only, never pads, but check against a real part.
+
+## Build state — placement DONE (2026-08-05)
+
+`python gen_plan.py && python tools/plan_lint.py board_plan.json`
+then `"C:\Program Files\KiCad\10.0\bin\python.exe" tools/netlist_to_board.py board_plan.json`
+
+| | |
+|---|---|
+| Board | **100 × 100mm**, 154 components placed |
+| Placement lint | **0 errors, 0 warnings** |
+| Board DRC | **0 errors** (53 silkscreen warnings, handled in the silk pass at the end) |
+| Unconnected | 414 — expected, nothing is routed yet |
+
+**Never hand-edit `rcm.kicad_pcb`** — `netlist_to_board.py` rewrites it from scratch.
+Fold changes into `gen_plan.py`.
+
+### Layout
+
+- **South half**: the three identical 7-channel tiles, anchored at x = 8 / 38 / 68,
+  terminals on the south edge at y = 95. Each tile is defined **once** as a group of 27
+  members and instantiated three times — 81 of the 154 parts come from that one definition.
+- **North half**: power entry + latch + buck + LDO on the left, MCU centre,
+  CAN / IMU / EEPROM / USB right.
+- All terminals sit on an edge with wire entry pointing **off** the board — south at rot 0,
+  north at rot 180. **No 90° terminal rotations anywhere**, which is where orientation
+  mistakes come from.
+
+### ⚠ The buck module trap, and why no checker catches it
+
+`JB1` (IN) and `JB2` (OUT) are separate footprints whose courtyards never touch, so nothing
+verifies they line up. The columns must be **27.80mm apart in X and offset 1.90mm in Y** —
+on the Waveshare drawing the IN column's first hole is 3.60mm from the module's top edge and
+the OUT column's is 1.70mm, so OUT leads IN by 1.90mm. They were initially placed level,
+which would have meant the module physically did not fit.
+
+The resulting module body occupies **x 4.4–37.4, y 24.4–40.4** and that area must stay
+clear: the body is drawn on `F.Fab` only, deliberately without a courtyard, so `plan_lint`
+cannot see it. `gen_plan.py` asserts nothing is placed inside it.
+
+### Next: routing
+
+Draw the copper tracks, pour the ground fill, then re-check clearances. Expect this to raise
+at least one "these two things want the same space" question worth a decision.
