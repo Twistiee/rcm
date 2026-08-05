@@ -20,9 +20,12 @@ Passives **0805** throughout for hand-rework.
 | Symbols available in KiCad 10 standard libs | `MCU_ST_STM32F4:STM32F446RETx`, `74xx:74HC595`, `74xx:74HC165`, `Interface_CAN_LIN:SN65HVD230`, `Transistor_Array:TPL7407LAPW`, `Sensor_Motion:BMI160` — **all present** |
 | Custom symbol needed | Latch PROFET — reuse `BTS70xx-1E` from `../pdm/pdm14-revB/lib/PDM14.kicad_sym` |
 
-⚠ **Still to verify:** that LQFP-64 breaks out USB OTG FS *and* CAN without conflict.
-**SDIO is no longer required** now microSD is dropped, which removes most of the pin
-pressure. Fallback remains F446VET6 (LQFP-100).
+✅ **LQFP-64 pinout VERIFIED** against ST's CubeMX AF table for the F446R variant
+(`framework-arduinoststm32/variants/STM32F4xx/F446R(C-E)T/PeripheralPins.c`):
+**CAN1 on PB8/PB9 (AF9)** and **USB_OTG_FS_DM/DP on PA11/PA12 (AF10)** — available
+simultaneously. SDIO is moot now microSD is dropped. No need for the F446VET6 fallback.
+
+⚠ **PB11 does not exist on LQFP-64** — the pin list jumps PB10=29 → PB12=33.
 
 ---
 
@@ -66,7 +69,7 @@ Ignition 12V → `IN` ≈3.8V; MCU 3.3V → `IN` ≈3.2V. Either turns it on alo
 Dumb switch: DEN low, IS open.
 
 ⚠ `LATCH_HOLD` **must be a direct MCU GPIO, never a shift-register output** — bootstrapping
-hazard. `J_IGN` feeds `LATCH_IGN` plus a 1M/220k divider to an MCU input for ignition sense.
+hazard. `J_IGN` feeds `LATCH_IGN` plus a 1M/270k divider to an MCU input for ignition sense.
 
 ## Block 3 — Buck + 3V3 — **the LDO STAYS**
 
@@ -81,7 +84,7 @@ OUT 6 holes @2.54mm (top three `+5V`, bottom three GND).
 keypad (*"its 3V3 pad must be bridged per module or it will cook the STM32"*). Forgetting it
 once destroys the board. Keeping a $0.20 LDO removes a destructive manual step, lets the
 module stay at its default, and costs little now that SIM7600 is gone: the 3V3 load is
-~130mA (≈0.22W in SOT-223), rising to ~430mA peak only if the optional ESP32-C3 is fitted.
+~130mA, about 0.22W in SOT-223 — comfortable without a large copper pad.
 
 ## Block 4 — MCU
 
@@ -145,13 +148,22 @@ Per channel (×21):
 | Ref | Value | Function |
 |---|---|---|
 | `R_SHn` | **1M** | `CHx` → `SNSx` |
-| `R_SLn` | **220k** | `SNSx` → GND; also the pulldown defining 0V on a dead feed |
+| `R_SLn` | **270k** | `SNSx` → GND; also the pulldown defining 0V on a dead feed |
 | `R_PUn` | 100k, **DNP** | `CHx` → `+12V_P`. Fit only for keypad button channels |
 
-Divider: 14.4V → `SNS` 2.60V; 12V → 2.16V. Both above the 74HC threshold (~1.65V at 3V3).
-Draw 12µA/channel, ~250µA over 21.
+⚠ **This was 1M/220k and it FAILS at rest voltage — corrected to 1M/270k.** 74HC `VIH(min)`
+is **0.7 × Vcc = 2.31V** at 3V3, not the ~1.65V typical switching point:
 
-⚠ That 250µA flows **from the fuse box through each relay coil**, not from the latched rail
+| Divider | @11V | @12.0V | @14.4V |
+|---|---:|---:|---:|
+| 1M/220k (was) | 1.98V ✗ | **2.16V ✗** | 2.60V ✓ |
+| **1M/270k (now)** | 2.34V ✓ | **2.55V ✓** | 3.06V ✓ |
+
+At 220k every channel would have read "circuit broken" whenever the battery sat at rest with
+the engine off. 270k clears `VIH` from ~10.9V up and still peaks below 3V3 at charging
+voltage, so the input protection diodes never conduct. Draw 9.4µA/channel, ~200µA over 21.
+
+⚠ That ~200µA flows **from the fuse box through each relay coil**, not from the latched rail
 — it is *not* killed by the ignition latch. Harmless (a coil needs ~150mA) but it is
 permanent parked drain.
 
