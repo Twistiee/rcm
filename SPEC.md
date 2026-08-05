@@ -333,3 +333,41 @@ corners up. Holes clear the board edge by 5mm, enough for an M3 washer.
 
 Draw the copper tracks, pour the ground fill, then re-check clearances. Expect this to raise
 at least one "these two things want the same space" question worth a decision.
+
+## Build state — ROUTED (round 2, 2026-08-05)
+
+`"C:\Program Files\KiCad\10.0\bin\python.exe" tools/route_board.py rcm.kicad_pcb --zone GND:F.Cu --zone GND:B.Cu`
+
+| | round 1 | round 2 |
+|---|---|---|
+| Nets routed | 413 / 414 | **414 / 414** |
+| Unconnected | 1 | **0** |
+| Track segments + vias | 2143 | 2225 |
+| GND pours | 2 (F.Cu + B.Cu) | 2 |
+| Router time | 63s | 48s |
+
+**The layout needed no congestion changes** — the spread-out placement routed first time.
+Only two real issues came out of round 1:
+
+1. **Starved thermals** (5 in round 1, 9 in round 2). A ground pad reached the pour through
+   one narrow neck instead of several. On reflow-soldered parts the thermal relief buys
+   nothing — its purpose is heat isolation for *hand* soldering — so the fix is a solid
+   connection, which is also lower inductance and more copper. `tools/fix_starved_thermals.py`
+   reads the DRC report rather than hard-coding pads, so it stays correct across re-routes.
+   **Which pads get starved changes every re-route — always re-run it after routing.**
+2. **`USB_CC1` unroutable in round 1.** The CC pin sits in a 0.5mm-pitch pad row with no
+   escape gap, and the resistors were placed on the side where the second pad row blocks the
+   way. Moving them to the connector's open side fixed it.
+
+### ⚠ OPEN — rotate the USB-C 90° anticlockwise (user, 2026-08-05)
+
+The connector currently faces north out of the top edge, crammed against the `H2` corner
+hole. Rotating it 90° anticlockwise puts the opening out of the **east** edge, which is both
+the right place for a cable and clears the two remaining `courtyards_overlap` errors
+(`H2` vs `R_CC1`/`R_CC2`, created by the CC-resistor move above). Deliberately deferred to
+the next routing round rather than fixed twice.
+
+**Determine the rotation direction empirically**, the way the terminals were: place it,
+then check which way the pads actually face. Do not reason about it from the angle sign.
+
+Current DRC: **2 errors** (both the above, pending), 92 silkscreen warnings, 0 unconnected.
