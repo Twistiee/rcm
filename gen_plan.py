@@ -56,9 +56,9 @@ TILE = [
 ]
 for _k in range(7):
     _dx = _k * RPITCH
-    TILE.append((_dx, -8.0, 90, "R_SH{ch%d}" % _k))
-    TILE.append((_dx, -12.5, 90, "R_SL{ch%d}" % _k))
-    TILE.append((_dx, -17.0, 90, "R_PU{ch%d}" % _k))
+    TILE.append((_dx, -6.0, 90, "R_SH{ch%d}" % _k))
+    TILE.append((_dx, -10.5, 90, "R_SL{ch%d}" % _k))
+    TILE.append((_dx, -15.0, 90, "R_PU{ch%d}" % _k))
 # Driver and both shift registers in a row NORTH of the resistors (user, 2026-08-05),
 # spread across the same 36mm the resistor columns now occupy.
 TILE += [
@@ -147,8 +147,8 @@ P("C_VCAP", MX - 10.5, MY - 2.0, 90)
 P("C_VDDA", MX - 10.5, MY + 2.0, 90)
 P("C_NRST", MX + 10.5, MY - 2.0, 90)
 P("R_BOOT", MX + 10.5, MY + 2.0, 90)
-P("J_SWD", 60.0, 32.0, 90)
-P("J_BOOT", 62.0, 28.0, 90)
+P("J_SWD", 64.0, 34.0, 90)
+P("J_BOOT", 64.0, 30.0, 90)
 
 # --- far east: CAN, IMU, EEPROM, USB, aux dividers ---
 P("R_AH1", 99.0, 12.0, 90)
@@ -162,7 +162,7 @@ P("U_CAN", 116.0, 13.0, 0)
 P("C_CAN", 122.0, 13.0, 90)
 P("R_TERM", 114.0, 19.0, 0)
 P("R_TJ", 118.0, 19.0, 0)
-P("R_RS", 122.0, 19.0, 0)
+P("R_RS", 118.0, 22.5, 0)
 P("D_CAN", 110.0, 19.0, 0)
 
 P("U_IMU", 116.0, 26.0, 0)
@@ -170,16 +170,16 @@ P("C_IMU1", 122.0, 25.0, 90)
 P("C_IMU2", 122.0, 28.5, 90)
 P("R_ADDR", 126.0, 25.0, 90)
 P("R_ADDR_ALT", 126.0, 28.5, 90)
-P("R_SDA", 130.0, 25.0, 90)
-P("R_SCL", 130.0, 28.5, 90)
+P("R_SDA", 121.0, 33.0, 90)
+P("R_SCL", 125.0, 33.0, 90)
 
 P("U_EEP", 107.0, 31.0, 0)
 P("C_EEP", 113.0, 31.0, 90)
 P("R_OE", 136.0, 30.0, 90)
 
-P("J_USB", 133.0, 17.0, 0)
-P("R_CC1", 131.75, 9.0, 90)
-P("R_CC2", 134.75, 9.0, 90)
+P("J_USB", 133.0, 20.0, 90)
+P("R_CC1", 124.5, 21.25, 0)
+P("R_CC2", 124.5, 18.25, 0)
 
 # ---------------------------------------------------------------------------
 plan = {

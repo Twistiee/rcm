@@ -359,15 +359,28 @@ Only two real issues came out of round 1:
    escape gap, and the resistors were placed on the side where the second pad row blocks the
    way. Moving them to the connector's open side fixed it.
 
-### ⚠ OPEN — rotate the USB-C 90° anticlockwise (user, 2026-08-05)
+### Round 3 (2026-08-05) — USB-C rotated, headers and resistors nudged
 
-The connector currently faces north out of the top edge, crammed against the `H2` corner
-hole. Rotating it 90° anticlockwise puts the opening out of the **east** edge, which is both
-the right place for a cable and clears the two remaining `courtyards_overlap` errors
-(`H2` vs `R_CC1`/`R_CC2`, created by the CC-resistor move above). Deliberately deferred to
-the next routing round rather than fixed twice.
+- **`J_USB` rotated 0° → +90°**, opening out of the east edge instead of the north.
+- **`J_SWD` / `J_BOOT` moved right and down**, clearing the buck module better.
+- **All southern resistor rows moved down 2mm**, closing the gap to their own terminals.
 
-**Determine the rotation direction empirically**, the way the terminals were: place it,
-then check which way the pads actually face. Do not reason about it from the angle sign.
+⚠ **Rotating the USB-C moves its CC pads, and the whole pad row is on ONE line** — the 16
+signal pads all share `local y = -3.745`, so there is no asymmetry in the pad data to
+predict orientation from. At +90 the row runs vertically at **x ≈ 129.26** (CC1 y 21.25,
+CC2 y 18.25). Those numbers were **read back off the placed board**, not predicted — local
+pad coordinates do not change under rotation, only the footprint angle does. The CC
+resistors, I²C pull-ups and CAN slope resistor all moved as a knock-on.
 
-Current DRC: **2 errors** (both the above, pending), 92 silkscreen warnings, 0 unconnected.
+⚠ **Still unverified: which way the opening actually faces.** The body sits east of the pad
+row, which implies the cable entry is on the east edge as intended, but that is inference.
+Confirm visually; if it faces inward the fix is 270° instead of 90°.
+
+| | round 1 | round 2 | round 3 |
+|---|---|---|---|
+| Nets routed | 413/414 | 414/414 | **414/414** |
+| Unconnected | 1 | 0 | **0** |
+| Segments + vias | 2143 | 2225 | **2346** |
+| Errors after thermal fix | 0 | 2 (pending USB) | **0** |
+
+Current DRC: **0 errors**, 111 silkscreen warnings, 0 unconnected.
