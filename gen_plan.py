@@ -24,9 +24,11 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 BOARD_W, BOARD_H = 140.0, 70.0   # = the button panel: 4 x 2 cells of 35mm
-PITCH = 3.5              # terminal pole pitch, and the channel column pitch
-TILE_PITCH = 38.0        # x distance between tile anchors
-TILE_X0 = 21.5           # x of tile 1 pin 1 (centres the 3 terminals)
+PITCH = 3.5              # terminal pole pitch
+RPITCH = 6.0             # channel column pitch -- resistors spread wider than the
+                         # terminal poles so the rows breathe and leave routing room
+TILE_PITCH = 44.0        # x distance between tile anchors
+TILE_X0 = 8.8            # x of tile 1 column 1 (~7.9mm margin each end)
 TILE_Y = 65.0            # y of the channel terminal pin row (south edge)
 
 placement = {}
@@ -49,19 +51,22 @@ def P(ref, x, y, rot=0):
 # twice during this layout -- both times it only surfaced because the two happened to
 # collide. A reorder that landed somewhere legal would have passed every check.
 TILE = [
-    (0.0, 0.0, 0, "J_CH%d"),
+    # terminal, centred under the 36mm-wide spread of resistor columns above it
+    (7.5, 0.0, 0, "J_CH%d"),
 ]
 for _k in range(7):
-    _dx = _k * PITCH
+    _dx = _k * RPITCH
     TILE.append((_dx, -8.0, 90, "R_SH{ch%d}" % _k))
     TILE.append((_dx, -12.5, 90, "R_SL{ch%d}" % _k))
     TILE.append((_dx, -17.0, 90, "R_PU{ch%d}" % _k))
+# Driver and both shift registers in a row NORTH of the resistors (user, 2026-08-05),
+# spread across the same 36mm the resistor columns now occupy.
 TILE += [
-    (27.5, -6.0, 0, "U_DRV%d"),     # driver, next to the terminal it feeds
-    (27.0, -16.0, 0, "U_SO%d"),     # shift registers stacked BESIDE the resistors
-    (27.0, -28.0, 0, "U_SI%d"),
-    (33.0, -9.0, 90, "C_SO%d"),
-    (33.0, -25.0, 90, "C_SI%d"),
+    (3.0, -25.0, 0, "U_DRV%d"),
+    (14.0, -25.0, 90, "U_SO%d"),
+    (20.5, -25.0, 90, "C_SO%d"),
+    (28.0, -25.0, 90, "U_SI%d"),
+    (34.5, -25.0, 90, "C_SI%d"),
 ]
 
 members = [(m[0], m[1], m[2]) for m in TILE]
@@ -120,7 +125,7 @@ P("U_LDO", 28.0, 31.0, 0)
 P("C_5V", 35.0, 31.0, 90)
 P("C_3V3I", 39.0, 31.0, 90)
 P("C_3V3O", 43.0, 31.0, 90)
-P("SW_RST", 57.5, 30.5, 0)
+P("SW_RST", 50.0, 32.0, 0)
 P("D_LED1", 75.0, 29.0, 0)
 P("R_LED1", 75.0, 32.5, 0)
 P("D_LED2", 80.0, 29.0, 0)
@@ -142,8 +147,8 @@ P("C_VCAP", MX - 10.5, MY - 2.0, 90)
 P("C_VDDA", MX - 10.5, MY + 2.0, 90)
 P("C_NRST", MX + 10.5, MY - 2.0, 90)
 P("R_BOOT", MX + 10.5, MY + 2.0, 90)
-P("J_SWD", 66.0, 30.0, 0)
-P("J_BOOT", 71.0, 30.0, 0)
+P("J_SWD", 60.0, 32.0, 90)
+P("J_BOOT", 62.0, 28.0, 90)
 
 # --- far east: CAN, IMU, EEPROM, USB, aux dividers ---
 P("R_AH1", 99.0, 12.0, 90)
@@ -158,7 +163,7 @@ P("C_CAN", 122.0, 13.0, 90)
 P("R_TERM", 114.0, 19.0, 0)
 P("R_TJ", 118.0, 19.0, 0)
 P("R_RS", 122.0, 19.0, 0)
-P("D_CAN", 126.0, 19.0, 0)
+P("D_CAN", 110.0, 19.0, 0)
 
 P("U_IMU", 116.0, 26.0, 0)
 P("C_IMU1", 122.0, 25.0, 90)
@@ -172,9 +177,9 @@ P("U_EEP", 107.0, 31.0, 0)
 P("C_EEP", 113.0, 31.0, 90)
 P("R_OE", 136.0, 30.0, 90)
 
-P("J_USB", 133.0, 13.0, 0)
-P("R_CC1", 130.0, 19.0, 90)
-P("R_CC2", 134.0, 19.0, 90)
+P("J_USB", 133.0, 17.0, 0)
+P("R_CC1", 128.0, 24.0, 90)
+P("R_CC2", 132.0, 24.0, 90)
 
 # ---------------------------------------------------------------------------
 plan = {

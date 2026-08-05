@@ -275,12 +275,14 @@ Fold changes into `gen_plan.py`.
 2 rows of 4 at 35mm each = **140 × 70mm**. That is 98cm² against the earlier 100 × 100mm
 draft's 100cm² — the same area reshaped, not a resize, so nothing was given up for it.
 
-- **South half**: the three identical 7-channel tiles, anchored at x = 21.5 / 59.5 / 97.5,
+- **South half**: the three identical 7-channel tiles, anchored at x = 8.8 / 52.8 / 96.8,
   terminals on the south edge at y = 65 and **centred as a group on that edge**. Each tile is defined **once** as a group of 27
   members and instantiated three times — 81 of the 154 parts come from that one definition.
-  The driver and both shift registers sit **beside** the resistor block rather than in a
-  row above it (user, 2026-08-05) — the registers are what those resistors actually talk
-  to, so they now sit next to their own signals instead of a tile-width away.
+  The driver and both shift registers sit in a row **north of** the resistors. The channel
+  columns are spread at **6.0mm pitch, wider than the terminal's 3.5mm poles**, so the
+  resistor rows and the registers above them spread evenly along the board's length rather
+  than bunching into tight clusters with dead space between — that spacing is also routing
+  room. ~8mm of margin is left at each end.
 - **North half** (y 0–36): power entry + latch on the left, buck module centre-left,
   MCU centre-east, CAN / IMU / EEPROM / USB / aux far east.
 - All terminals sit on an edge with wire entry pointing **off** the board — south at rot 0,
