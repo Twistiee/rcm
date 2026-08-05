@@ -7,7 +7,7 @@
 > through below — the biggest is that the LDO **stays** (see block 3), reversing an earlier
 > claim that deleting SIM7600 would delete it too.
 
-Target: ~100 × 80mm, **2 layers**, 1oz, HASL, PCBA (SMD) + hand-fitted THT terminals.
+Target: **140 × 70mm**, **2 layers**, 1oz, HASL, PCBA (SMD) + hand-fitted THT terminals.
 Passives **0805** throughout for hand-rework.
 
 ## Verified before drawing (2026-08-05)
@@ -261,9 +261,9 @@ then `"C:\Program Files\KiCad\10.0\bin\python.exe" tools/netlist_to_board.py boa
 
 | | |
 |---|---|
-| Board | **100 × 100mm**, 154 components placed |
+| Board | **140 × 70mm**, 154 components placed |
 | Placement lint | **0 errors, 0 warnings** |
-| Board DRC | **0 errors** (53 silkscreen warnings, handled in the silk pass at the end) |
+| Board DRC | **0 errors** (111 silkscreen warnings, handled in the silk pass at the end) |
 | Unconnected | 414 — expected, nothing is routed yet |
 
 **Never hand-edit `rcm.kicad_pcb`** — `netlist_to_board.py` rewrites it from scratch.
@@ -271,11 +271,18 @@ Fold changes into `gen_plan.py`.
 
 ### Layout
 
-- **South half**: the three identical 7-channel tiles, anchored at x = 8 / 38 / 68,
-  terminals on the south edge at y = 95. Each tile is defined **once** as a group of 27
+**Outline is set by the keypad button panel** (user, 2026-08-05): 8 momentary switches in
+2 rows of 4 at 35mm each = **140 × 70mm**. That is 98cm² against the earlier 100 × 100mm
+draft's 100cm² — the same area reshaped, not a resize, so nothing was given up for it.
+
+- **South half**: the three identical 7-channel tiles, anchored at x = 7 / 51 / 95,
+  terminals on the south edge at y = 65. Each tile is defined **once** as a group of 27
   members and instantiated three times — 81 of the 154 parts come from that one definition.
-- **North half**: power entry + latch + buck + LDO on the left, MCU centre,
-  CAN / IMU / EEPROM / USB right.
+  To fit 70mm the driver, both shift registers and their decoupling sit in **one row**
+  rather than a column: 31mm of tile height instead of 46mm, spending width the wider
+  board now has.
+- **North half** (y 0–36): power entry + latch on the left, buck module centre-left,
+  MCU centre-east, CAN / IMU / EEPROM / USB / aux far east.
 - All terminals sit on an edge with wire entry pointing **off** the board — south at rot 0,
   north at rot 180. **No 90° terminal rotations anywhere**, which is where orientation
   mistakes come from.
@@ -288,9 +295,19 @@ on the Waveshare drawing the IN column's first hole is 3.60mm from the module's 
 the OUT column's is 1.70mm, so OUT leads IN by 1.90mm. They were initially placed level,
 which would have meant the module physically did not fit.
 
-The resulting module body occupies **x 4.4–37.4, y 24.4–40.4** and that area must stay
+The resulting module body occupies **x 42.4–75.4, y 10.4–26.4** and that area must stay
 clear: the body is drawn on `F.Fab` only, deliberately without a courtyard, so `plan_lint`
-cannot see it. `gen_plan.py` asserts nothing is placed inside it.
+cannot see it. **`gen_plan.py` now hard-asserts** nothing is placed inside it — that assert
+immediately caught three parts (both status LEDs and a resistor) sitting under the module
+after the 140 × 70 reshape, which the placement lint had passed as clean.
+
+### ⚠ Group members and refs are paired by POSITION
+
+`expand_placement` pairs `members[i]` with `refs[i]`. Reordering the member offsets without
+reordering the ref list silently moves parts to each other's slots — doing exactly that put
+`U_SI` in `C_SO`'s position on all three tiles. It surfaced as a courtyard overlap, but only
+because the two happened to collide; a reorder that lands parts somewhere legal would pass
+every check and be wrong.
 
 ### Next: routing
 
