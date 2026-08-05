@@ -37,7 +37,7 @@ XTAL3215 = "Crystal:Crystal_SMD_3215-2Pin_3.2x1.5mm"
 USBC = "Connector_USB:USB_C_Receptacle_USB2.0_16P"
 SWPUSH = "Button_Switch_SMD:SW_SPST_TL3342"
 PINHDR5 = "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical"
-PINHDR2 = "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical"
+PINHDR3 = "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
 BUCK_IN = "rcm:WaveshareBuck_IN_2x2_P3.50mm"
 BUCK_OUT = "rcm:WaveshareBuck_OUT_3x3_P2.54mm"
 KF2P = "rcm:TerminalBlock_KF2EDG-3.5-2P_1x02_P3.50mm_Horizontal"
@@ -90,7 +90,7 @@ C("C_LVS", "Device:C", "100nF", C0805)
 C("C_LSW", "Device:C", "100nF", C0805)
 C("J_IGN", "Connector_Generic:Conn_01x02", "IGN_IN", KF2P)
 C("R_IGH", "Device:R", "1M", R0805)
-C("R_IGL", "Device:R", "220k", R0805)
+C("R_IGL", "Device:R", "270k", R0805)
 
 N("+12V_P", "U_LATCH.15", "C_LVS.1")
 N("+12V_SW", "U_LATCH.8", "U_LATCH.9", "U_LATCH.10",
@@ -129,6 +129,7 @@ C("C_VCAP", "Device:C", "2.2uF", C0805)
 C("C_VDDA", "Device:C", "100nF", C0805)
 C("C_NRST", "Device:C", "100nF", C0805)
 C("R_BOOT", "Device:R", "10k", R0805)
+C("J_BOOT", "Connector_Generic:Conn_01x03", "BOOT_SEL", PINHDR3)
 C("SW_RST", "Switch:SW_Push", "RESET", SWPUSH)
 C("Y1", "Device:Crystal", "8MHz", XTAL5032)
 C("C_Y1A", "Device:C", "20pF", C0805)
@@ -153,7 +154,9 @@ N("GND", "U_MCU.18", "U_MCU.31", "U_MCU.47", "U_MCU.63",
   "C_Y1A.2", "C_Y1B.2", "C_Y2A.2", "C_Y2B.2", "J_SWD.5")
 N("VCAP1", "U_MCU.30", "C_VCAP.1")
 N("NRST", "U_MCU.7", "C_NRST.1", "SW_RST.1", "J_SWD.4")
-N("BOOT0", "U_MCU.60", "R_BOOT.1")
+N("BOOT0", "U_MCU.60", "R_BOOT.1", "J_BOOT.2")
+N("+3V3", "J_BOOT.1")
+N("GND", "J_BOOT.3")
 N("HSE_IN", "U_MCU.5", "Y1.1", "C_Y1A.1")
 N("HSE_OUT", "U_MCU.6", "Y1.2", "C_Y1B.1")
 N("LSE_IN", "U_MCU.3", "Y2.1", "C_Y2A.1")
@@ -198,15 +201,19 @@ C("U_IMU", "Sensor_Motion:BMI160", "BMI270", LGA14)
 C("C_IMU1", "Device:C", "100nF", C0805)
 C("C_IMU2", "Device:C", "100nF", C0805)
 C("R_ADDR", "Device:R", "0R", R0805)
+C("R_ADDR_ALT", "Device:R", "0R", R0805, dnp=True)
+C("R_SDA", "Device:R", "4.7k", R0805)
+C("R_SCL", "Device:R", "4.7k", R0805)
 
 # CSB(12) -> VDDIO selects I2C. Tying it to GND would select SPI mode instead
 # (BST-BMI270-DS000 Table 22, "Connect to ... in I2C" column).
 N("+3V3", "U_IMU.8", "U_IMU.5", "U_IMU.12", "C_IMU1.1", "C_IMU2.1")
 N("GND", "U_IMU.7", "U_IMU.6", "C_IMU1.2", "C_IMU2.2", "R_ADDR.2")
-N("IMU_SDA", "U_IMU.14")                # -> MCU PB7
-N("IMU_SCL", "U_IMU.13")                # -> MCU PB6
+N("IMU_SDA", "U_IMU.14", "R_SDA.2")     # -> MCU PB7
+N("IMU_SCL", "U_IMU.13", "R_SCL.2")     # -> MCU PB6
 N("IMU_INT1", "U_IMU.4")                # -> MCU PB11
-N("IMU_SDO", "U_IMU.1", "R_ADDR.1")     # 0R to GND = default I2C address
+N("IMU_SDO", "U_IMU.1", "R_ADDR.1", "R_ADDR_ALT.1")  # R_ADDR->GND = 0x68
+N("+3V3", "R_SDA.1", "R_SCL.1", "R_ADDR_ALT.2")      # ALT fitted = 0x69
 no_connects += ["U_IMU.2", "U_IMU.3", "U_IMU.9", "U_IMU.10", "U_IMU.11"]
 
 # ---------------------------------------------------------------------------
@@ -267,7 +274,7 @@ for t in range(1, NTILE + 1):
         N("GND", "R_SL%d.2" % ch)
         N("+12V_P", "R_PU%d.2" % ch)
         C("R_SH%d" % ch, "Device:R", "1M", R0805)
-        C("R_SL%d" % ch, "Device:R", "220k", R0805)
+        C("R_SL%d" % ch, "Device:R", "270k", R0805)
         C("R_PU%d" % ch, "Device:R", "100k", R0805, dnp=True)
     # 595 QH (8th output) unused on every tile
     no_connects.append("U_SO%d.%s" % (t, Q595[7]))
@@ -276,7 +283,7 @@ for t in range(1, NTILE + 1):
 C("J_AUX", "Connector_Generic:Conn_01x03", "AUX_IN", KF3P)
 for a in range(1, 4):
     C("R_AH%d" % a, "Device:R", "1M", R0805)
-    C("R_AL%d" % a, "Device:R", "220k", R0805)
+    C("R_AL%d" % a, "Device:R", "270k", R0805)
     N("AUX%d" % a, "J_AUX.%d" % a, "R_AH%d.1" % a)
     N("ASNS%d" % a, "R_AH%d.2" % a, "R_AL%d.1" % a, "U_SI%d.%s" % (a, D165[7]))
     N("GND", "R_AL%d.2" % a)
@@ -341,8 +348,8 @@ PINMAP = {
 for num, (_port, net) in PINMAP.items():
     N(net, "U_MCU.%s" % num)
 
-# PA9(42)/PA10(43) reserved for the optional ESP32-C3 co-processor UART -- the
-# module has no KiCad symbol yet, so they are NC in this pass, not wired.
+# PA9(42)/PA10(43): the ESP32-C3 co-processor was DROPPED (user, 2026-08-05).
+# They are ordinary spare GPIO (USART1-capable if ever wanted).
 no_connects += ["U_MCU.42", "U_MCU.43"]
 
 single = [k for k, v in nets.items() if len(set(v)) < 2]

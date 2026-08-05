@@ -95,7 +95,7 @@
   {
    "ref": "R_IGL",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -199,6 +199,12 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
+  },
+  {
+   "ref": "J_BOOT",
+   "lib": "Connector_Generic:Conn_01x03",
+   "value": "BOOT_SEL",
+   "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
   },
   {
    "ref": "SW_RST",
@@ -346,6 +352,25 @@
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
+   "ref": "R_ADDR_ALT",
+   "lib": "Device:R",
+   "value": "0R",
+   "footprint": "Resistor_SMD:R_0805_2012Metric",
+   "dnp": true
+  },
+  {
+   "ref": "R_SDA",
+   "lib": "Device:R",
+   "value": "4.7k",
+   "footprint": "Resistor_SMD:R_0805_2012Metric"
+  },
+  {
+   "ref": "R_SCL",
+   "lib": "Device:R",
+   "value": "4.7k",
+   "footprint": "Resistor_SMD:R_0805_2012Metric"
+  },
+  {
    "ref": "R_OE",
    "lib": "Device:R",
    "value": "10k",
@@ -444,7 +469,7 @@
   {
    "ref": "R_SL1",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -463,7 +488,7 @@
   {
    "ref": "R_SL2",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -482,7 +507,7 @@
   {
    "ref": "R_SL3",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -501,7 +526,7 @@
   {
    "ref": "R_SL4",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -520,7 +545,7 @@
   {
    "ref": "R_SL5",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -539,7 +564,7 @@
   {
    "ref": "R_SL6",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -558,7 +583,7 @@
   {
    "ref": "R_SL7",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -589,7 +614,7 @@
   {
    "ref": "R_SL8",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -608,7 +633,7 @@
   {
    "ref": "R_SL9",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -627,7 +652,7 @@
   {
    "ref": "R_SL10",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -646,7 +671,7 @@
   {
    "ref": "R_SL11",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -665,7 +690,7 @@
   {
    "ref": "R_SL12",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -684,7 +709,7 @@
   {
    "ref": "R_SL13",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -703,7 +728,7 @@
   {
    "ref": "R_SL14",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -734,7 +759,7 @@
   {
    "ref": "R_SL15",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -753,7 +778,7 @@
   {
    "ref": "R_SL16",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -772,7 +797,7 @@
   {
    "ref": "R_SL17",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -791,7 +816,7 @@
   {
    "ref": "R_SL18",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -810,7 +835,7 @@
   {
    "ref": "R_SL19",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -829,7 +854,7 @@
   {
    "ref": "R_SL20",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -848,7 +873,7 @@
   {
    "ref": "R_SL21",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -873,7 +898,7 @@
   {
    "ref": "R_AL1",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -885,7 +910,7 @@
   {
    "ref": "R_AL2",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -897,7 +922,7 @@
   {
    "ref": "R_AL3",
    "lib": "Device:R",
-   "value": "220k",
+   "value": "270k",
    "footprint": "Resistor_SMD:R_0805_2012Metric"
   },
   {
@@ -1015,8 +1040,12 @@
     "C_SO2.1",
     "C_SO3.1",
     "C_VDDA.1",
+    "J_BOOT.1",
     "J_SWD.1",
+    "R_ADDR_ALT.2",
     "R_OE.1",
+    "R_SCL.1",
+    "R_SDA.1",
     "U_CAN.3",
     "U_EEP.3",
     "U_EEP.7",
@@ -1098,6 +1127,7 @@
   {
    "name": "BOOT0",
    "pins": [
+    "J_BOOT.2",
     "R_BOOT.1",
     "U_MCU.60"
    ]
@@ -1552,6 +1582,7 @@
     "D_LED2.1",
     "JB1.2",
     "JB2.2",
+    "J_BOOT.3",
     "J_CAN1.3",
     "J_CAN2.3",
     "J_IGN.2",
@@ -1655,6 +1686,7 @@
   {
    "name": "IMU_SCL",
    "pins": [
+    "R_SCL.2",
     "U_IMU.13",
     "U_MCU.58"
    ]
@@ -1662,6 +1694,7 @@
   {
    "name": "IMU_SDA",
    "pins": [
+    "R_SDA.2",
     "U_IMU.14",
     "U_MCU.59"
    ]
@@ -1670,6 +1703,7 @@
    "name": "IMU_SDO",
    "pins": [
     "R_ADDR.1",
+    "R_ADDR_ALT.1",
     "U_IMU.1"
    ]
   },

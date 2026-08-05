@@ -91,7 +91,8 @@ module stay at its default, and costs little now that SIM7600 is gone: the 3V3 l
 - `Y1` 8MHz HSE + 2× 20pF — matches joesbox's stock `RCC_HSE_ON`, PLLM=8
 - `Y2` 32.768kHz LSE + 2× 12pF. **No backup cell** (`VBAT`→`+3V3`) — time lost each park.
   With microSD gone this no longer gates logging, so it is now harmless
-- BOOT0 10k pulldown + jumper; NRST 100nF + reset switch
+- BOOT0 10k pulldown + **`J_BOOT` 1×03 select header** (3V3 / BOOT0 / GND) so USB DFU is
+  reachable without cutting a track; NRST 100nF + reset switch
 - `J_SWD` 1×05 (3V3, SWDIO, SWCLK, NRST, GND); 2× status LED
 
 ## Block 5 — CAN
@@ -108,7 +109,14 @@ GND on CAN is a **signal reference** (transceiver common-mode range), not power.
 ## Block 6 — IMU
 
 `U_IMU` = **BMI270**, symbol `Sensor_Motion:BMI160` (pinout verified identical), LGA-14,
-I2C, address-select 0R jumper, decoupling on VDD and VDDIO.
+I2C, decoupling on VDD and VDDIO.
+
+- **`CSB`(12) → `+3V3`.** Tying it to GND selects SPI mode (BST-BMI270 Table 22).
+- **Address strap, mirroring revB:** `R_ADDR` 0R fitted (SDO→GND) = **0x68**;
+  `R_ADDR_ALT` 0R DNP (SDO→+3V3) = 0x69. Do not leave both off — SDO has no internal
+  pull (the datasheet's 75–140k internal pull-up is on `CSB`, not SDO).
+- **`R_SDA`/`R_SCL` 4.7k pull-ups to `+3V3` are required.** The datasheet's "no external
+  pull-ups needed" line refers to the *auxiliary* interface only.
 
 ## Block 7 — Shift-register chains
 
@@ -157,7 +165,7 @@ this is what the keypad already did. `COM` is upstream of the latch so it is alw
 |---|---|---|
 | USB-C | HRO TYPE-C-31-M-12, 2× 5.1k CC, ESD | keep |
 | EEPROM | 25LC640 (SOIC-8), SPI | keep |
-| ESP32-C3 co-proc | ESP32-C3-MINI-1-N4 + UART + strapping | optional, footprint only |
+| ~~ESP32-C3 co-proc~~ | — | **DROPPED 2026-08-05.** PA9/PA10 are ordinary spare GPIO |
 | ~~microSD~~ | — | **DROPPED 2026-08-05** |
 | ~~SIM7600 header~~ | — | **DROPPED 2026-08-05** |
 
@@ -191,7 +199,7 @@ Fold changes into the generator.
 
 | | |
 |---|---|
-| Components | **150** |
+| Components | **154** |
 | Nets | **123** |
 | ERC | **0 errors** |
 | Netlist round-trip | **MATCH** |
@@ -212,10 +220,21 @@ Fold changes into the generator.
 ERC-clean and round-trip MATCH only prove the netlist is self-consistent, not correct —
 all four of the above passed both before being found by hand-review against datasheets.
 
-### Deferred to the next pass
+### Second review pass, before PCB (2026-08-05)
 
-- **ESP32-C3 co-processor**: no KiCad symbol for `ESP32-C3-MINI-1`; `ESP32-C3-WROOM-02`
-  exists if that module is acceptable instead. PA9/PA10 (USART1) are reserved and NC.
+Three more issues found by reviewing the generated netlist against datasheets — again, all
+of them ERC-clean:
+
+5. **No I²C pull-ups at all.** `R_SDA`/`R_SCL` 4.7k added. revB has these (R9/R10); this
+   schematic simply lacked them, and the IMU would never have responded.
+6. **Sense divider failed `VIH` at rest voltage** — see block 8. 220k → 270k.
+7. **No way to reach USB DFU** — BOOT0 was pulled down with no jumper. `J_BOOT` added.
+
+**revB was checked for the same IMU faults and is CORRECT on both counts**: `CSB` → `+3V3`,
+and R57 (0R, fitted) pulls SDO to GND for 0x68 with R58 (DNP) as the 0x69 alternate.
+
+### Deferred / accepted
+
 - **`USB_VBUS` is not sensed** — fine for a self-powered device doing DFU, but there is no
   VBUS-detect path.
 - **`R_RS` = 10k** puts the CAN transceiver in slope-control mode; change to 0R for
