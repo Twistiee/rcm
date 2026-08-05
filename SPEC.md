@@ -314,7 +314,16 @@ somewhere legal would pass every check and still be wrong.
 `gen_plan.py` now defines the tile as a list of `(dx, dy, rot, ref-template)` tuples and
 derives both lists from it, so the offset and its ref cannot drift apart.
 
-### Connectors and mounting holes
+### Status LEDs and mounting holes — both settled 2026-08-05
+
+Status LEDs sit **beside `J_PWR`** on the north edge (user's call), on the understanding
+they will probably end up covered anyway.
+
+Mounting holes stay in the corners: **the button panel is being 3D-printed after this board
+and will be made to suit it**, so the board drives the panel's fixing pattern rather than
+the other way round. No enclosure constraint to wait on.
+
+### Connectors
 
 Both groups of terminals are **centred on their edge**, and the four mounting holes are at
 the **corners** (5,5 / 135,5 / 5,65 / 135,65) — the centred connectors are what freed the
