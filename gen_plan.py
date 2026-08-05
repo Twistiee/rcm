@@ -134,22 +134,27 @@ P("R_LED2", 28.0, 9.0, 0)
 # --- MCU, centre-east under the terminals ---
 MX, MY = 85.0, 24.0
 P("U_MCU", MX, MY, 0)
-P("Y1", MX - 16.0, MY - 4.0, 0)
-P("C_Y1A", MX - 20.0, MY - 8.0, 0)
-P("C_Y1B", MX - 20.0, MY + 0.5, 0)
-P("Y2", MX + 14.0, MY - 1.0, 0)
-P("C_Y2A", MX + 19.0, MY - 2.5, 0)
-P("C_Y2B", 93.5, 32.0, 0)
+# Both crystals belong on the MCU's WEST edge, where their pins are:
+#   PC14/PC15 (LSE) at y 22.09/23.36, PH0/PH1 (HSE) at y 24.64/25.91, all at x=82.53.
+# They were previously at x=69 and x=99 -- 14mm and 20mm away, with the LSE on the
+# wrong side of the chip entirely. C_VCAP/C_VDDA were occupying the space and have
+# moved south of the MCU.
+P("Y2", 76.0, 21.0, 90)          # LSE 32.768kHz, beside PC14/PC15
+P("C_Y2A", 71.0, 19.5, 0)
+P("C_Y2B", 71.0, 22.5, 0)
+P("Y1", 76.0, 27.0, 90)          # HSE 8MHz, beside PH0/PH1
+P("C_Y1A", 71.0, 25.5, 0)
+P("C_VCAP", MX + 3.0, MY + 9.0, 0)
+P("C_VDDA", MX - 3.0, MY + 9.0, 0)
+P("C_NRST", MX + 10.5, MY - 2.0, 90)
 for i, dx in enumerate([-11.0, -6.0, 3.0, 7.0, 11.0]):
     P("C_M%d" % (i + 1), MX + dx, MY - 8.5, 0)   # gap left at MX-1.75 so BOOT0 can
                                                  # escape pad 60 straight north
-P("C_MB", 96.0, 29.0, 0)
-P("C_VCAP", MX - 10.5, MY - 2.0, 90)
-P("C_VDDA", MX - 10.5, MY + 2.0, 90)
-P("C_NRST", MX + 10.5, MY - 2.0, 90)
 P("R_BOOT", MX - 1.75, MY - 8.5, 90)
+P("C_MB", MX + 16.0, MY - 4.0, 0)
+P("C_Y1B", 66.0, 28.5, 0)
 P("J_SWD", 64.0, 34.0, 90)
-P("J_BOOT", 64.0, 30.0, 90)
+P("J_BOOT", 56.5, 30.0, 90)
 
 # --- far east: CAN, IMU, EEPROM, USB, aux dividers ---
 P("R_AH1", 61.0, 11.0, 90)

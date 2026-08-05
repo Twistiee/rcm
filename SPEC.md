@@ -472,3 +472,46 @@ so the board was NOT regenerated, which would have wiped the routing.
   toggle twice.
 - **Each button costs TWO channels** — one input for the contact, one output for its LED. So
   8 buttons uses 16 of the 21, leaving 5 spare.
+
+
+## Crystal placement corrected (2026-08-06)
+
+Both crystals were on the wrong part of the board and nothing flagged it — they were
+legally placed and fully routed the whole time.
+
+`U_MCU` pin positions, read off the placed board: **PC14/PC15 (LSE) at (82.53, 22.09/23.36)
+and PH0/PH1 (HSE) at (82.53, 24.64/25.91)** — all four on the chip's WEST edge.
+
+| | was | now |
+|---|---|---|
+| `Y1` 8MHz HSE | x=69, **14mm** from its pins | (76, 27), **6.8mm** |
+| `Y2` 32.768kHz LSE | x=99 — **the wrong side of the chip**, 20mm | (76, 21), **6.8mm** |
+
+`C_VCAP`/`C_VDDA` moved south of the MCU to free that edge. The last blocker was `J_BOOT`,
+a 3-pin jumper with no placement constraints at all — several attempts went into fitting a
+capacitor around it before moving the jumper solved it instantly. **Check whether the thing
+in the way is the thing that has to stay.**
+
+## Freerouting: stochastic or deterministic? COMPARE, do not assume
+
+Both happen, and they need opposite responses:
+
+| Net | Symptom | Verdict |
+|---|---|---|
+| `BOOT0` | 3 runs, **byte-identical** stub and score | **deterministic** — real geometry (0.6mm escape slot). Retrying was useless |
+| `LATCH_GND` | 2 runs, **different** result and score | **stochastic** — second run routed it |
+
+The test is one re-run and a comparison of the numbers. Assuming either way has already cost
+time in both directions on this board.
+
+## Final routed state
+
+| | |
+|---|---|
+| Nets routed | **414 / 414** |
+| Unconnected | **0** |
+| DRC errors | **0** |
+| Warnings | 103, all silkscreen |
+
+Placement is DONE. Remaining: silkscreen pass, 3D models for the locally-generated
+footprints (needed before the panel is designed), then the manufacturing package.
