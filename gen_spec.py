@@ -242,11 +242,15 @@ for t in range(1, NTILE + 1):
     N("SR_PL", si + ".1")
     no_connects.append(si + ".7")        # ~Q7 unused
 
-# 595 daisy chain: MOSI -> SO1.SER, SO1.QH' -> SO2.SER, ...
-N("SR_MOSI", "U_SO1.14")
-N("SR_CH12", "U_SO1.9", "U_SO2.14")
-N("SR_CH23", "U_SO2.9", "U_SO3.14")
-no_connects.append("U_SO3.9")
+# 595 daisy chain, EAST to WEST: MOSI enters at U_SO3, the tile physically nearest
+# the MCU, and ripples away from it. Chaining the other way made MOSI a ~74mm haul
+# across the whole board to the far tile before doubling back.
+# Firmware note: this sets the bit order -- the FIRST byte shifted out ends up in
+# U_SO1 (channels 1-7), the last in U_SO3 (channels 15-21).
+N("SR_MOSI", "U_SO3.14")
+N("SR_CH32", "U_SO3.9", "U_SO2.14")
+N("SR_CH21", "U_SO2.9", "U_SO1.14")
+no_connects.append("U_SO1.9")
 # 165 daisy chain: SI1.DS=GND, SI1.Q7->SI2.DS, ..., SI3.Q7 -> MISO
 N("GND", "U_SI1.10")
 N("SR_DI12", "U_SI1.9", "U_SI2.10")

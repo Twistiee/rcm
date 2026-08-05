@@ -634,8 +634,8 @@
    "lib": "MountingHole",
    "name": "MountingHole_3.2mm_M3",
    "at": [
-    3.5,
-    35.0,
+    5.0,
+    33.0,
     0
    ],
    "exclude_bom": true
@@ -645,7 +645,7 @@
    "lib": "MountingHole",
    "name": "MountingHole_3.2mm_M3",
    "at": [
-    136.0,
+    135.0,
     45.0,
     0
    ],
@@ -657,7 +657,7 @@
    "name": "MountingHole_3.2mm_M3",
    "at": [
     43.5,
-    66.0,
+    62.5,
     0
    ],
    "exclude_bom": true
@@ -668,7 +668,7 @@
    "name": "MountingHole_3.2mm_M3",
    "at": [
     87.5,
-    66.0,
+    62.5,
     0
    ],
    "exclude_bom": true

@@ -192,7 +192,7 @@ plan = {
         {"ref": "H%d" % i, "lib": "MountingHole",
          "name": "MountingHole_3.2mm_M3", "at": at, "exclude_bom": True}
         for i, at in enumerate(
-            [[3.5, 35.0, 0], [136.0, 45.0, 0], [43.5, 66.0, 0], [87.5, 66.0, 0]], 1)
+            [[5.0, 33.0, 0], [135.0, 45.0, 0], [43.5, 62.5, 0], [87.5, 62.5, 0]], 1)
     ],
     "grid_start": [5.0, 55.0],
 }
