@@ -423,15 +423,80 @@ Four constraints:
 Side effect to be aware of: with the coil on the fused node, a blown fuse drops its own
 relay out immediately. Probably a safety plus, but it is a behaviour change.
 
+## MCU: STM32F446RET6, LQFP-64 (decided 2026-08-05)
+
+Same silicon as revB, quarter the area of its ZET6. The user asked whether reusing revB's
+chip was worth it "if more capable and roughly the same cost" — both true, but **the cost
+that matters here is area, not dollars**: LQFP-144 is 20×20mm = 400mm², ~5% of an ~80cm²
+board, plus ~11 VDD decoupling caps and heavy fanout, and it buys nothing because the shift
+registers already absorb the I/O. The RET6 is 10×10mm at $4.93.
+
+Why the F446 family over the G431 otherwise preferred:
+
+- **SDIO.** Confirmed present on the die (CMSIS header: `CAN1`, `CAN2`, `USB_OTG_FS`,
+  `SDIO`). G431 has none — SD would be SPI-mode only. Keeps microSD cheap while it survives.
+- **USB and CAN coexist.** This rules out the F103 floated earlier at $1.04: on F103 they
+  **share the same SRAM buffer and are mutually exclusive**, and USB-C is on the keep-list.
+- Butchering joesbox's firmware becomes a pin remap rather than a port.
+
+⚠ Verify against DS10693 before drawing that LQFP-64 breaks out USB OTG FS, CAN *and* SDIO
+without conflict; fallback is **F446VET6** (LQFP-100, 14×14mm).
+
+## Latch part: BTS7040, not BTS7008 (asked and checked 2026-08-05)
+
+User suggested a BTS7008 on the grounds that tiny current means no heating and therefore no
+heavy pours. The goal is right; the swap is not needed, and the part ordering runs the other
+way.
+
+**The digits are roughly Rds(on) in mΩ** — BTS7002 = 2mΩ/21A, BTS7008 = 8mΩ/11A,
+BTS7040 = 40mΩ/4.5A. Lower number = beefier. 7040 → 7008 is moving *up*.
+
+The latch feeds only the buck (coil current comes from the fuse box), so it carries
+~65–165mA:
+
+| | dissipation @165mA |
+|---|---:|
+| BTS7040 (~40mΩ, ~60mΩ hot) | **1.6 mW** |
+| BTS7008 (~8mΩ) | 0.3 mW |
+
+1.6mW in a TSDSO-14 is a couple of degrees — **no pour needed either way, 2-layer is safe**.
+Prices are a wash ($0.867 vs $0.924). Keeping the 7040 because revB proved this exact
+circuit with that part's `IN` thresholds and divider values; swapping means re-verifying
+them for zero gain.
+
+## Feature priority (user, 2026-08-05)
+
+Keep-order: **IMU (non-negotiable) > ignition latch > USB-C > EEPROM**. microSD and SIM7600
+are lower value — but the user's call is to **design them in now and delete later if space
+demands**, on the principle that simplifying is easier than adding.
+
+Endorsed, with one practical condition: the droppable blocks go in a **physically separable
+corner** so deletion does not ripple through the floorplan. Note microSD is not free even
+when fitted — it drags back the no-RTC logging problem, since there is no backup cell.
+
+The latch **cannot** be built from a `TPL7407L` channel, as asked: the latch switches the
++12V feed to the buck, which is high-side, and a sink can only pull a P-FET gate — which is
+exactly revB's deleted `Q3` bug (source on +12V_P, gate to ground = full rail across Vgs,
+−14.4V against ±12V abs max). Use the PROFET; its `IN` is ground-referenced so the problem
+does not exist.
+
+## Commons come from the loom (user, 2026-08-05)
+
+Confirmed: the board is an **earth-switching and sensing mechanism**. Coil+ comes from the
+fused terminal in the box; keypad LED+ comes from the loom at the button. No +12V
+distribution terminals.
+
+**One exception: GND stays on the CAN connector.** That is a signal reference, not power —
+CAN transceivers' common-mode range depends on nodes sharing a ground. Spare GND positions
+for switch returns are optional: at 12µA through a 1M divider, a 0.5V chassis-ground offset
+maps to ~0.09V at the logic pin, so chassis-grounding switches is fine.
+
 ## Open decisions
 
-1. **Which STM32.** Needs CAN, ~6 pins for the register chains, I2C/SPI for the IMU, SWD.
-   Almost anything qualifies — pick on toolchain preference.
-2. **Which revB features survive** — microSD logging, USB-C, EEPROM config store, SIM7600
-   COMMS header, ignition latch. At this firmware scope most are candidates to drop, and at
-   qty 1 each one also carries unique-part fees.
-3. **Coil supply commons** — whether the board distributes +12V for keypad-role LED+ and
-   switch returns, or those come from the loom. Affects the west-edge terminal count.
+1. **`TPL7407L` input pulldowns** — whether the part defines its inputs internally while the
+   `74HC595` outputs are Hi-Z at power-on. Determines whether 21 pulldowns are needed to stop
+   relays clacking at boot. See `SPEC.md` block 7; verify against the datasheet.
+2. **LQFP-64 pinout** — USB/CAN/SDIO coexistence, above.
 
 ### Settled
 
@@ -449,7 +514,9 @@ relay out immediately. Probably a safety plus, but it is a behaviour change.
 - **Phone-as-key uses NFC, not BLE** (user is on Android) — still a separate node.
 - **Connectors: `KF2EDG` 3.5mm pluggable**, multiple edges.
 - **Buck: Waveshare DC5-36-TO-DC3V3-5** from revB (not the keypad's WeAct), socketed.
-- **MCU: an STM32, plus an optional `ESP32-C3-MINI-1` co-processor footprint.**
+- **MCU: STM32F446RET6** (LQFP-64), plus an optional `ESP32-C3-MINI-1` co-processor.
+- **Latch: one `BTS7040-1EPA`**, revB's circuit verbatim, driven by a DIRECT MCU GPIO.
+- **Commons from the loom**; only CAN keeps a GND pin.
 - **Phone-as-key: separate future node**, not this board.
 
 ### Relay box — no longer a gating unknown
