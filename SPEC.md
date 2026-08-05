@@ -275,12 +275,12 @@ Fold changes into `gen_plan.py`.
 2 rows of 4 at 35mm each = **140 × 70mm**. That is 98cm² against the earlier 100 × 100mm
 draft's 100cm² — the same area reshaped, not a resize, so nothing was given up for it.
 
-- **South half**: the three identical 7-channel tiles, anchored at x = 7 / 51 / 95,
-  terminals on the south edge at y = 65. Each tile is defined **once** as a group of 27
+- **South half**: the three identical 7-channel tiles, anchored at x = 21.5 / 59.5 / 97.5,
+  terminals on the south edge at y = 65 and **centred as a group on that edge**. Each tile is defined **once** as a group of 27
   members and instantiated three times — 81 of the 154 parts come from that one definition.
-  To fit 70mm the driver, both shift registers and their decoupling sit in **one row**
-  rather than a column: 31mm of tile height instead of 46mm, spending width the wider
-  board now has.
+  The driver and both shift registers sit **beside** the resistor block rather than in a
+  row above it (user, 2026-08-05) — the registers are what those resistors actually talk
+  to, so they now sit next to their own signals instead of a tile-width away.
 - **North half** (y 0–36): power entry + latch on the left, buck module centre-left,
   MCU centre-east, CAN / IMU / EEPROM / USB / aux far east.
 - All terminals sit on an edge with wire entry pointing **off** the board — south at rot 0,
@@ -301,13 +301,22 @@ cannot see it. **`gen_plan.py` now hard-asserts** nothing is placed inside it �
 immediately caught three parts (both status LEDs and a resistor) sitting under the module
 after the 140 × 70 reshape, which the placement lint had passed as clean.
 
-### ⚠ Group members and refs are paired by POSITION
+### ⚠ Group members and refs are paired by POSITION — now structurally prevented
 
-`expand_placement` pairs `members[i]` with `refs[i]`. Reordering the member offsets without
-reordering the ref list silently moves parts to each other's slots — doing exactly that put
-`U_SI` in `C_SO`'s position on all three tiles. It surfaced as a courtyard overlap, but only
-because the two happened to collide; a reorder that lands parts somewhere legal would pass
-every check and be wrong.
+`expand_placement` pairs `members[i]` with `refs[i]`, so reordering the offsets without
+reordering the ref list silently moves parts into each other's slots. That happened **twice**
+during this layout (once putting `U_SI` in `C_SO`'s position on all three tiles), and both
+times it only surfaced because the two parts happened to collide — a reorder landing
+somewhere legal would pass every check and still be wrong.
+
+`gen_plan.py` now defines the tile as a list of `(dx, dy, rot, ref-template)` tuples and
+derives both lists from it, so the offset and its ref cannot drift apart.
+
+### Connectors and mounting holes
+
+Both groups of terminals are **centred on their edge**, and the four mounting holes are at
+the **corners** (5,5 / 135,5 / 5,65 / 135,65) — the centred connectors are what freed the
+corners up. Holes clear the board edge by 5mm, enough for an M3 washer.
 
 ### Next: routing
 

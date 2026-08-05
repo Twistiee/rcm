@@ -25,8 +25,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 BOARD_W, BOARD_H = 140.0, 70.0   # = the button panel: 4 x 2 cells of 35mm
 PITCH = 3.5              # terminal pole pitch, and the channel column pitch
-TILE_PITCH = 44.0        # x distance between tile anchors
-TILE_X0 = 7.0            # x of tile 1 pin 1
+TILE_PITCH = 38.0        # x distance between tile anchors
+TILE_X0 = 21.5           # x of tile 1 pin 1 (centres the 3 terminals)
 TILE_Y = 65.0            # y of the channel terminal pin row (south edge)
 
 placement = {}
@@ -43,35 +43,37 @@ def P(ref, x, y, rot=0):
 # Offsets are relative to the tile anchor (= J_CH pin 1). Negative Y is toward
 # the middle of the board, since the terminals are on the south edge.
 # ---------------------------------------------------------------------------
-members = []
+# Members are (dx, dy, rot, ref-template) tuples so the offset and the ref it belongs
+# to can never drift apart. expand_placement pairs members[i] with refs[i] positionally,
+# and keeping those as two separate lists silently swapped parts into each other's slots
+# twice during this layout -- both times it only surfaced because the two happened to
+# collide. A reorder that landed somewhere legal would have passed every check.
+TILE = [
+    (0.0, 0.0, 0, "J_CH%d"),
+]
+for _k in range(7):
+    _dx = _k * PITCH
+    TILE.append((_dx, -8.0, 90, "R_SH{ch%d}" % _k))
+    TILE.append((_dx, -12.5, 90, "R_SL{ch%d}" % _k))
+    TILE.append((_dx, -17.0, 90, "R_PU{ch%d}" % _k))
+TILE += [
+    (27.5, -6.0, 0, "U_DRV%d"),     # driver, next to the terminal it feeds
+    (27.0, -16.0, 0, "U_SO%d"),     # shift registers stacked BESIDE the resistors
+    (27.0, -28.0, 0, "U_SI%d"),
+    (33.0, -9.0, 90, "C_SO%d"),
+    (33.0, -25.0, 90, "C_SI%d"),
+]
+
+members = [(m[0], m[1], m[2]) for m in TILE]
 refs_for = [[], [], []]
-
-members.append((0.0, 0.0, 0))                     # J_CH
 for t in range(3):
-    refs_for[t].append("J_CH%d" % (t + 1))
-
-for k in range(7):
-    dx = k * PITCH
-    for row, prefix in ((-8.0, "R_SH"), (-12.5, "R_SL"), (-17.0, "R_PU")):
-        members.append((dx, row, 90))             # 0805 stood vertical: 1.85mm
-        for t in range(3):                        # wide, so it fits the 3.5mm
-            ch = t * 7 + k + 1                    # column pitch with margin
-            refs_for[t].append("%s%d" % (prefix, ch))
-
-# Driver and both shift registers side by side in one row. This is what makes the
-# tile fit a 70mm-tall board: 34mm tall instead of 46mm, using width we now have.
-# Driver, both shift registers and their decoupling all in ONE row. This is what
-# makes the tile fit a 70mm-tall board: 31mm tall instead of 46mm, spending the
-# width the 140mm board now has.
-members.append((3.0, -25.0, 0))                   # U_DRV (TSSOP-16)
-members.append((13.0, -25.0, 90))                 # U_SO  (SOIC-16 side-on, 10x6)
-members.append((19.5, -25.0, 90))                 # C_SO decoupling
-members.append((26.0, -25.0, 90))                 # U_SI
-members.append((32.8, -25.0, 90))                 # C_SI decoupling
-for t in range(3):
-    n = t + 1
-    refs_for[t] += ["U_DRV%d" % n, "U_SO%d" % n, "C_SO%d" % n,
-                    "U_SI%d" % n, "C_SI%d" % n]
+    for m in TILE:
+        tmpl = m[3]
+        if "{ch" in tmpl:
+            k = int(tmpl.split("{ch")[1].split("}")[0])
+            refs_for[t].append(tmpl.split("{")[0] + str(t * 7 + k + 1))
+        else:
+            refs_for[t].append(tmpl % (t + 1))
 
 groups.append({
     "members": [list(m) for m in members],
@@ -87,93 +89,92 @@ groups.append({
 # The Waveshare buck's BODY is 33 x 16mm spanning JB1..JB2 and is drawn on F.Fab.
 # Nothing may sit under it, so the LDO row goes BELOW y=44, not beside the buck.
 # ---------------------------------------------------------------------------
-P("J_PWR", 10.0, 5.0, 180)
-P("J_IGN", 22.0, 5.0, 180)
-P("F1", 6.0, 13.0, 90)
-P("D1", 10.0, 13.0, 90)
-P("D2", 14.0, 13.0, 90)
-P("C_BULK", 18.0, 13.0, 90)
+# North-edge terminals, centred as a group on that edge (rot 180, so the body runs
+# from anchor-5.25 for a 2P / anchor-8.75 for a 3P, out to anchor+1.75).
+P("J_PWR", 36.5, 5.0, 180)
+P("J_IGN", 51.5, 5.0, 180)
+P("J_AUX", 70.0, 5.0, 180)
+P("J_CAN1", 88.5, 5.0, 180)
+P("J_CAN2", 107.0, 5.0, 180)
 
-P("U_LATCH", 30.0, 13.0, 0)
-P("R_IGH", 22.0, 20.0, 0)
-P("R_LG", 26.0, 20.0, 0)
-P("R_LPD", 30.0, 20.0, 0)
-P("R_LIGN", 34.0, 20.0, 0)
-P("R_IGL", 22.0, 24.0, 0)
-P("R_LHOLD", 26.0, 24.0, 0)
-P("C_LVS", 30.0, 24.0, 0)
-P("C_LSW", 34.0, 24.0, 0)
+# --- north-west: protection + latch, under the free corner ---
+P("F1", 6.0, 14.0, 90)
+P("D1", 10.0, 14.0, 90)
+P("D2", 14.0, 14.0, 90)
+P("C_BULK", 18.0, 14.0, 90)
+P("U_LATCH", 12.0, 22.0, 0)
+P("R_IGH", 5.0, 29.0, 0)
+P("R_LG", 9.0, 29.0, 0)
+P("R_LPD", 13.0, 29.0, 0)
+P("R_LIGN", 17.0, 29.0, 0)
+P("R_IGL", 5.0, 34.5, 0)
+P("R_LHOLD", 9.0, 34.5, 0)
+P("C_LVS", 13.0, 34.5, 0)
+P("C_LSW", 17.0, 34.5, 0)
 
-# Waveshare buck: columns 27.80mm apart in X, offset 1.90mm in Y (IN's first hole
-# is 3.60mm from the module edge, OUT's is 1.70mm). Body lands x 42.4..75.4,
-# y 10.4..26.4 and must stay clear -- it is F.Fab only, invisible to plan_lint.
-BUCK_X, BUCK_Y = 46.0, 14.0
+# --- buck: columns 27.80mm apart in X, offset 1.90mm in Y. Body x 26..59, y 12..28 ---
+BUCK_X, BUCK_Y = 29.6, 15.6
 P("JB1", BUCK_X, BUCK_Y, 0)
 P("JB2", BUCK_X + 27.8, BUCK_Y - 1.9, 0)
-P("U_LDO", 46.0, 32.0, 0)
-P("C_5V", 53.0, 32.0, 90)
-P("C_3V3I", 57.0, 32.0, 90)
-P("C_3V3O", 61.0, 32.0, 90)
+P("U_LDO", 28.0, 31.0, 0)
+P("C_5V", 35.0, 31.0, 90)
+P("C_3V3I", 39.0, 31.0, 90)
+P("C_3V3O", 43.0, 31.0, 90)
+P("SW_RST", 57.5, 30.5, 0)
+P("D_LED1", 75.0, 29.0, 0)
+P("R_LED1", 75.0, 32.5, 0)
+P("D_LED2", 80.0, 29.0, 0)
+P("R_LED2", 80.0, 32.5, 0)
 
-# --- MCU, centre-east ---
-MX, MY = 94.0, 24.0
+# --- MCU, centre-east under the terminals ---
+MX, MY = 80.0, 19.0
 P("U_MCU", MX, MY, 0)
-P("Y1", MX - 6.0, 12.0, 0)
-P("C_Y1A", MX - 12.0, 10.5, 90)
-P("C_Y1B", MX - 12.0, 14.0, 90)
-P("Y2", MX + 6.0, 12.0, 0)
-P("C_Y2A", MX + 12.0, 10.5, 90)
-P("C_Y2B", MX + 12.0, 14.0, 90)
+P("Y1", MX - 16.0, MY - 4.0, 0)
+P("C_Y1A", MX - 16.0, MY - 8.5, 0)
+P("C_Y1B", MX - 16.0, MY + 0.5, 0)
+P("Y2", MX + 16.0, MY - 4.0, 0)
+P("C_Y2A", MX + 16.0, MY - 8.5, 0)
+P("C_Y2B", MX + 16.0, MY + 0.5, 0)
 for i, ref in enumerate(["C_M1", "C_M2", "C_M3", "C_M4", "C_M5"]):
-    P(ref, MX - 8.0 + i * 4.0, MY + 10.0, 0)
-P("C_MB", MX - 12.0, MY + 10.0, 0)
-P("C_VCAP", MX - 10.0, MY - 2.0, 90)
-P("C_VDDA", MX - 10.0, MY + 2.0, 90)
-P("C_NRST", MX + 10.0, MY - 2.0, 90)
-P("R_BOOT", MX + 10.0, MY + 2.0, 90)
+    P(ref, MX - 8.0 + i * 4.0, MY - 8.5, 0)   # above the MCU, under the terminals
+P("C_MB", 96.0, 29.0, 0)
+P("C_VCAP", MX - 10.5, MY - 2.0, 90)
+P("C_VDDA", MX - 10.5, MY + 2.0, 90)
+P("C_NRST", MX + 10.5, MY - 2.0, 90)
+P("R_BOOT", MX + 10.5, MY + 2.0, 90)
+P("J_SWD", 66.0, 30.0, 0)
+P("J_BOOT", 71.0, 30.0, 0)
 
-P("J_SWD", 66.0, 34.0, 90)
-P("J_BOOT", 66.0, 28.0, 90)
-P("SW_RST", 14.0, 32.0, 0)
-P("D_LED1", 22.0, 32.0, 0)
-P("R_LED1", 26.0, 32.0, 0)
-P("D_LED2", 31.0, 32.0, 0)
-P("R_LED2", 35.0, 32.0, 0)
+# --- far east: CAN, IMU, EEPROM, USB, aux dividers ---
+P("R_AH1", 99.0, 12.0, 90)
+P("R_AH2", 103.0, 12.0, 90)
+P("R_AH3", 107.0, 12.0, 90)
+P("R_AL1", 99.0, 16.0, 90)
+P("R_AL2", 103.0, 16.0, 90)
+P("R_AL3", 107.0, 16.0, 90)
 
-# --- CAN / IMU / EEPROM / USB / aux, far east ---
-P("J_AUX", 104.0, 5.0, 180)
-P("J_CAN1", 117.0, 5.0, 180)
-P("J_CAN2", 130.0, 5.0, 180)
+P("U_CAN", 116.0, 13.0, 0)
+P("C_CAN", 122.0, 13.0, 90)
+P("R_TERM", 114.0, 19.0, 0)
+P("R_TJ", 118.0, 19.0, 0)
+P("R_RS", 122.0, 19.0, 0)
+P("D_CAN", 126.0, 19.0, 0)
 
-P("R_AH1", 108.0, 11.0, 90)
-P("R_AH2", 112.0, 11.0, 90)
-P("R_AH3", 116.0, 11.0, 90)
-P("R_AL1", 108.0, 15.0, 90)
-P("R_AL2", 112.0, 15.0, 90)
-P("R_AL3", 116.0, 15.0, 90)
+P("U_IMU", 116.0, 26.0, 0)
+P("C_IMU1", 122.0, 25.0, 90)
+P("C_IMU2", 122.0, 28.5, 90)
+P("R_ADDR", 126.0, 25.0, 90)
+P("R_ADDR_ALT", 126.0, 28.5, 90)
+P("R_SDA", 130.0, 25.0, 90)
+P("R_SCL", 130.0, 28.5, 90)
 
-P("U_CAN", 124.0, 12.0, 0)
-P("C_CAN", 130.0, 12.0, 90)
-P("R_TERM", 122.0, 17.0, 0)
-P("R_TJ", 126.0, 17.0, 0)
-P("R_RS", 130.0, 17.0, 0)
-P("D_CAN", 134.0, 17.0, 0)
+P("U_EEP", 107.0, 31.0, 0)
+P("C_EEP", 113.0, 31.0, 90)
+P("R_OE", 136.0, 30.0, 90)
 
-P("U_IMU", 112.0, 23.0, 0)
-P("C_IMU1", 118.0, 22.0, 90)
-P("C_IMU2", 118.0, 25.5, 90)
-P("R_ADDR", 122.0, 22.0, 90)
-P("R_ADDR_ALT", 122.0, 25.5, 90)
-P("R_SDA", 126.0, 22.0, 90)
-P("R_SCL", 126.0, 25.5, 90)
-
-P("U_EEP", 112.0, 32.0, 0)
-P("C_EEP", 118.0, 32.0, 90)
-P("R_OE", 122.0, 32.0, 90)
-
-P("J_USB", 133.0, 30.0, 0)
-P("R_CC1", 126.0, 30.0, 90)
-P("R_CC2", 126.0, 33.5, 90)
+P("J_USB", 133.0, 13.0, 0)
+P("R_CC1", 130.0, 19.0, 90)
+P("R_CC2", 134.0, 19.0, 90)
 
 # ---------------------------------------------------------------------------
 plan = {
@@ -192,7 +193,7 @@ plan = {
         {"ref": "H%d" % i, "lib": "MountingHole",
          "name": "MountingHole_3.2mm_M3", "at": at, "exclude_bom": True}
         for i, at in enumerate(
-            [[5.0, 33.0, 0], [135.0, 45.0, 0], [43.5, 62.5, 0], [87.5, 62.5, 0]], 1)
+            [[5.0, 5.0, 0], [135.0, 5.0, 0], [5.0, 65.0, 0], [135.0, 65.0, 0]], 1)
     ],
     "grid_start": [5.0, 55.0],
 }
