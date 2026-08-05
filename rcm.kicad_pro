@@ -1,0 +1,6 @@
+{
+  "board": {"design_settings": {"defaults": {}}},
+  "meta": {"filename": "rcm.kicad_pro", "version": 3},
+  "schematic": {"legacy_lib_list": []},
+  "sheets": [["00000000-0000-0000-0000-000000000000", "Root"]]
+}

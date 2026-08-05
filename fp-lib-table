@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "rcm")(type "KiCad")(uri "${KIPRJMOD}/footprints/rcm.pretty")(options "")(descr "Project-local footprints: Waveshare buck module, KF2EDG-3.5 pluggable terminal headers"))
+)

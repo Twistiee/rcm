@@ -18,3 +18,7 @@ __pycache__/
 *.pyc
 .venv/
 scratchpad/
+
+# generated verification artifacts (regenerable in seconds)
+*.kicad_sch.erc.json
+*.kicad_sch.net

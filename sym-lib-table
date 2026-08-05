@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "RCM")(type "KiCad")(uri "${KIPRJMOD}/lib/RCM.kicad_sym")(options "")(descr "Project-local symbols: BTS70xx-1E PROFET (latch)"))
+)
