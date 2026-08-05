@@ -132,22 +132,22 @@ P("D_LED2", 28.0, 5.0, 0)
 P("R_LED2", 28.0, 9.0, 0)
 
 # --- MCU, centre-east under the terminals ---
-MX, MY = 80.0, 19.0
+MX, MY = 85.0, 24.0
 P("U_MCU", MX, MY, 0)
 P("Y1", MX - 16.0, MY - 4.0, 0)
-P("C_Y1A", MX - 16.0, MY - 8.5, 0)
-P("C_Y1B", MX - 16.0, MY + 0.5, 0)
+P("C_Y1A", MX - 20.0, MY - 8.0, 0)
+P("C_Y1B", MX - 20.0, MY + 0.5, 0)
 P("Y2", MX + 16.0, MY - 4.0, 0)
-P("C_Y2A", MX + 16.0, MY - 8.5, 0)
-P("C_Y2B", MX + 16.0, MY + 0.5, 0)
-for i, x in enumerate([70.0, 74.0, 82.0, 86.0, 90.0]):
-    P("C_M%d" % (i + 1), x, MY - 8.5, 0)   # note the gap at x=78: kept clear so
-                                           # BOOT0 can escape pad 60 straight north
+P("C_Y2A", MX + 20.0, MY - 4.0, 0)
+P("C_Y2B", MX + 20.0, MY + 0.5, 0)
+for i, dx in enumerate([-11.0, -6.0, 3.0, 7.0, 11.0]):
+    P("C_M%d" % (i + 1), MX + dx, MY - 8.5, 0)   # gap left at MX-1.75 so BOOT0 can
+                                                 # escape pad 60 straight north
 P("C_MB", 96.0, 29.0, 0)
 P("C_VCAP", MX - 10.5, MY - 2.0, 90)
 P("C_VDDA", MX - 10.5, MY + 2.0, 90)
 P("C_NRST", MX + 10.5, MY - 2.0, 90)
-P("R_BOOT", 78.25, MY - 8.5, 90)
+P("R_BOOT", MX - 1.75, MY - 8.5, 90)
 P("J_SWD", 64.0, 34.0, 90)
 P("J_BOOT", 64.0, 30.0, 90)
 

@@ -475,7 +475,7 @@
   {
    "ref": "R_PU1",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -494,7 +494,7 @@
   {
    "ref": "R_PU2",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -513,7 +513,7 @@
   {
    "ref": "R_PU3",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -532,7 +532,7 @@
   {
    "ref": "R_PU4",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -551,7 +551,7 @@
   {
    "ref": "R_PU5",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -570,7 +570,7 @@
   {
    "ref": "R_PU6",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -589,7 +589,7 @@
   {
    "ref": "R_PU7",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -620,7 +620,7 @@
   {
    "ref": "R_PU8",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -639,7 +639,7 @@
   {
    "ref": "R_PU9",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -658,7 +658,7 @@
   {
    "ref": "R_PU10",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -677,7 +677,7 @@
   {
    "ref": "R_PU11",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -696,7 +696,7 @@
   {
    "ref": "R_PU12",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -715,7 +715,7 @@
   {
    "ref": "R_PU13",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -734,7 +734,7 @@
   {
    "ref": "R_PU14",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -765,7 +765,7 @@
   {
    "ref": "R_PU15",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -784,7 +784,7 @@
   {
    "ref": "R_PU16",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -803,7 +803,7 @@
   {
    "ref": "R_PU17",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -822,7 +822,7 @@
   {
    "ref": "R_PU18",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -841,7 +841,7 @@
   {
    "ref": "R_PU19",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -860,7 +860,7 @@
   {
    "ref": "R_PU20",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },
@@ -879,7 +879,7 @@
   {
    "ref": "R_PU21",
    "lib": "Device:R",
-   "value": "100k",
+   "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
    "dnp": true
   },

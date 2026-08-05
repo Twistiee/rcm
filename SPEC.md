@@ -149,7 +149,7 @@ Per channel (×21):
 |---|---|---|
 | `R_SHn` | **1M** | `CHx` → `SNSx` |
 | `R_SLn` | **270k** | `SNSx` → GND; also the pulldown defining 0V on a dead feed |
-| `R_PUn` | 100k, **DNP** | `CHx` → `+12V_P`. Fit only for keypad button channels |
+| `R_PUn` | **10k**, DNP | `CHx` → `+12V_P`. Fit only for keypad button channels — see wetting current below |
 
 ⚠ **This was 1M/220k and it FAILS at rest voltage — corrected to 1M/270k.** 74HC `VIH(min)`
 is **0.7 × Vcc = 2.31V** at 3V3, not the ~1.65V typical switching point:
@@ -437,3 +437,38 @@ routing, then re-run DRC to confirm it actually cleared.**
   CPL — but they matter here because the button panel is being 3D-printed to suit the board,
   and the terminals are the tallest parts on it (~9mm proud). Attach before designing the panel.
 - **Silkscreen pass** (114 warnings) and then the manufacturing package.
+
+
+## Momentary buttons — yes, and they are the right choice (2026-08-05)
+
+Asked whether the input channels work with momentary push-buttons acting as latching
+"switches" in software. **They do, and momentary is better than a real latching switch here.**
+
+The hardware only ever reports "contact closed" or "contact open"; the latching lives
+entirely in firmware. Press -> toggle state -> CAN -> relay switches -> module reports actual
+state back -> the LED follows *that*. A mechanical latching switch can be **wrong**: if
+something else turns a circuit off (another node, a fault, the module refusing) the switch is
+physically stuck in the "on" position and needs two clicks to resync. A momentary button has
+no position to be wrong about, so the LED is always free to show the truth.
+
+### ⚠ Pull-up changed 100k -> 10k for switch WETTING CURRENT
+
+At 12V a 100k pull-up passes only ~120µA through a closed contact. That is below the
+~1mA most mechanical contacts need to punch through the oxide/sulphide film that forms on
+the contact faces. Gold-plated contacts are fine at microamps; ordinary automotive buttons
+are not, and the failure mode is the bad kind — **perfect on the bench, intermittent months
+later in a damp vibrating car.**
+
+10k gives 1.2mA on press and does not move the logic levels at all (sense still reads
+~2.53V released, 0V pressed). It draws that 1.2mA only while a finger is on the button.
+
+Applied to the schematic *and* patched into the placed board in-place — a value-only change,
+so the board was NOT regenerated, which would have wiped the routing.
+
+### Firmware notes
+
+- **Debounce is mandatory.** Contacts bounce 5–20ms; a shift-register poll will read a bounce
+  as a press. Poll ~10ms and require two consistent reads, or single presses will sometimes
+  toggle twice.
+- **Each button costs TWO channels** — one input for the contact, one output for its LED. So
+  8 buttons uses 16 of the 21, leaving 5 spare.

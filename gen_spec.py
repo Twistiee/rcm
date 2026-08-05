@@ -279,7 +279,7 @@ for t in range(1, NTILE + 1):
         N("+12V_P", "R_PU%d.2" % ch)
         C("R_SH%d" % ch, "Device:R", "1M", R0805)
         C("R_SL%d" % ch, "Device:R", "270k", R0805)
-        C("R_PU%d" % ch, "Device:R", "100k", R0805, dnp=True)
+        C("R_PU%d" % ch, "Device:R", "10k", R0805, dnp=True)
     # 595 QH (8th output) unused on every tile
     no_connects.append("U_SO%d.%s" % (t, Q595[7]))
 
