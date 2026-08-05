@@ -384,3 +384,56 @@ Confirm visually; if it faces inward the fix is 270° instead of 90°.
 | Errors after thermal fix | 0 | 2 (pending USB) | **0** |
 
 Current DRC: **0 errors**, 111 silkscreen warnings, 0 unconnected.
+
+
+## ROUTED AND CLEAN — round 5 (2026-08-05)
+
+| | |
+|---|---|
+| Nets routed | **414 / 414** |
+| Unconnected | **0** |
+| Track segments + vias | 2214 |
+| GND pours | 2 (F.Cu + B.Cu) |
+| **DRC errors** | **0** |
+| Warnings | 114, all silkscreen text |
+
+### ⚠ USB-C opening was 2.8mm INSIDE the board edge
+
+Rotating `J_USB` to +90 pointed the opening east correctly, but left the connector's front
+face at x=137.18 on a 140mm board — a plug would have fouled the PCB before seating.
+Moved to x=135.8 so the face is flush with the edge. `plan_lint` now warns `NEAR EDGE` for
+`J_USB`, which is the **correct** result for an edge connector, not a problem.
+
+Derived from the placed board, not predicted: at rot 90 the front face is the courtyard's
+local `+y` extreme (`4.18`), which maps to `+x`.
+
+### ⚠ BOOT0: identical output across runs means it is NOT stochastic
+
+`BOOT0` (`U_MCU` pad 60, at 78.25/13.325 on the 0.5mm-pitch north edge) failed to route on
+three consecutive runs with a **byte-identical 2.0617mm stub and identical score**. It was
+initially dismissed as a freerouting artifact worth retrying — wrong. Freerouting genuinely
+is stochastic, so "run it again" is sometimes right, but **identical results are the tell
+that it is deterministic and therefore a real geometric problem.** Compare the numbers
+before retrying.
+
+The cause: the five MCU decoupling caps sat in a row directly north of the QFP, leaving a
+**0.6mm slot** between two of them as the only escape from pad 60. Fixed by leaving a
+deliberate gap in that row at x=78 and putting `R_BOOT` directly north of the pad, turning a
+QFP escape into a short hop.
+
+### ⚠ `fix_starved_thermals.py` misses THROUGH-HOLE pads
+
+Its DRC-report parser matches `Pad N [NET] of REF` but the report writes **`PTH pad N ...`**
+for through-hole, so it silently reports "nothing to do" while those violations remain.
+`J_SWD` pad 5 needed `(zone_connect 2)` set by hand. Worth fixing in the shared tool.
+
+**Which pads get starved changes on every re-route — always re-run the thermal pass after
+routing, then re-run DRC to confirm it actually cleared.**
+
+### Still outstanding
+
+- **3D models** are missing on the locally-generated footprints: the five KF2EDG terminals
+  and the buck IN column (`JB1`). Cosmetic for fab — models never reach the gerbers, BOM or
+  CPL — but they matter here because the button panel is being 3D-printed to suit the board,
+  and the terminals are the tallest parts on it (~9mm proud). Attach before designing the panel.
+- **Silkscreen pass** (114 warnings) and then the manufacturing package.

@@ -140,13 +140,14 @@ P("C_Y1B", MX - 16.0, MY + 0.5, 0)
 P("Y2", MX + 16.0, MY - 4.0, 0)
 P("C_Y2A", MX + 16.0, MY - 8.5, 0)
 P("C_Y2B", MX + 16.0, MY + 0.5, 0)
-for i, ref in enumerate(["C_M1", "C_M2", "C_M3", "C_M4", "C_M5"]):
-    P(ref, MX - 8.0 + i * 4.0, MY - 8.5, 0)   # above the MCU, under the terminals
+for i, x in enumerate([70.0, 74.0, 82.0, 86.0, 90.0]):
+    P("C_M%d" % (i + 1), x, MY - 8.5, 0)   # note the gap at x=78: kept clear so
+                                           # BOOT0 can escape pad 60 straight north
 P("C_MB", 96.0, 29.0, 0)
 P("C_VCAP", MX - 10.5, MY - 2.0, 90)
 P("C_VDDA", MX - 10.5, MY + 2.0, 90)
 P("C_NRST", MX + 10.5, MY - 2.0, 90)
-P("R_BOOT", MX + 10.5, MY + 2.0, 90)
+P("R_BOOT", 78.25, MY - 8.5, 90)
 P("J_SWD", 64.0, 34.0, 90)
 P("J_BOOT", 64.0, 30.0, 90)
 
@@ -177,9 +178,9 @@ P("U_EEP", 107.0, 31.0, 0)
 P("C_EEP", 113.0, 31.0, 90)
 P("R_OE", 136.0, 30.0, 90)
 
-P("J_USB", 133.0, 20.0, 90)
-P("R_CC1", 124.5, 21.25, 0)
-P("R_CC2", 124.5, 18.25, 0)
+P("J_USB", 135.8, 20.0, 90)
+P("R_CC1", 127.0, 21.25, 0)
+P("R_CC2", 127.0, 18.25, 0)
 
 # ---------------------------------------------------------------------------
 plan = {
