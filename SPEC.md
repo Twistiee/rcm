@@ -515,3 +515,54 @@ time in both directions on this board.
 
 Placement is DONE. Remaining: silkscreen pass, 3D models for the locally-generated
 footprints (needed before the panel is designed), then the manufacturing package.
+
+## Silkscreen pass + manufacturing files (2026-08-06)
+
+### Silkscreen: 103 → 27 findings
+
+Two levers, in this order:
+
+1. `tools/relocate_refs.py` against a fresh DRC report, run repeatedly (103 → 47). It
+   converges when it runs out of free space — a second pass moved 1 label and a third moved 3.
+2. **Shrinking the reference text to 0.8mm / 0.15 stroke** (JLC fab minimum) did more than
+   relocation: 47 → 30 on its own, then a final relocate → **27**. Only the `Reference`
+   property is shrunk; `Value` and user text are untouched.
+
+The remaining 27 (14 text-over-text, 13 silk-over-pad) are cosmetic. Fabs clip silk off
+pads automatically. revB's comparable floor was 19 on a much less dense board.
+
+### Gerbers — DONE, PCB pricing is unblocked
+
+`mfg/rcm_gerbers.zip`, 14 files. Verified:
+
+| Check | Result |
+|---|---|
+| Outline | **exactly 140.00 × 70.00mm** |
+| `G36` filled regions in Edge.Cuts | **0** — no phantom internal cutouts |
+| PTH drills | 0.3 / 0.6 / 1.0 / 1.2mm — all standard |
+| NPTH | 0.65mm, 3.2mm (M3 mounting holes) |
+| Layers | standard KiCad names, `--no-protel-ext` |
+
+### ⚠ BOM/CPL still needs 49 LCSC part numbers
+
+`tools/gen_jlc_bom_cpl.py` is deliberately driven by a parts map rather than reading values
+off the board, because a value like "100nF" is not a purchasable part — JLC's uploader will
+silently auto-match it to *something*, and the failure mode is a ferrite bead matched to a
+resistor, or a 16V cap on a 12V rail.
+
+**`jlc_parts.json` does not exist yet for this board.** 49 distinct values need an explicit
+LCSC number. Known from this session's sourcing work:
+
+| Part | LCSC |
+|---|---|
+| TPL7407L | `C2149827` |
+| 74HC165 | `C22384789` |
+| BMI270 | `C2836813` |
+| SN65HVD230 | `C12084` |
+| STM32F446RET6 | `C69336` |
+| BTS7040-1EPA | `C534837` |
+| KF2EDGVM-3.5 header | `C441407` (+ `C440847` plug) |
+
+Still to source: 74HC595, LD1117S33, 25LC640, SS34, SMAJ33A, SZNUP2105L, PPTC 1A, both
+crystals, USB-C, tactile switch, LEDs, and ~20 passive values. **Prefer JLC Basic/Preferred
+parts** — at qty 1 the per-unique-extended-part fee is a fixed cost and there are 49 lines.
