@@ -54,11 +54,15 @@ TILE = [
     # terminal, centred under the 36mm-wide spread of resistor columns above it
     (7.5, 0.0, 0, "J_CH%d"),
 ]
+# Row order and rotation set by the user 2026-08-06. Row centres keep the original
+# 6.0 / 10.5 / 15.0 spacing; only which resistor sits in which row changed, plus the
+# rotation: the rows now lie flat (long axis E-W) instead of standing on end, and R_SL
+# is flipped 180 so its pin 1 faces the opposite way to the other two rows.
 for _k in range(7):
     _dx = _k * RPITCH
-    TILE.append((_dx, -6.0, 90, "R_SH{ch%d}" % _k))
-    TILE.append((_dx, -10.5, 90, "R_SL{ch%d}" % _k))
-    TILE.append((_dx, -15.0, 90, "R_PU{ch%d}" % _k))
+    TILE.append((_dx, -6.0, 0, "R_PU{ch%d}" % _k))     # southernmost, nearest the terminal
+    TILE.append((_dx, -10.5, 0, "R_SH{ch%d}" % _k))    # middle
+    TILE.append((_dx, -15.0, 180, "R_SL{ch%d}" % _k))  # northernmost, flipped
 # Driver and both shift registers in a row NORTH of the resistors (user, 2026-08-05),
 # spread across the same 36mm the resistor columns now occupy.
 TILE += [

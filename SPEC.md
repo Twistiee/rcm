@@ -561,8 +561,90 @@ LCSC number. Known from this session's sourcing work:
 | SN65HVD230 | `C12084` |
 | STM32F446RET6 | `C69336` |
 | BTS7040-1EPA | `C534837` |
-| KF2EDGVM-3.5 header | `C441407` (+ `C440847` plug) |
+| KF2EDGV-3.5 header | `C441321` 2P / `C441322` 3P / `C441326` 7P (+ screw plugs separately) |
 
-Still to source: 74HC595, LD1117S33, 25LC640, SS34, SMAJ33A, SZNUP2105L, PPTC 1A, both
-crystals, USB-C, tactile switch, LEDs, and ~20 passive values. **Prefer JLC Basic/Preferred
-parts** — at qty 1 the per-unique-extended-part fee is a fixed cost and there are 49 lines.
+**SOURCING COMPLETE (2026-08-06)** — 44 of 48 lines carry an LCSC number, and the four
+that do not are the 2.54mm headers fitted by hand, excluded from BOM and CPL through
+`exclude_refs` in `jlc_parts.json`.
+
+The full map lives in `jlc_parts.json`, keyed **`value|footprint`** — that composite key is
+what `gen_jlc_bom_cpl.py` looks up, and keyed by bare value it silently matches nothing.
+`gen_spec.py` now reads the same file and stamps an `LCSC` field onto every symbol, so a
+part number is edited in exactly one place and flows into the schematic from there.
+
+Four substitutions came out of sourcing, all folded back into `gen_spec.py`: **AMS1117-3.3**
+for the LD1117S33, **M95640** for the 25LC640, a **60V** PPTC over a 30V one, and **20pF**
+crystal load caps replacing 12pF — that last one a genuine error, not a cost change, worth
+about a minute a month of RTC drift. Rationale for each is in `DESIGN.md`.
+
+Two lines still want a human eye before the order goes in: the **USB-C land** wants
+confirming against the HCTL footprint, and the **TL3342 reset switch** is $1.13 with ~455
+in stock, which is a poor line but needs a different footprint to improve.
+
+
+## Build state — ROUTED, SILKED, MANUFACTURING FILES OUT (2026-08-06)
+
+Round 3. Resistor rows re-ordered per the user, four part substitutions folded in, and the
+full manufacturing set generated.
+
+| | |
+|---|---|
+| Routing | **414 / 414 nets, 0 unconnected** (71s, score 994.90, 2084 segments) |
+| DRC | **0 unconnected, 0 schematic parity** |
+| Violations | 26 silkscreen + **1 clearance, 1.3 microns short** (see below) |
+| Gerbers | `mfg/rcm_gerbers.zip`, 14 files, 140.00 x 70.00mm, 0 G36 regions |
+| BOM | `mfg/bom_jlc.csv`, 39 lines, **every line has an LCSC number** |
+| CPL | `mfg/cpl_jlc.csv`, 127 placements, centroid, Y negated |
+
+### Resistor rows (user, 2026-08-06)
+
+Row *centres* keep the original 6.0 / 10.5 / 15.0mm spacing from the terminal; what changed
+is which resistor sits in which row and how they lie:
+
+| Row | Was | Now | Rotation |
+|---|---|---|---|
+| South (nearest terminal) | `R_SH` | **`R_PU`** | 0 |
+| Middle | `R_SL` | **`R_SH`** | 0 |
+| North | `R_PU` | **`R_SL`** | 180 |
+
+Laying them flat helped the silkscreen materially — silk violations in the south tiles all
+but vanished, and the remaining crowding is entirely in the dense north cluster.
+
+### The one clearance violation is understood and accepted
+
+A `+5V` track passes `U_LDO` pad 1 (GND) at **0.1987mm against a 0.2000mm rule — 1.3
+microns short**, about 1/40th of a normal fab tolerance, where JLC's actual capability is
+0.127mm. It will fabricate without incident.
+
+It is **not** a random router artifact: the identical segment at identical coordinates
+recurred across independent routing runs, so it is deterministic geometry. Three fixes were
+tried and rejected:
+
+1. **Narrowing the segment** (`tools/fix_marginal_clearance.py`) works geometrically but
+   this board's minimum track width is also 0.2mm, so it just trades a clearance error for
+   a track-width error.
+2. **Moving the segment** risks breaking connectivity at the junctions either side.
+3. **Routing against a 0.25mm clearance** and verifying at 0.20mm — the principled fix —
+   makes the board **unroutable**: 60-63 nets failed after 7 minutes per pass, against 71
+   seconds and a complete route at 0.20mm. This board is too dense for that margin.
+
+Left as-is deliberately. Giving `U_LDO` more elbow room in `gen_plan.py` is the real fix if
+it ever needs to be formally clean.
+
+### Silkscreen: 27 -> 26, on a board that routed differently
+
+`tools/shrink_refs.py` (new) drops crowded reference text to 0.8mm/0.15 stroke — JLC's
+minimum — before `relocate_refs.py` runs, which is what lets the relocator converge instead
+of reporting "no free spot". Overlapped text is unreadable; small text is not, and this
+board is built for hand-rework.
+
+### Gerber trap: do NOT pass `--subtract-soldermask`
+
+The first export used it and put **590 front / 62 back pad-shaped flashes in clear polarity
+(`%LPC*%`) into the silkscreen gerbers** — KiCad faithfully knocking silk out from over
+pads. Negative-polarity silkscreen is handled inconsistently by fabs, and they clip silk off
+pads as standard practice anyway. Exporting without the flag gives **0 flashes, 0 clear
+blocks**.
+
+This is the same signature flagged on pdm14-revB. Whether revB's was this flag or a genuine
+fault was not re-checked here.

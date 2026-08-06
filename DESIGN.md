@@ -535,3 +535,72 @@ relay pin 30, coil fed from that same fused node — can simply be wired that wa
 
 See `CLAUDE.md`: BMI270 IMU, the Waveshare DC5-36-TO-DC3V3-5 buck module and its pin
 arrangement (socketed), CAN as the control bus, and the SynapsePDM firmware lineage.
+
+## Part sourcing — the four substitutions (2026-08-06)
+
+Sourcing the BOM against JLC's live catalogue forced four changes to what the design first
+called for. All four are folded back into `gen_spec.py`, so the schematic, the netlist and
+the BOM agree — nothing lives only in `jlc_parts.json`.
+
+**The governing economics:** at qty 1 (min order 5) the per-unique-*extended*-part fee is a
+fixed cost, and this BOM has ~48 lines. Those fees, not unit prices, dominate the build. So
+a JLC **Basic** part is worth taking even when it costs several times more per piece — the
+74HC595 is the clean example: basic SOIC-16 at $0.171 against $0.044 for the cheapest
+extended SOP-16, which is 39 cents more across three chips against a fee many times that.
+
+| Was | Now | Why |
+|---|---|---|
+| LD1117S33 | **AMS1117-3.3** (`C6186`) | Basic part. Both KiCad symbols `extends "AP1117-15"`, so pin-identical by construction; same SOT-223, tab on pin 2. 5V in leaves 1.7V over a ~1.3V dropout. |
+| 25LC640 | **M95640** (`C283461`) | $0.33 against $0.73–1.42, and better stocked. Same industry-standard 25-series SPI pinout, which is exactly what the generic `Memory_EEPROM:25LCxxx` symbol describes — symbol and nets unchanged. |
+| 12pF crystal load caps | **20pF** (`C1798`, basic) | Not a cost change — the 12pF was **wrong**. See below. |
+| 30V PPTC | **60V PPTC** (`C19078719`) | The SMAJ33A clamps near 53V. A 30V fuse sits under its own clamp. |
+
+### The crystal load caps were wrong, and it was the RTC that suffered
+
+Load caps follow `C = 2 x (CL - Cstray)`. The chosen 32.768kHz part (`C32346`, Epson
+Q13FC13500004) is a **CL = 12.5pF** crystal, so with ~3pF of stray it wants **~19pF** —
+not the 12pF the design had. 12pF leaves the loop about 3.5pF light, which pulls the
+oscillator roughly **22 ppm fast: about a minute a month**, on the one oscillator whose
+entire job is keeping time. Given how much of the revB review turned on RTC behaviour,
+that was worth catching before ordering rather than after.
+
+20pF fixes it to within a few ppm **and deletes a BOM line**, since the 8MHz already used
+20pF — one fewer unique part fee.
+
+The 8MHz keeps 20pF against its own 20pF CL, which runs it ~60ppm fast. That is nothing
+beside CAN's ~1% and USB FS's 2500ppm budgets, and light load caps only *improve* startup
+margin. 33pF would be exact if it ever matters, at the cost of a BOM line.
+
+### The package trap the composite key caught
+
+`jlc_parts.json` is keyed `value|footprint`, not by value. That is what the BOM script
+looks up — keyed by bare value it silently matches nothing and every line comes out
+unsourced, which is how the map was first written and would have produced an empty BOM.
+
+The key also guards the package, and it earned that immediately: the cheapest **basic**
+8MHz crystal (`C12674`) is **HC-49S-SMD**, which would not have fitted the 5032 lands on
+this board. The 5032 basic part (`C115962`) costs more and is the correct one.
+
+### Two lines worth knowing about
+
+- **`RESET` switch (`C2886894`, TL3342) is $1.13 with only ~455 in stock** — easily the
+  weakest line in the BOM. A cheaper tactile switch needs a different land pattern, so it
+  is a next-revision change rather than something to force now. The button is not required
+  to program the board: NRST is on the SWD header.
+- **`USB-C` (`C165948`, TYPE-C-31-M-12) needs its land confirmed** against the
+  `USB_C_Receptacle_HCTL_HC-TYPE-C-16P-01A` footprint. The two are widely treated as
+  interchangeable, but that is received wisdom, not something checked against a drawing.
+
+### Status LEDs run dim, deliberately
+
+Green LEDs are InGaN with a Vf around 3.0–3.2V at rated current, so on a 3.3V GPIO through
+1k there is very little headroom — perhaps 0.7mA once Vf falls at low current. Visible, but
+dim. Dropping `R_LED1`/`R_LED2` to 470R (or reusing the 120R already in the BOM) would fix
+it; 120R costs no extra BOM line but pulls ~11mA on the red. Left at 1k because the
+indicators sit under the button panel anyway — worth revisiting if they end up exposed.
+
+### 270k stays extended
+
+There is no basic 270k in 0805, and none at 300k or 330k either, so there was no basic part
+to move the sense divider *to*. The verified 1M/270k ratio stands rather than being bent
+toward a part that does not exist.

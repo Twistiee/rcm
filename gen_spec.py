@@ -108,7 +108,12 @@ no_connects += ["U_LATCH.4", "U_LATCH.5", "U_LATCH.6", "U_LATCH.7", "U_LATCH.11"
 # ---------------------------------------------------------------------------
 C("JB1", "Connector_Generic:Conn_01x02", "WAVESHARE-IN", BUCK_IN)
 C("JB2", "Connector_Generic:Conn_01x02", "WAVESHARE-OUT", BUCK_OUT)
-C("U_LDO", "Regulator_Linear:LD1117S33TR_SOT223", "LD1117S33", SOT223)
+# AMS1117-3.3, not the LD1117S33 this started as: the AMS is a JLC *basic* part and at
+# qty 1 the per-unique-extended-part fee dwarfs the unit price. Safe swap -- both symbols
+# `extends "AP1117-15"` in Regulator_Linear.kicad_sym, so they are pin-identical by
+# construction, and both are SOT-223 with the tab on pin 2 (VOUT). 5V in leaves 1.7V
+# headroom, well over the ~1.3V dropout.
+C("U_LDO", "Regulator_Linear:AMS1117-3.3", "AMS1117-3.3", SOT223)
 C("C_5V", "Device:C", "10uF_25V", C0805)
 C("C_3V3I", "Device:C", "10uF_25V", C0805)
 C("C_3V3O", "Device:C", "100nF", C0805)
@@ -135,8 +140,17 @@ C("Y1", "Device:Crystal", "8MHz", XTAL5032)
 C("C_Y1A", "Device:C", "20pF", C0805)
 C("C_Y1B", "Device:C", "20pF", C0805)
 C("Y2", "Device:Crystal", "32.768kHz", XTAL3215)
-C("C_Y2A", "Device:C", "12pF", C0805)
-C("C_Y2B", "Device:C", "12pF", C0805)
+# 20pF, NOT the 12pF this started as. Load caps follow C = 2 x (CL - Cstray); the chosen
+# crystal (C32346, Epson Q13FC13500004) is CL=12.5pF, so with ~3pF of stray it wants
+# ~19pF, and 12pF would have left the loop ~3.5pF light -- about 22ppm FAST, or a minute
+# a month on the one oscillator whose whole job is keeping time.
+#
+# Reusing the 8MHz value also deletes a BOM line, which at qty 1 is a saved per-part fee.
+# The 8MHz keeps 20pF against its own 20pF CL: that runs ~60ppm fast, which is nothing
+# beside CAN's ~1% and USB FS's 2500ppm budgets, and light caps only help startup margin.
+# 33pF would be exact there if it ever matters -- at the cost of another BOM line.
+C("C_Y2A", "Device:C", "20pF", C0805)
+C("C_Y2B", "Device:C", "20pF", C0805)
 C("J_SWD", "Connector_Generic:Conn_01x05", "SWD", PINHDR5)
 C("D_LED1", "Device:LED", "GRN", "LED_SMD:LED_0805_2012Metric")
 C("R_LED1", "Device:R", "1k", R0805)
@@ -306,7 +320,11 @@ N("USB_CC1", "J_USB.A5", "R_CC1.1")
 N("USB_CC2", "J_USB.B5", "R_CC2.1")
 no_connects += ["J_USB.A8", "J_USB.B8"]
 
-C("U_EEP", "Memory_EEPROM:25LCxxx", "25LC640", SOIC8)
+# M95640, not the 25LC640 this started as: JLC lists the 25LC640 at $0.73-1.42 with ~3k
+# stock, against $0.33 for the ST part. Both are 64Kbit SPI EEPROMs on the industry-standard
+# 25-series pinout (1=CS 2=SO 3=WP 4=GND 5=SI 6=SCK 7=HOLD 8=Vcc), which is what the generic
+# Memory_EEPROM:25LCxxx symbol already describes -- so the symbol and every net stay put.
+C("U_EEP", "Memory_EEPROM:25LCxxx", "M95640", SOIC8)
 C("C_EEP", "Device:C", "100nF", C0805)
 N("+3V3", "U_EEP.8", "C_EEP.1", "U_EEP.3", "U_EEP.7")
 N("GND", "U_EEP.4", "C_EEP.2")
@@ -361,6 +379,27 @@ if single:
     raise SystemExit("SINGLE-PIN NETS (dangling, almost always a wiring bug): %s"
                      % ", ".join(sorted(single)))
 
+# ---------------------------------------------------------------------------
+# Stamp the chosen LCSC part onto every component as a hidden schematic field, so the
+# part choice lives in the design itself rather than only in a side file. jlc_parts.json
+# stays the single place a number is edited; this just propagates it.
+#
+# Keyed "value|footprint" -- the same composite key gen_jlc_bom_cpl.py uses, because the
+# package is part of the choice (a TSSOP 74HC595 will not fit these SOIC-16 lands).
+# ---------------------------------------------------------------------------
+with open(os.path.join(HERE, "jlc_parts.json"), encoding="utf-8") as f:
+    _parts = json.load(f)["parts"]
+
+_stamped = 0
+for _c in comps:
+    _key = "%s|%s" % (_c.get("value", ""), _c.get("footprint", ""))
+    if _key not in _parts:
+        raise SystemExit("no jlc_parts.json line for %s (%s) -- rerun the rekey" % (_c["ref"], _key))
+    _lcsc = _parts[_key].get("lcsc")
+    if _lcsc:
+        _c.setdefault("fields", {})["LCSC"] = _lcsc
+        _stamped += 1
+
 spec = {
     "schematic": os.path.join(HERE, "rcm.kicad_sch"),
     "project": "rcm",
@@ -385,3 +424,5 @@ print("components : %d" % len(comps))
 print("nets       : %d" % len(spec["nets"]))
 print("no_connects: %d" % len(spec["no_connects"]))
 print("channels   : %d in %d tiles" % (NCH, NTILE))
+print("LCSC fields: %d of %d components stamped (%d lines still unsourced)"
+      % (_stamped, len(comps), sum(1 for v in _parts.values() if not v.get("lcsc"))))

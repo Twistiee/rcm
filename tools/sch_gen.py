@@ -261,6 +261,13 @@ def main():
         pins_sexpr = "".join('\t\t(pin "%s"\n\t\t\t(uuid "%s")\n\t\t)\n' % (n, uid())
                              for n in sorted(d.pins))
         dnp = "yes" if c.get("dnp") else "no"
+        # Arbitrary extra fields (LCSC, MPN, ...) from spec.json. Hidden, so they carry
+        # through to netlist/BOM tooling without cluttering the drawing.
+        extra = "".join(
+            '\t\t(property "%s" "%s"\n\t\t\t(at %.2f %.2f 0)\n'
+            '\t\t\t(effects (font (size 1.27 1.27)) (hide yes))\n\t\t)\n'
+            % (k, v, sx, sy)
+            for k, v in sorted(c.get("fields", {}).items()) if v)
         instances.append(
             '\t(symbol\n\t\t(lib_id "%s")\n\t\t(at %.2f %.2f 0)\n\t\t(unit 1)\n'
             '\t\t(exclude_from_sim no)\n\t\t(in_bom yes)\n\t\t(on_board yes)\n'
@@ -274,12 +281,13 @@ def main():
             '\t\t(property "Datasheet" "~"\n\t\t\t(at %.2f %.2f 0)\n'
             '\t\t\t(effects (font (size 1.27 1.27)) (hide yes))\n\t\t)\n'
             '%s'
+            '%s'
             '\t\t(instances\n\t\t\t(project "%s"\n\t\t\t\t(path "/%s"\n'
             '\t\t\t\t\t(reference "%s") (unit 1)\n\t\t\t\t)\n\t\t\t)\n\t\t)\n\t)'
             % (c["lib"], sx, sy, dnp, uid(),
                ref, sx, sy - 2.0, c.get("value", ""), sx, sy + 2.0,
                c.get("footprint", ""), sx, sy, sx, sy,
-               pins_sexpr, project, root_uuid, ref))
+               extra, pins_sexpr, project, root_uuid, ref))
 
         for num, (px, py, prot) in d.pins.items():
             # schematic pin position: y flips

@@ -1,71 +1,324 @@
 {
   "_readme": [
-    "Parts map for tools/gen_jlc_bom_cpl.py. Keyed by the board's Value string.",
+    "Parts map for tools/gen_jlc_bom_cpl.py, and the source of the LCSC field gen_spec.py",
+    "stamps onto every symbol -- edit a number HERE and it flows into the schematic.",
     "",
-    "PACKAGE MUST MATCH THE PLACED FOOTPRINT. 74HC595 alone has 18 LCSC variants across",
-    "SOP-16 / SOIC-16 / TSSOP-16; a TSSOP part will not fit the SOIC-16 lands on this board.",
+    "KEY IS 'value|footprint' EXACTLY AS IT APPEARS ON THE BOARD -- that is what the BOM",
+    "script looks up. Keyed by bare value it silently matches NOTHING and every line comes",
+    "out unsourced. Keys are generated from spec.json, not typed.",
+    "",
+    "The composite key is also the package guard, and it earned its keep: the cheapest BASIC",
+    "8MHz crystal (C12674) is HC-49S-SMD and would not have fitted the 5032 lands here.",
     "",
     "PREFER JLC 'basic' PARTS EVEN WHEN DEARER. At qty 1 the per-unique-extended-part fee is",
-    "a fixed cost and this BOM has 49 lines, so those fees dominate. 74HC595: the basic SOIC-16",
+    "a fixed cost, so with ~48 lines those fees dominate the build. 74HC595: the basic SOIC-16",
     "is $0.171 against $0.044 for the cheapest extended SOP-16 - 39 cents more across 3 chips,",
     "against a per-part fee many times that.",
     "",
-    "STATUS: PARTIAL. Lines with lcsc null still need sourcing."
+    "Four SUBSTITUTIONS against what the design first called for, all folded back into",
+    "gen_spec.py so the schematic agrees: AMS1117-3.3 for LD1117S33 (basic), M95640 for",
+    "25LC640 (half the price, better stocked), 20pF for 12pF crystal load caps (the 12pF was",
+    "simply wrong for a 12.5pF crystal - see DESIGN.md), and a 60V PPTC over a 30V one.",
+    "",
+    "STATUS: every assembled line sourced. The four nulls are 2.54mm headers fitted by hand,",
+    "excluded from BOM and CPL via exclude_refs."
   ],
   "parts": {
-    "74HC595":        {"lcsc": "C5947",     "comment": "74HC595D,118 Nexperia, SOIC-16 - JLC BASIC. Package matches the placed SOIC-16_3.9x9.9mm land"},
-    "74HC165":        {"lcsc": "C22384789", "comment": "SN74HC165DR(LX), SOP-16"},
-    "TPL7407L":       {"lcsc": "C2149827",  "comment": "TPL7407LAPWR TSSOP-16, 7ch low-side driver. 1M internal input pulldowns = no relay clack at boot"},
-    "STM32F446RET6":  {"lcsc": "C69336",    "comment": "LQFP-64 10x10. CAN1 on PB8/PB9, USB OTG FS on PA11/PA12"},
-    "BTS7040-1EPA":   {"lcsc": "C534837",   "comment": "PROFET+2 high-side switch, TSDSO-14 - the ignition latch"},
-    "BMI270":         {"lcsc": "C2836813",  "comment": "Bosch 6-axis IMU, LGA-14. KiCad BMI160 symbol is pin-identical (verified)"},
-    "SN65HVD230":     {"lcsc": "C12084",    "comment": "3.3V CAN transceiver, SOIC-8"},
-    "LD1117S33":      {"lcsc": "C6186",     "comment": "SUBSTITUTED: AMS1117-3.3 SOT-223, JLC BASIC. Same SOT-223 pinout (GND/OUT/IN) as the LD1117S33 in the schematic; 1.7V headroom from 5V is ample"},
-
-    "0R":             {"lcsc": null, "comment": "0805 jumper"},
-    "47R":            {"lcsc": null, "comment": "0805 - PROFET RGND network, REQUIRED for reverse-battery ReverseON"},
-    "120R":           {"lcsc": null, "comment": "0805 - CAN termination, populated"},
-    "1k":             {"lcsc": null, "comment": "0805"},
-    "4.7k":           {"lcsc": null, "comment": "0805 - I2C pull-ups"},
-    "5.1k":           {"lcsc": null, "comment": "0805 - USB-C CC"},
-    "10k":            {"lcsc": null, "comment": "0805 - button pull-ups (wetting current), OE_N pull-up, BOOT0 pulldown"},
-    "22k":            {"lcsc": null, "comment": "0805 - latch IN pulldown"},
-    "47k":            {"lcsc": null, "comment": "0805 - latch ignition feed"},
-    "270k":           {"lcsc": null, "comment": "0805 - sense divider lower leg. 1M/270k clears 74HC VIH at 12.0V; 220k did NOT"},
-    "1M":             {"lcsc": null, "comment": "0805 - sense divider upper leg"},
-
-    "100nF":          {"lcsc": null, "comment": "0805 50V X7R"},
-    "2.2uF":          {"lcsc": null, "comment": "0805 - STM32F4 VCAP, REQUIRED"},
-    "4.7uF":          {"lcsc": null, "comment": "0805"},
-    "10uF_25V":       {"lcsc": null, "comment": "0805"},
-    "10uF_50V":       {"lcsc": null, "comment": "1210 50V - input bulk on the battery rail"},
-    "12pF":           {"lcsc": null, "comment": "0805 C0G - 32.768kHz load caps"},
-    "20pF":           {"lcsc": null, "comment": "0805 C0G - 8MHz load caps"},
-
-    "8MHz":           {"lcsc": null, "comment": "SMD5032 2-pin, 20pF load - HSE. Matches joesbox's stock RCC_HSE_ON PLLM=8"},
-    "32.768kHz":      {"lcsc": null, "comment": "SMD3215 2-pin, 12.5pF load - LSE"},
-    "SS34":           {"lcsc": null, "comment": "SMA - series reverse-polarity"},
-    "SMAJ33A":        {"lcsc": null, "comment": "SMA - load-dump clamp"},
-    "SZNUP2105L":     {"lcsc": null, "comment": "SOT-23 - CAN ESD"},
-    "PPTC_1A":        {"lcsc": null, "comment": "1812 resettable fuse, 1A hold. Must be rated for the battery rail"},
-    "25LC640":        {"lcsc": null, "comment": "SOIC-8 SPI EEPROM - config store"},
-    "GRN":            {"lcsc": null, "comment": "0805 LED"},
-    "RED":            {"lcsc": null, "comment": "0805 LED"},
-    "RESET":          {"lcsc": null, "comment": "TL3342 SMD tactile switch"},
-    "USB-C":          {"lcsc": null, "comment": "HRO TYPE-C-31-M-12 / HCTL 16P horizontal receptacle"},
-
-    "PWR_IN":         {"lcsc": "C441407", "comment": "KF2EDGVM-3.5-2P header. Screw plug KF2EDGK-3.5-2P C440847 bought separately"},
-    "IGN_IN":         {"lcsc": "C441407", "comment": "KF2EDGVM-3.5-2P header"},
-    "AUX_IN":         {"lcsc": null, "comment": "KF2EDGVM-3.5-3P header"},
-    "CAN_A":          {"lcsc": null, "comment": "KF2EDGVM-3.5-3P header"},
-    "CAN_B":          {"lcsc": null, "comment": "KF2EDGVM-3.5-3P header"},
-    "CH1-7":          {"lcsc": null, "comment": "KF2EDGVM-3.5-7P header"},
-    "CH8-14":         {"lcsc": null, "comment": "KF2EDGVM-3.5-7P header"},
-    "CH15-21":        {"lcsc": null, "comment": "KF2EDGVM-3.5-7P header"},
-
-    "SWD":            {"lcsc": null, "comment": "1x05 2.54mm header - hand-fit"},
-    "BOOT_SEL":       {"lcsc": null, "comment": "1x03 2.54mm header - hand-fit"},
-    "WAVESHARE-IN":   {"lcsc": null, "comment": "4x 2.54mm male pins at 3.50mm pitch - buck module socket, hand-fit"},
-    "WAVESHARE-OUT":  {"lcsc": null, "comment": "6x 2.54mm male pins - buck module socket, hand-fit"}
-  }
+    "0R|Resistor_SMD:R_0805_2012Metric": {
+      "lcsc": "C17477",
+      "comment": "0805W8F0000T5E - BASIC",
+      "qty": 3,
+      "name": "0805W8F0000T5E"
+    },
+    "100nF|Capacitor_SMD:C_0805_2012Metric": {
+      "lcsc": "C49678",
+      "comment": "CC0805KRX7R9BB104 50V X7R - BASIC",
+      "qty": 20,
+      "name": "CC0805KRX7R9BB104 50V X7R"
+    },
+    "10k|Resistor_SMD:R_0805_2012Metric": {
+      "lcsc": "C17414",
+      "comment": "0805W8F1002T5E 1% - BASIC",
+      "qty": 24,
+      "name": "0805W8F1002T5E 1%"
+    },
+    "10uF_25V|Capacitor_SMD:C_0805_2012Metric": {
+      "lcsc": "C15850",
+      "comment": "CL21A106KAYNNNE 25V X5R - BASIC",
+      "qty": 2,
+      "name": "CL21A106KAYNNNE 25V X5R"
+    },
+    "10uF_50V|Capacitor_SMD:C_1210_3225Metric": {
+      "lcsc": "C2918502",
+      "comment": "CS3225X7R106K500NRL 50V X7R 1210. Input bulk on the battery rail",
+      "qty": 1,
+      "name": "CS3225X7R106K500NRL 50V X7R 1210"
+    },
+    "120R|Resistor_SMD:R_0805_2012Metric": {
+      "lcsc": "C17437",
+      "comment": "0805W8F1200T5E 1% - BASIC. CAN termination",
+      "qty": 1,
+      "name": "0805W8F1200T5E 1%"
+    },
+    "1M|Resistor_SMD:R_0805_2012Metric": {
+      "lcsc": "C17514",
+      "comment": "0805W8F1004T5E 1% - BASIC. Sense divider upper leg",
+      "qty": 25,
+      "name": "0805W8F1004T5E 1%"
+    },
+    "1k|Resistor_SMD:R_0805_2012Metric": {
+      "lcsc": "C17513",
+      "comment": "0805W8F1001T5E 1% - BASIC",
+      "qty": 3,
+      "name": "0805W8F1001T5E 1%"
+    },
+    "2.2uF|Capacitor_SMD:C_0805_2012Metric": {
+      "lcsc": "C77081",
+      "comment": "GRM21BR71E225KE11L 25V X7R. STM32F4 VCAP, REQUIRED",
+      "qty": 1,
+      "name": "GRM21BR71E225KE11L 25V X7R"
+    },
+    "20pF|Capacitor_SMD:C_0805_2012Metric": {
+      "lcsc": "C1798",
+      "comment": "CL21C200JBANNNC 50V C0G - BASIC. Load caps for BOTH crystals now",
+      "qty": 2,
+      "name": "CL21C200JBANNNC 50V C0G"
+    },
+    "22k|Resistor_SMD:R_0805_2012Metric": {
+      "lcsc": "C17560",
+      "comment": "0805W8F2202T5E 1% - BASIC",
+      "qty": 1,
+      "name": "0805W8F2202T5E 1%"
+    },
+    "270k|Resistor_SMD:R_0805_2012Metric": {
+      "lcsc": "C17589",
+      "comment": "0805W8F2703T5E 1% - EXTENDED, no basic 270k exists. Checked 300k/330k for a basic alternative: none either, so the verified 1M/270k divider ratio stands",
+      "qty": 25,
+      "name": "0805W8F2703T5E 1%"
+    },
+    "32.768kHz|Crystal:Crystal_SMD_3215-2Pin_3.2x1.5mm": {
+      "lcsc": "C32346",
+      "comment": "Q13FC13500004 SMD3215-2P, CL=12.5pF - BASIC. Drove the 12pF->20pF load cap fix",
+      "qty": 1,
+      "name": "Q13FC13500004 SMD3215-2P"
+    },
+    "4.7k|Resistor_SMD:R_0805_2012Metric": {
+      "lcsc": "C17673",
+      "comment": "0805W8F4701T5E 1% - BASIC. I2C pull-ups",
+      "qty": 2,
+      "name": "0805W8F4701T5E 1%"
+    },
+    "4.7uF|Capacitor_SMD:C_0805_2012Metric": {
+      "lcsc": "C1779",
+      "comment": "CL21A475KAQNNNE 25V X5R - BASIC",
+      "qty": 1,
+      "name": "CL21A475KAQNNNE 25V X5R"
+    },
+    "47R|Resistor_SMD:R_0805_2012Metric": {
+      "lcsc": "C17714",
+      "comment": "0805W8F470JT5E 1% - BASIC",
+      "qty": 1,
+      "name": "0805W8F470JT5E 1%"
+    },
+    "47k|Resistor_SMD:R_0805_2012Metric": {
+      "lcsc": "C17713",
+      "comment": "0805W8F4702T5E 1% - BASIC",
+      "qty": 1,
+      "name": "0805W8F4702T5E 1%"
+    },
+    "5.1k|Resistor_SMD:R_0805_2012Metric": {
+      "lcsc": "C27834",
+      "comment": "0805W8F5101T5E 1% - BASIC. USB-C CC",
+      "qty": 2,
+      "name": "0805W8F5101T5E 1%"
+    },
+    "74HC165|Package_SO:SOIC-16_3.9x9.9mm_P1.27mm": {
+      "lcsc": "C22384789",
+      "comment": "SN74HC165DR(LX), SOP-16",
+      "qty": 3,
+      "name": "SN74HC165DR(LX)"
+    },
+    "74HC595|Package_SO:SOIC-16_3.9x9.9mm_P1.27mm": {
+      "lcsc": "C5947",
+      "comment": "74HC595D,118 Nexperia, SOIC-16 - JLC BASIC. Package matches the placed SOIC-16_3.9x9.9mm land",
+      "qty": 3,
+      "name": "74HC595D,118 Nexperia"
+    },
+    "8MHz|Crystal:Crystal_SMD_5032-2Pin_5.0x3.2mm": {
+      "lcsc": "C115962",
+      "comment": "X50328MSB2GI SMD5032-2P 20pF - BASIC. NOT the cheaper basic C12674, which is HC-49S-SMD and will not fit these 5032 lands",
+      "qty": 1,
+      "name": "X50328MSB2GI SMD5032-2P 20pF"
+    },
+    "AMS1117-3.3|Package_TO_SOT_SMD:SOT-223-3_TabPin2": {
+      "lcsc": "C6186",
+      "comment": "SUBSTITUTED: AMS1117-3.3 SOT-223, JLC BASIC. Same SOT-223 pinout (GND/OUT/IN) as the LD1117S33 in the schematic; 1.7V headroom from 5V is ample",
+      "qty": 1,
+      "name": "SUBSTITUTED: AMS1117-3.3 SOT-223"
+    },
+    "AUX_IN|rcm:TerminalBlock_KF2EDG-3.5-3P_1x03_P3.50mm_Horizontal": {
+      "lcsc": "C441322",
+      "comment": "KF2EDGV-3.5-3P header",
+      "qty": 1,
+      "name": "KF2EDGV-3.5-3P header"
+    },
+    "BMI270|Package_LGA:Bosch_LGA-14_3x2.5mm_P0.5mm": {
+      "lcsc": "C2836813",
+      "comment": "Bosch 6-axis IMU, LGA-14. KiCad BMI160 symbol is pin-identical (verified)",
+      "qty": 1,
+      "name": "Bosch 6-axis IMU"
+    },
+    "BOOT_SEL|Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical": {
+      "lcsc": null,
+      "comment": "1x03 2.54mm header - hand-fit",
+      "qty": 1,
+      "name": "1x03 2.54mm header"
+    },
+    "BTS7040-1EPA|Package_SO:Infineon_PG-TSDSO-14-22": {
+      "lcsc": "C534837",
+      "comment": "PROFET+2 high-side switch, TSDSO-14 - the ignition latch",
+      "qty": 1,
+      "name": "PROFET+2 high-side switch"
+    },
+    "CAN_A|rcm:TerminalBlock_KF2EDG-3.5-3P_1x03_P3.50mm_Horizontal": {
+      "lcsc": "C441322",
+      "comment": "KF2EDGV-3.5-3P header",
+      "qty": 1,
+      "name": "KF2EDGV-3.5-3P header"
+    },
+    "CAN_B|rcm:TerminalBlock_KF2EDG-3.5-3P_1x03_P3.50mm_Horizontal": {
+      "lcsc": "C441322",
+      "comment": "KF2EDGV-3.5-3P header",
+      "qty": 1,
+      "name": "KF2EDGV-3.5-3P header"
+    },
+    "CH1-7|rcm:TerminalBlock_KF2EDG-3.5-7P_1x07_P3.50mm_Horizontal": {
+      "lcsc": "C441326",
+      "comment": "KF2EDGV-3.5-7P header. Only ~377 in stock - 15 needed for 5 boards, so fine, but check before ordering",
+      "qty": 1,
+      "name": "KF2EDGV-3.5-7P header"
+    },
+    "CH15-21|rcm:TerminalBlock_KF2EDG-3.5-7P_1x07_P3.50mm_Horizontal": {
+      "lcsc": "C441326",
+      "comment": "KF2EDGV-3.5-7P header",
+      "qty": 1,
+      "name": "KF2EDGV-3.5-7P header"
+    },
+    "CH8-14|rcm:TerminalBlock_KF2EDG-3.5-7P_1x07_P3.50mm_Horizontal": {
+      "lcsc": "C441326",
+      "comment": "KF2EDGV-3.5-7P header",
+      "qty": 1,
+      "name": "KF2EDGV-3.5-7P header"
+    },
+    "GRN|LED_SMD:LED_0805_2012Metric": {
+      "lcsc": "C84260",
+      "comment": "NCD0805G1 520nm. See DESIGN.md - green Vf leaves little headroom on 3V3 through 1k, so this one runs dim",
+      "qty": 1,
+      "name": "NCD0805G1 520nm"
+    },
+    "IGN_IN|rcm:TerminalBlock_KF2EDG-3.5-2P_1x02_P3.50mm_Horizontal": {
+      "lcsc": "C441321",
+      "comment": "KF2EDGV-3.5-2P header",
+      "qty": 1,
+      "name": "KF2EDGV-3.5-2P header"
+    },
+    "PPTC_1A|Resistor_SMD:R_1812_4532Metric": {
+      "lcsc": "C19078719",
+      "comment": "1812L050/60GR 500mA hold / 1A trip, 60V. 60V NOT 30V: the SMAJ33A clamps around 53V, which a 30V part sits under. Carries only the board's own supply (coil current returns via the drivers, not F1), so 500mA hold is ample",
+      "qty": 1,
+      "name": "1812L050/60GR 500mA hold / 1A trip, 60V"
+    },
+    "PWR_IN|rcm:TerminalBlock_KF2EDG-3.5-2P_1x02_P3.50mm_Horizontal": {
+      "lcsc": "C441321",
+      "comment": "KF2EDGV-3.5-2P header. Screw plug bought separately",
+      "qty": 1,
+      "name": "KF2EDGV-3.5-2P header"
+    },
+    "RED|LED_SMD:LED_0805_2012Metric": {
+      "lcsc": "C84256",
+      "comment": "NCD0805R1 - BASIC",
+      "qty": 1,
+      "name": "NCD0805R1"
+    },
+    "RESET|Button_Switch_SMD:SW_SPST_TL3342": {
+      "lcsc": "C2886894",
+      "comment": "TL3342F260QG. PRICEY at $1.13 and only ~455 in stock - the one weak line in this BOM; a cheaper switch needs a different land, so it is a next-revision change",
+      "qty": 1,
+      "name": "TL3342F260QG"
+    },
+    "SMAJ33A|Diode_SMD:D_SMA": {
+      "lcsc": "C353454",
+      "comment": "SMAJ33A 400W SMA. Load-dump clamp, 33V standoff",
+      "qty": 1,
+      "name": "SMAJ33A 400W SMA"
+    },
+    "SN65HVD230|Package_SO:SOIC-8_3.9x4.9mm_P1.27mm": {
+      "lcsc": "C12084",
+      "comment": "3.3V CAN transceiver, SOIC-8",
+      "qty": 1,
+      "name": "3.3V CAN transceiver"
+    },
+    "SS34|Diode_SMD:D_SMA": {
+      "lcsc": "C8678",
+      "comment": "SS34 3A 40V SMA - BASIC. Series reverse-polarity",
+      "qty": 1,
+      "name": "SS34 3A 40V SMA"
+    },
+    "STM32F446RET6|Package_QFP:LQFP-64_10x10mm_P0.5mm": {
+      "lcsc": "C69336",
+      "comment": "LQFP-64 10x10. CAN1 on PB8/PB9, USB OTG FS on PA11/PA12",
+      "qty": 1,
+      "name": "LQFP-64 10x10"
+    },
+    "SWD|Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical": {
+      "lcsc": null,
+      "comment": "1x05 2.54mm header - hand-fit",
+      "qty": 1,
+      "name": "1x05 2.54mm header"
+    },
+    "SZNUP2105L|Package_TO_SOT_SMD:SOT-23": {
+      "lcsc": "C233494",
+      "comment": "SZNUP2105LT1G SOT-23. CAN bus ESD",
+      "qty": 1,
+      "name": "SZNUP2105LT1G SOT-23"
+    },
+    "TPL7407L|Package_SO:TSSOP-16_4.4x5mm_P0.65mm": {
+      "lcsc": "C2149827",
+      "comment": "TPL7407LAPWR TSSOP-16, 7ch low-side driver. 1M internal input pulldowns = no relay clack at boot",
+      "qty": 3,
+      "name": "TPL7407LAPWR TSSOP-16, 7ch low-side driver"
+    },
+    "USB-C|Connector_USB:USB_C_Receptacle_HCTL_HC-TYPE-C-16P-01A": {
+      "lcsc": "C165948",
+      "comment": "TYPE-C-31-M-12 16P. VERIFY the land against the HCTL footprint before ordering - the two are commonly treated as interchangeable but that is not something I confirmed from a drawing",
+      "qty": 1,
+      "name": "TYPE-C-31-M-12 16P"
+    },
+    "WAVESHARE-IN|rcm:WaveshareBuck_IN_2x2_P3.50mm": {
+      "lcsc": null,
+      "comment": "4x 2.54mm male pins at 3.50mm pitch - buck module socket, hand-fit",
+      "qty": 1,
+      "name": "4x 2.54mm male pins at 3.50mm pitch"
+    },
+    "WAVESHARE-OUT|rcm:WaveshareBuck_OUT_3x3_P2.54mm": {
+      "lcsc": null,
+      "comment": "6x 2.54mm male pins - buck module socket, hand-fit",
+      "qty": 1,
+      "name": "6x 2.54mm male pins"
+    },
+    "M95640|Package_SO:SOIC-8_3.9x4.9mm_P1.27mm": {
+      "lcsc": "C283461",
+      "comment": "SUBSTITUTED: M95640-RMN6TP for the 25LC640 - same 25-series SPI pinout, $0.33 vs $0.73-1.42, 1.8-5.5V",
+      "qty": 1,
+      "name": "SUBSTITUTED: M95640-RMN6TP for the 25LC640"
+    }
+  },
+  "exclude_refs": [
+    "^TP",
+    "^ST",
+    "^H[0-9]",
+    "^J_SWD$",
+    "^J_BOOT$",
+    "^JB[12]$"
+  ]
 }

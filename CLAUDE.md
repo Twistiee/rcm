@@ -75,3 +75,38 @@ These cost real time to learn on `pdm`; they apply here too.
     polarised part has an unambiguous silk cue.
 - **Check LCSC stock before committing a BOM line.** Stock moves fast and has bitten this
   project repeatedly in both directions.
+
+## Part numbers live in `jlc_parts.json`, and flow from there
+
+One file is the source of truth for every LCSC part number:
+
+- Keyed **`value|footprint`**, exactly as it appears on the board. This is not cosmetic —
+  `tools/gen_jlc_bom_cpl.py` looks up that composite key, so a map keyed by bare value
+  silently matches nothing and produces a BOM with every line unsourced. Generate the keys
+  from `spec.json`; never type them.
+- The footprint half of the key is a package guard. It caught the cheapest basic 8MHz
+  crystal (`C12674`) being HC-49S-SMD, which would not fit the 5032 lands on this board.
+- `gen_spec.py` reads the file and stamps an `LCSC` field onto every symbol, so editing a
+  number in one place carries it into the schematic. It **fails the build** if any
+  component has no matching line.
+
+**Prefer JLC `basic` parts even when dearer.** At qty 1 the per-unique-*extended*-part fee
+is fixed, and with ~48 lines those fees dominate — unit price barely matters.
+
+**Substitutions get folded back into `gen_spec.py`,** never left living only in the parts
+map. Four so far (AMS1117-3.3, M95640, 60V PPTC, 20pF crystal caps); see `DESIGN.md`.
+
+## Silkscreen and DRC gotchas
+
+- `tools/relocate_refs.py` gives up with "no free spot" on a dense board. Running
+  `tools/shrink_refs.py <board> 0.8 --only <refs.txt>` first, on just the crowded refs,
+  frees enough room to converge — 0.8mm is JLC's minimum text height, and small text beats
+  overlapped text for hand-rework. Then iterate relocate until it applies 0 moves.
+- Freerouting rounds through the SES file and occasionally lands a track a micron or two
+  inside a clearance rule. `tools/fix_marginal_clearance.py` narrows such segments rather
+  than moving them (moving risks breaking connectivity), but **that only works if the board
+  has width headroom** — here min width and clearance are both KiCad's default 0.2mm, so
+  narrowing just trades a clearance error for a track-width error. Re-running the router is
+  the fix; the miss is a per-run artifact, not a placement problem.
+- Re-routing invalidates the silk pass, since `silk_over_copper` depends on where tracks
+  ran. Always do silk **after** the final route.

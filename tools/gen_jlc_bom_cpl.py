@@ -144,7 +144,9 @@ def main():
         info = parts.get(f"{val}|{fpname}", {})
         lcsc = info.get("lcsc", "")
         key = (lcsc, fpname) if lcsc else (val, fpname)
-        e = merged.setdefault(key, {"comment": info.get("comment", val),
+        # "name" is the short manufacturing label; "comment" carries the engineering
+        # rationale, which does not belong in a document a fab operator reads.
+        e = merged.setdefault(key, {"comment": info.get("name") or info.get("comment", val),
                                     "fp": fpname, "lcsc": lcsc, "refs": []})
         e["refs"].extend(refs)
 
