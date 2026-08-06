@@ -174,12 +174,6 @@
       "qty": 1,
       "name": "1x03 2.54mm header"
     },
-    "BTS7040-1EPA|Package_SO:Infineon_PG-TSDSO-14-22": {
-      "lcsc": "C534837",
-      "comment": "PROFET+2 high-side switch, TSDSO-14 - the ignition latch",
-      "qty": 1,
-      "name": "PROFET+2 high-side switch"
-    },
     "CAN_A|rcm:TerminalBlock_KF2EDG-3.5-3P_1x03_P3.50mm_Horizontal": {
       "lcsc": "C441322",
       "comment": "KF2EDGV-3.5-3P header",
@@ -311,6 +305,12 @@
       "comment": "SUBSTITUTED: M95640-RMN6TP for the 25LC640 - same 25-series SPI pinout, $0.33 vs $0.73-1.42, 1.8-5.5V",
       "qty": 1,
       "name": "SUBSTITUTED: M95640-RMN6TP for the 25LC640"
+    },
+    "BTS7040-1EPZ|Package_SO:Infineon_PG-TSDSO-14-22": {
+      "lcsc": "C534838",
+      "comment": "PROFET+2 high-side switch, TSDSO-14 - the ignition latch. Was C534837 (-1EPA) which went to ZERO stock. Same base part, better specs. Only ~10 in stock; fallback C534825 BTS7004-1EPP, ~20k stock, overkill but same family/pinout",
+      "qty": 1,
+      "name": "BTS7040-1EPZ"
     }
   },
   "exclude_refs": [

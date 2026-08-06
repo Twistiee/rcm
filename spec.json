@@ -56,10 +56,10 @@
   {
    "ref": "U_LATCH",
    "lib": "RCM:BTS70xx-1E",
-   "value": "BTS7040-1EPA",
+   "value": "BTS7040-1EPZ",
    "footprint": "Package_SO:Infineon_PG-TSDSO-14-22",
    "fields": {
-    "LCSC": "C534837"
+    "LCSC": "C534838"
    }
   },
   {

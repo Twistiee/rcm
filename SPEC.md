@@ -670,3 +670,48 @@ Cheap ways to confirm the pour is actually there, since the tooling will not tel
   `zone_connect` token inside every pad and reports dozens of false hits.
 - The copper gerbers should carry `G36` filled regions — F.Cu ~27, B.Cu ~6 here.
 - The zipped gerber set is ~120kB with no pour and ~280kB with it.
+
+
+## Latch part changed on a stock-out: BTS7040-1EPA -> -1EPZ (2026-08-06)
+
+JLC's quote came back with **`C534837` (BTS7040-1EPA) at zero stock** — 38 of 39 BOM lines
+priced, the latch missing. Replaced with **`C534838`, BTS7040-1EPZ**.
+
+Why this one rather than a different PROFET:
+
+- **Same base part number.** The `Z` is a temperature/variant grade, not a different die,
+  so pin identity is near-certain rather than resting on family convention.
+- Same `PG-TSDSO-14-22` package, so the layout is untouched.
+- Better on both specs that matter here: **19mOhm** against 36, and **-40..+175C**
+  against +150.
+- Cheaper: $1.07 against the -1EPA's $0.79... marginally dearer per piece, but irrelevant
+  against being unbuyable.
+
+**The generic symbol is what made this cheap.** `RCM:BTS70xx-1E` was built as a family part
+(pins 1 GND, 2 IN, 3 DEN, 4 IS, 8-14 OUT, 15 pad VS), so absorbing a stock-out in the
+PROFET+2 1-channel line costs a value string, not a re-layout.
+
+**Watch the stock: only ~10 pieces.** Enough for this run of 5 with spares, but if it goes,
+the fallback is **`C534825` BTS7004-1EPP, ~20k in stock, $1.85** — 4.4mOhm/15A, wildly
+overkill for a 500mA latch but harmless, same package and family pinout. That one relies on
+family convention for the pinout rather than being the same base part, so it would be worth
+a datasheet check first.
+
+### The 1.3 micron clearance miss is gone
+
+The re-route that came with this part change happens to avoid it. The board is now **clean
+of every non-silkscreen violation**: 0 unconnected, 0 schematic parity, 26 cosmetic
+silkscreen warnings and nothing else. Worth noting it was route-dependent after all, so the
+earlier "deterministic geometry" reading was only true across the routes tried at the time.
+
+## Quote received (2026-08-06) — the pivot worked
+
+**~$250 for 5 boards, against revB's ~$500.** PCB $31.80 + PCBA $217.93.
+
+The line that validates the whole basic-parts strategy is **Feeders Loading fee: $53.55** —
+about half the $110.98 component cost, charged per unique part. That is exactly the fixed
+per-part fee the sourcing pass was optimised against, and it is why a basic 74HC595 at
+$0.171 beat an extended one at $0.044.
+
+`X-Ray Inspection $8.20` is the BMI270 LGA-14 — bottom-terminated, no visible joints. It is
+also the reason ENIG is worth taking over HASL.

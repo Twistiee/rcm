@@ -81,7 +81,14 @@ N("GND", "J_PWR.2", "D2.2", "C_BULK.2")
 # ---------------------------------------------------------------------------
 # Block 2 -- ignition latch (revB U19 verbatim: resistive OR into IN)
 # ---------------------------------------------------------------------------
-C("U_LATCH", "RCM:BTS70xx-1E", "BTS7040-1EPA", TSDSO)
+# BTS7040-1EPZ, not the -1EPA this started as: JLC went to ZERO stock on the -1EPA
+# (C534837) between quoting and ordering. Same base part number, so the Z is a
+# temperature/variant grade rather than a different die -- same PG-TSDSO-14-22, same
+# pinout, and better on both counts that matter (19mOhm vs 36, -40..+175 vs +150).
+# The RCM:BTS70xx-1E symbol is deliberately generic across the 1-channel family, which
+# is precisely so a stock-out can be absorbed without touching the layout.
+# Fallback if the -1EPZ's thin stock goes too: BTS7004-1EPP, C534825, ~20k in stock.
+C("U_LATCH", "RCM:BTS70xx-1E", "BTS7040-1EPZ", TSDSO)
 C("R_LG", "Device:R", "47R", R0805)
 C("R_LPD", "Device:R", "22k", R0805)
 C("R_LIGN", "Device:R", "47k", R0805)
