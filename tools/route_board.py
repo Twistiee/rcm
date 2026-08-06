@@ -35,6 +35,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("board")
     ap.add_argument("--zone", action="append", default=[])
+    ap.add_argument("--no-route", action="append", default=[],
+                    help="net to STRIP from the DSN so freerouting never routes it. "
+                         "For a net that is a full copper pour, every trace the router "
+                         "lays is wasted congestion -- it steals paths from signals to "
+                         "reach a pad the zone fill was going to connect anyway. Pass "
+                         "--no-route GND together with --zone GND:F.Cu --zone GND:B.Cu.")
     ap.add_argument("--power-layer", action="append", default=[],
                     help="mark this copper layer (type power) in the DSN so "
                          "freerouting routes no wires on it (vias still pass); "
@@ -85,6 +91,35 @@ def main():
             txt, n = re.subn(r'\(keepout "" \(polygon %s [^()]*\)\)\s*' % esc,
                              "", txt, flags=re.S)
             print(f"  power layer {lay} (dropped {n} DSN keepout(s) on it)")
+        open(dsn, "w", encoding="utf-8").write(txt)
+
+    # Strip pour nets from the DSN. Freerouting has no concept of "this net is a plane,
+    # leave it alone" -- given GND pins it will dutifully route them, and on a dense board
+    # those traces crowd out real signals to reach pads the pour connects for free.
+    # Removing the net from the netlist is the whole trick; the zone fill does the work.
+    if args.no_route:
+        txt = open(dsn, encoding="utf-8").read()
+        for net in args.no_route:
+            # DSN writes names UNQUOTED: "(net GND". The lookahead keeps LATCH_GND,
+            # CAN_TERM etc. from matching -- a substring match here would silently
+            # delete the wrong net and the board would route fine but wired wrong.
+            esc = re.escape(net)
+            m = re.search(r"\(net\s+\"?%s\"?(?=[\s(])" % esc, txt)
+            if not m:
+                raise SystemExit("--no-route %s: net not found in DSN" % net)
+            depth = 0
+            for j in range(m.start(), len(txt)):
+                if txt[j] == "(":
+                    depth += 1
+                elif txt[j] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+            npins = len(re.findall(r"\S+-\S+", txt[m.start():j + 1]))
+            txt = txt[:m.start()] + txt[j + 1:]
+            # the class list names every net; a dangling name upsets freerouting's parse
+            txt = re.sub(r"(?<=[\s])%s(?=[\s])" % esc, " ", txt, count=1)
+            print("  no-route %s (%d pins left to the pour)" % (net, npins))
         open(dsn, "w", encoding="utf-8").write(txt)
 
     print("== Freerouting ==")
