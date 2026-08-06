@@ -110,3 +110,30 @@ map. Four so far (AMS1117-3.3, M95640, 60V PPTC, 20pF crystal caps); see `DESIGN
   the fix; the miss is a per-run artifact, not a placement problem.
 - Re-routing invalidates the silk pass, since `silk_over_copper` depends on where tracks
   ran. Always do silk **after** the final route.
+
+
+## Routing: ALWAYS pass `--zone`, or you get a board with no ground pour
+
+`tools/route_board.py` takes `--zone NET:LAYER` and it **defaults to empty**. Omit it and
+the router happily returns a fully-routed, DRC-clean, 0-unconnected board with **no copper
+pour at all** — nothing in the DRC output says the pours are missing, because an absent
+zone violates no rule. It was spotted by eye, not by a check.
+
+The correct command for this board is always:
+
+```
+route_board.py rcm.kicad_pcb --zone GND:F.Cu --zone GND:B.Cu
+```
+
+Then `fix_starved_thermals.py <board> <drc.json>`, because thermal reliefs on the fresh
+pour usually leave a few pads with too few spokes.
+
+**Verify the pour exists rather than trusting the run** — count top-level zone blocks
+(`
+	(zone
+`), not the string `(zone`, which also matches the `zone_connect` inside every
+pad. On this board: 2 zones, both filled, and the copper gerbers should show G36 filled
+regions (F.Cu ~27, B.Cu ~6). A zipped gerber set around 120kB has no pour; with it, ~280kB.
+
+Re-routing invalidates the silk pass twice over — `silk_over_copper` counts pour copper as
+well as tracks — so silk is always the **last** step before export.

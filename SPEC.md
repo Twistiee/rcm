@@ -589,7 +589,8 @@ full manufacturing set generated.
 
 | | |
 |---|---|
-| Routing | **414 / 414 nets, 0 unconnected** (71s, score 994.90, 2084 segments) |
+| Routing | **414 / 414 nets, 0 unconnected** (40s, score 994.78, 2164 segments) |
+| Copper pour | **GND on F.Cu and B.Cu**, both filled, 33 polygons |
 | DRC | **0 unconnected, 0 schematic parity** |
 | Violations | 26 silkscreen + **1 clearance, 1.3 microns short** (see below) |
 | Gerbers | `mfg/rcm_gerbers.zip`, 14 files, 140.00 x 70.00mm, 0 G36 regions |
@@ -648,3 +649,24 @@ blocks**.
 
 This is the same signature flagged on pdm14-revB. Whether revB's was this flag or a genuine
 fault was not re-checked here.
+
+
+### The ground pour went missing, and no check caught it
+
+Round 3 was first routed **without `--zone`**, which defaults to empty in `route_board.py`.
+The result was a fully routed, 0-unconnected, DRC-clean board with **no copper pour on
+either layer** — and nothing in any report said so, because a missing zone breaks no rule.
+The user spotted it by eye off the 3D view.
+
+Re-routed as `--zone GND:F.Cu --zone GND:B.Cu`, then `fix_starved_thermals.py` set three
+pads (`J_USB.A12`, `J_USB.B1`, `U_MCU.47`) to solid zone connection where thermal spokes
+came up short.
+
+Cheap ways to confirm the pour is actually there, since the tooling will not tell you:
+
+- Count **top-level** zone blocks (`
+	(zone
+`). Grepping for `(zone` matches the
+  `zone_connect` token inside every pad and reports dozens of false hits.
+- The copper gerbers should carry `G36` filled regions — F.Cu ~27, B.Cu ~6 here.
+- The zipped gerber set is ~120kB with no pour and ~280kB with it.
