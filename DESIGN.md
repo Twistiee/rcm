@@ -604,3 +604,82 @@ indicators sit under the button panel anyway — worth revisiting if they end up
 There is no basic 270k in 0805, and none at 300k or 330k either, so there was no basic part
 to move the sense divider *to*. The verified 1M/270k ratio stands rather than being bent
 toward a part that does not exist.
+
+
+## Channel mode became a software table, not hardware (2026-08-06)
+
+The plan to make each channel switchable in hardware — 21 DIP switches, a readback, a
+south-half re-layout — was **abandoned, and the board got simpler instead.**
+
+### What I had wrong
+
+The problem was only ever the pull-**up**. `R_PU` fitted as a 10k pull-up to +12V makes a
+blown fuse read 2.531V and a good one 2.551V — both HIGH, 20mV apart. Fuse sensing dead.
+
+A 10k pull-**down** does not do that, because the ~85 ohm relay coil completely swamps it:
+
+| Channel state | Divider | Reads |
+|---|---|---|
+| Output, driver off, fuse GOOD | 2.530 V | HIGH |
+| Output, driver off, fuse BLOWN | 0.000 V | LOW |
+| Input, button open | 0.000 V | LOW |
+| Input, button closed to +12V | 2.551 V | HIGH |
+
+All four correct **with the same resistor fitted on every channel**. Nothing is
+mode-dependent, so there is nothing for hardware to select. `R_PU` is now a fitted 10k to
+GND on all 21 channels, and in/out is purely a firmware table.
+
+That deleted the DIP array, the readback, the P-FET rails and the re-layout in one go.
+
+### The trade: buttons are positive-switched
+
+Wired to +12V rather than to ground. Two consequences, both improvements:
+
+- **Wetting current 1.20mA**, against 0.0094mA if the sense divider alone were the
+  pull-down. That is the difference between contacts that stay good and contacts that go
+  intermittent.
+- **Chafe is fail-safe.** A button wire rubbing to chassis reads *not pressed*. Earth
+  switching reads *pressed* — a phantom activation. The feed to the buttons wants its own
+  small fuse.
+
+Standing draw is 25mA with all 21 idle-high; the 1.19mA through an idle coil is far under
+the ~100mA a relay needs to pick up.
+
+## Config DIP switch (`SW_CFG`)
+
+One 8-way 1.27mm half-pitch switch (`C6386921`) in the top-right corner — the only free
+10x10mm pocket on the board, and conveniently next to `J_CAN2` where the termination pole
+has to reach. Switch *k* pairs pins *k* and *(17-k)*, verified off the symbol's own pin
+geometry rather than assumed.
+
+| Pos | Function | How |
+|---|---|---|
+| 1 | **CAN termination** | Passive, parallels `R_TJ` |
+| 2 | **Role** — RCM or keypad | PC0 |
+| 3 | **Address bit 0** | PC1 |
+| 4 | **Address bit 1** | PC2 |
+| 5 | **CAN bitrate** 500k/1M | PC3 |
+| 6 | **IMU publish enable** | PC4 |
+| 7-8 | unconnected | — |
+
+Positions 2-6 use the STM32's **internal** pull-ups, so each switch just shorts a GPIO to
+ground — no external resistors. Closed = 0.
+
+**Why these settings and not others:** everything except the IMU bit is something you cannot
+fix over the bus once it is wrong — termination, node identity and bitrate all have to be
+right *before* CAN talks at all. The IMU bit is there because only one board in a car should
+publish orientation, and a keypad bolted into a door card is not that board.
+
+Termination keeps `R_TJ` in parallel deliberately: the DIP for the bench, a soldered 0R for
+the car, where a mechanical contact carrying ~17mA could chatter under vibration.
+
+### Positions 7 and 8 are unconnected on purpose
+
+Routing two more nets from the top-right corner across the CAN/IMU corridor to the MCU is
+what tipped this board from routable to not — first 3 nets failed, then 1. Dropping the two
+spare bits fixed it outright. The switch positions still physically exist for a future
+revision; only the copper is gone.
+
+**Verify the DIP land before ordering.** The footprint is the standard 1.27mm 8-position
+gull-wing (7.62mm row spacing); `C6386921` was not checked against a dimensioned drawing.
+Same caveat as the USB-C.

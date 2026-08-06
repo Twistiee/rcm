@@ -100,6 +100,10 @@ groups.append({
 # ---------------------------------------------------------------------------
 # North-edge terminals, centred as a group on that edge (rot 180, so the body runs
 # from anchor-5.25 for a 2P / anchor-8.75 for a 3P, out to anchor+1.75).
+# Config DIP, top-right corner -- the only free 10x10mm pocket on the board, and it
+# happens to be right beside J_CAN2, which is where the termination pole has to reach.
+P("SW_CFG", 118.0, 7.5, 0)
+
 P("J_PWR", 36.5, 5.0, 180)
 P("J_IGN", 51.5, 5.0, 180)
 P("J_AUX", 70.0, 5.0, 180)

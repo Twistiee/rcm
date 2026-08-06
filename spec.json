@@ -475,6 +475,15 @@
    }
   },
   {
+   "ref": "SW_CFG",
+   "lib": "Switch:SW_DIP_x08",
+   "value": "CFG_DIP",
+   "footprint": "Button_Switch_SMD:SW_DIP_SPSTx08_Slide_KingTek_DSHP08TS_W7.62mm_P1.27mm",
+   "fields": {
+    "LCSC": "C6386921"
+   }
+  },
+  {
    "ref": "U_IMU",
    "lib": "Sensor_Motion:BMI160",
    "value": "BMI270",
@@ -696,7 +705,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -724,7 +732,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -752,7 +759,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -780,7 +786,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -808,7 +813,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -836,7 +840,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -864,7 +867,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -910,7 +912,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -938,7 +939,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -966,7 +966,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -994,7 +993,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -1022,7 +1020,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -1050,7 +1047,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -1078,7 +1074,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -1124,7 +1119,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -1152,7 +1146,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -1180,7 +1173,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -1208,7 +1200,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -1236,7 +1227,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -1264,7 +1254,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -1292,7 +1281,6 @@
    "lib": "Device:R",
    "value": "10k",
    "footprint": "Resistor_SMD:R_0805_2012Metric",
-   "dnp": true,
    "fields": {
     "LCSC": "C17414"
    }
@@ -1428,27 +1416,6 @@
     "C_LVS.1",
     "D1.2",
     "D2.1",
-    "R_PU1.2",
-    "R_PU10.2",
-    "R_PU11.2",
-    "R_PU12.2",
-    "R_PU13.2",
-    "R_PU14.2",
-    "R_PU15.2",
-    "R_PU16.2",
-    "R_PU17.2",
-    "R_PU18.2",
-    "R_PU19.2",
-    "R_PU2.2",
-    "R_PU20.2",
-    "R_PU21.2",
-    "R_PU3.2",
-    "R_PU4.2",
-    "R_PU5.2",
-    "R_PU6.2",
-    "R_PU7.2",
-    "R_PU8.2",
-    "R_PU9.2",
     "U_DRV1.9",
     "U_DRV2.9",
     "U_DRV3.9",
@@ -1599,6 +1566,7 @@
     "J_CAN1.2",
     "J_CAN2.2",
     "R_TJ.2",
+    "SW_CFG.16",
     "U_CAN.6"
    ]
   },
@@ -1620,7 +1588,8 @@
    "name": "CAN_TERM",
    "pins": [
     "R_TERM.2",
-    "R_TJ.1"
+    "R_TJ.1",
+    "SW_CFG.1"
    ]
   },
   {
@@ -1628,6 +1597,41 @@
    "pins": [
     "U_CAN.1",
     "U_MCU.62"
+   ]
+  },
+  {
+   "name": "CFG_ADDR0",
+   "pins": [
+    "SW_CFG.3",
+    "U_MCU.9"
+   ]
+  },
+  {
+   "name": "CFG_ADDR1",
+   "pins": [
+    "SW_CFG.4",
+    "U_MCU.10"
+   ]
+  },
+  {
+   "name": "CFG_BAUD",
+   "pins": [
+    "SW_CFG.5",
+    "U_MCU.11"
+   ]
+  },
+  {
+   "name": "CFG_IMU_EN",
+   "pins": [
+    "SW_CFG.6",
+    "U_MCU.24"
+   ]
+  },
+  {
+   "name": "CFG_ROLE",
+   "pins": [
+    "SW_CFG.2",
+    "U_MCU.8"
    ]
   },
   {
@@ -2053,6 +2057,27 @@
     "R_IGL.2",
     "R_LG.2",
     "R_LPD.2",
+    "R_PU1.2",
+    "R_PU10.2",
+    "R_PU11.2",
+    "R_PU12.2",
+    "R_PU13.2",
+    "R_PU14.2",
+    "R_PU15.2",
+    "R_PU16.2",
+    "R_PU17.2",
+    "R_PU18.2",
+    "R_PU19.2",
+    "R_PU2.2",
+    "R_PU20.2",
+    "R_PU21.2",
+    "R_PU3.2",
+    "R_PU4.2",
+    "R_PU5.2",
+    "R_PU6.2",
+    "R_PU7.2",
+    "R_PU8.2",
+    "R_PU9.2",
     "R_RS.2",
     "R_SL1.2",
     "R_SL10.2",
@@ -2075,6 +2100,11 @@
     "R_SL7.2",
     "R_SL8.2",
     "R_SL9.2",
+    "SW_CFG.11",
+    "SW_CFG.12",
+    "SW_CFG.13",
+    "SW_CFG.14",
+    "SW_CFG.15",
     "SW_RST.2",
     "U_CAN.2",
     "U_DRV1.8",
@@ -2561,6 +2591,10 @@
  "no_connects": [
   "J_USB.A8",
   "J_USB.B8",
+  "SW_CFG.10",
+  "SW_CFG.7",
+  "SW_CFG.8",
+  "SW_CFG.9",
   "U_CAN.5",
   "U_IMU.10",
   "U_IMU.11",

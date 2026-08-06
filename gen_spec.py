@@ -212,7 +212,38 @@ N("CAN_RX", "U_CAN.4")                  # -> MCU PB8
 N("CAN_RS", "U_CAN.8", "R_RS.1")
 N("CANH", "U_CAN.7", "J_CAN1.1", "J_CAN2.1", "D_CAN.1", "R_TERM.1")
 N("CANL", "U_CAN.6", "J_CAN1.2", "J_CAN2.2", "D_CAN.2", "R_TJ.2")
-N("CAN_TERM", "R_TERM.2", "R_TJ.1")
+N("CAN_TERM", "R_TERM.2", "R_TJ.1", "SW_CFG.1")
+
+# ---------------------------------------------------------------------------
+# Config DIP switch (8-way, 1.27mm half-pitch, top-right corner)
+#
+# SW_DIP_x08 pairs switch k with pins k and (17-k) -- verified off the symbol's
+# own pin geometry, not assumed.
+#
+# Position 1 is PASSIVE: it parallels R_TJ, so closing the DIP terminates CAN, and
+# soldering the 0R does the same thing permanently. Both fitted means you get a
+# fingernail setting for the bench and a vibration-proof one for the car.
+#
+# Positions 2-8 are read by the MCU with its INTERNAL pull-ups enabled, so each
+# switch just shorts a GPIO to ground -- no external resistors at all. Closed = 0.
+#
+# These carry the settings you cannot fix over the bus once they are wrong:
+# termination, node identity, and bitrate all have to be right BEFORE CAN works.
+# IMU_EN is the exception -- it is here because only one board in a car should be
+# publishing orientation, and a keypad bolted into a door card is not that board.
+# ---------------------------------------------------------------------------
+C("SW_CFG", "Switch:SW_DIP_x08", "CFG_DIP",
+  "Button_Switch_SMD:SW_DIP_SPSTx08_Slide_KingTek_DSHP08TS_W7.62mm_P1.27mm")
+N("CANL", "SW_CFG.16")                   # pos 1 -> CAN termination
+N("GND", *["SW_CFG.%d" % n for n in range(11, 16)])  # common side of pos 2-6
+# Positions 7 and 8 are left UNCONNECTED. They were spare bits, and routing two more
+# nets from the top-right corner across the CAN/IMU corridor to the MCU is what tipped
+# this board from routable to not -- 3 nets failed, then 1. The switch positions still
+# physically exist if a future revision wants them; only the copper is gone.
+no_connects += ["SW_CFG.7", "SW_CFG.8", "SW_CFG.9", "SW_CFG.10"]
+for _p, _net in ((2, "CFG_ROLE"), (3, "CFG_ADDR0"), (4, "CFG_ADDR1"), (5, "CFG_BAUD"),
+                 (6, "CFG_IMU_EN")):
+    N(_net, "SW_CFG.%d" % _p)
 no_connects += ["U_CAN.5"]
 
 # ---------------------------------------------------------------------------
@@ -297,10 +328,10 @@ for t in range(1, NTILE + 1):
         N("SNS%d" % ch, "R_SH%d.2" % ch, "R_SL%d.1" % ch,
           "U_SI%d.%s" % (t, D165[k - 1]))
         N("GND", "R_SL%d.2" % ch)
-        N("+12V_P", "R_PU%d.2" % ch)
+        N("GND", "R_PU%d.2" % ch)
         C("R_SH%d" % ch, "Device:R", "1M", R0805)
         C("R_SL%d" % ch, "Device:R", "270k", R0805)
-        C("R_PU%d" % ch, "Device:R", "10k", R0805, dnp=True)
+        C("R_PU%d" % ch, "Device:R", "10k", R0805)
     # 595 QH (8th output) unused on every tile
     no_connects.append("U_SO%d.%s" % (t, Q595[7]))
 
@@ -373,6 +404,13 @@ PINMAP = {
     "34": ("PB13", "EEP_SCK"),
     "35": ("PB14", "EEP_MISO"),
     "36": ("PB15", "EEP_MOSI"),
+    # Config DIP positions 2-8. Plain GPIOs on port C, deliberately avoiding the
+    # JTAG pins and PC13 (weak drive / RTC tamper). Internal pull-up, switch to GND.
+    "8":  ("PC0", "CFG_ROLE"),    # RCM or keypad -- decides CAN IDs and behaviour
+    "9":  ("PC1", "CFG_ADDR0"),
+    "10": ("PC2", "CFG_ADDR1"),   # ADDR0+1 -> 4 nodes per role
+    "11": ("PC3", "CFG_BAUD"),    # 500k / 1M -- wrong means totally mute on the bus
+    "24": ("PC4", "CFG_IMU_EN"),  # publish IMU data, so only one board in the car does
 }
 for num, (_port, net) in PINMAP.items():
     N(net, "U_MCU.%s" % num)

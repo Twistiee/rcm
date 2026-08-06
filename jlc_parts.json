@@ -311,6 +311,12 @@
       "comment": "PROFET+2 high-side switch, TSDSO-14 - the ignition latch. Was C534837 (-1EPA) which went to ZERO stock. Same base part, better specs. Only ~10 in stock; fallback C534825 BTS7004-1EPP, ~20k stock, overkill but same family/pinout",
       "qty": 1,
       "name": "BTS7040-1EPZ"
+    },
+    "CFG_DIP|Button_Switch_SMD:SW_DIP_SPSTx08_Slide_KingTek_DSHP08TS_W7.62mm_P1.27mm": {
+      "lcsc": "C6386921",
+      "qty": 1,
+      "name": "1.27-8P DIP switch",
+      "comment": "1.27-8P TPPT, 8-way half-pitch SMD DIP. VERIFY THE LAND before ordering: the footprint is the standard 1.27mm 8-position gull-wing (W=7.62mm row spacing) and this part was not checked against a dimensioned drawing"
     }
   },
   "exclude_refs": [
