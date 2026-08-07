@@ -78,3 +78,27 @@ the 5 as unexplained-but-benign rather than definitively fine.
 
 Nothing here is electrical: **0 electrical DRC violations, 0 schematic parity errors, and
 no pad anywhere left unconnected.**
+
+
+## Silkscreen — done (2026-08-07)
+
+Converged at **25 cosmetic warnings**, the same floor the 2-layer board reached. Nothing
+electrical: **0 electrical DRC violations, 0 schematic parity.**
+
+| | |
+|---|---|
+| Text over text | 13 |
+| Text over pad | 12 |
+| Refs involved | 23 |
+
+Worst offenders are the crowded north-east cluster — `U_CAN`(6), `J_CAN2`(6), `U_MCU`(4) —
+plus the tile-1 shift registers.
+
+Both levers are exhausted: reference text is already at **0.8mm**, which is JLC's minimum
+height (going smaller risks illegible or unprintable silk), and `relocate_refs.py` reports
+0 moves because there is no free space left to move anything into.
+
+The 12 text-over-pad warnings are the least interesting of the two — fabs clip silkscreen
+off exposed pads automatically, so those resolve themselves at manufacture. The 13
+text-over-text are real overlaps you would notice while reworking, and the only way to
+clear them is a placement change to open room in that cluster.

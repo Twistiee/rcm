@@ -1,7 +1,7 @@
 {
     "$schema": "https://schemas.kicad.org/drc.v1.json",
     "coordinate_units": "mm",
-    "date": "2026-08-07T22:15:55",
+    "date": "2026-08-07T23:37:58",
     "ignored_checks": [
         {
             "description": "Footprint has no courtyard defined",
@@ -31,123 +31,7 @@
     "kicad_version": "10.0.3",
     "schematic_parity": [],
     "source": "rcm4.kicad_pcb",
-    "unconnected_items": [
-        {
-            "description": "Missing connection between items",
-            "items": [
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "a874aad4-6cfc-4ea2-85fa-b6d3a6d605e9"
-                },
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "a874aad4-6cfc-4ea2-85fa-b6d3a6d605e9"
-                }
-            ],
-            "severity": "error",
-            "type": "unconnected_items"
-        },
-        {
-            "description": "Missing connection between items",
-            "items": [
-                {
-                    "description": "Zone [GND] on B.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "c3e3e627-6602-4ce0-ab48-c26cf47366fd"
-                },
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "a874aad4-6cfc-4ea2-85fa-b6d3a6d605e9"
-                }
-            ],
-            "severity": "error",
-            "type": "unconnected_items"
-        },
-        {
-            "description": "Missing connection between items",
-            "items": [
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "a874aad4-6cfc-4ea2-85fa-b6d3a6d605e9"
-                },
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "a874aad4-6cfc-4ea2-85fa-b6d3a6d605e9"
-                }
-            ],
-            "severity": "error",
-            "type": "unconnected_items"
-        },
-        {
-            "description": "Missing connection between items",
-            "items": [
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "a874aad4-6cfc-4ea2-85fa-b6d3a6d605e9"
-                },
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "a874aad4-6cfc-4ea2-85fa-b6d3a6d605e9"
-                }
-            ],
-            "severity": "error",
-            "type": "unconnected_items"
-        },
-        {
-            "description": "Missing connection between items",
-            "items": [
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "a874aad4-6cfc-4ea2-85fa-b6d3a6d605e9"
-                },
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "a874aad4-6cfc-4ea2-85fa-b6d3a6d605e9"
-                }
-            ],
-            "severity": "error",
-            "type": "unconnected_items"
-        }
-    ],
+    "unconnected_items": [],
     "violations": [
         {
             "description": "Silkscreen clearance",
