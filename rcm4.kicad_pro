@@ -264,7 +264,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "rcm_noroute.kicad_pro",
+    "filename": "rcm.kicad_pro",
     "version": 3
   },
   "net_settings": {
@@ -312,13 +312,18 @@
     "legacy_lib_list": [],
     "top_level_sheets": [
       {
-        "filename": "rcm_noroute.kicad_sch",
-        "name": "rcm_noroute",
+        "filename": "rcm.kicad_sch",
+        "name": "rcm",
         "uuid": "00000000-0000-0000-0000-000000000000"
       }
     ]
   },
-  "sheets": [],
+  "sheets": [
+    [
+      "00000000-0000-0000-0000-000000000000",
+      "Root"
+    ]
+  ],
   "text_variables": {},
   "tuning_profiles": {
     "meta": {
