@@ -1,7 +1,7 @@
 {
     "$schema": "https://schemas.kicad.org/drc.v1.json",
     "coordinate_units": "mm",
-    "date": "2026-08-07T18:03:46",
+    "date": "2026-08-07T18:31:13",
     "ignored_checks": [
         {
             "description": "Footprint has no courtyard defined",
@@ -41,7 +41,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
                     "description": "Pad 3 [GND] of U_LATCH on F.Cu",
@@ -59,12 +59,12 @@
             "description": "Missing connection between items",
             "items": [
                 {
-                    "description": "Zone [GND] on B.Cu, priority 0",
+                    "description": "Zone [GND] on F.Cu, priority 0",
                     "pos": {
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "992739a1-6673-42b0-958d-7ebd25da1896"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
                     "description": "Zone [GND] on F.Cu, priority 0",
@@ -72,7 +72,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 }
             ],
             "severity": "error",
@@ -87,15 +87,38 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
-                    "description": "Zone [GND] on B.Cu, priority 0",
+                    "description": "Zone [GND] on F.Cu, priority 0",
                     "pos": {
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "992739a1-6673-42b0-958d-7ebd25da1896"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
+                }
+            ],
+            "severity": "error",
+            "type": "unconnected_items"
+        },
+        {
+            "description": "Missing connection between items",
+            "items": [
+                {
+                    "description": "Pad 15 [GND] of U_SI1 on F.Cu",
+                    "pos": {
+                        "x": 33.625,
+                        "y": 37.525
+                    },
+                    "uuid": "a1a0c269-abd8-497c-a8e8-785ba3058892"
+                },
+                {
+                    "description": "Zone [GND] on F.Cu, priority 0",
+                    "pos": {
+                        "x": 0.45,
+                        "y": 0.45
+                    },
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 }
             ],
             "severity": "error",
@@ -110,7 +133,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
                     "description": "Zone [GND] on F.Cu, priority 0",
@@ -118,7 +141,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 }
             ],
             "severity": "error",
@@ -133,7 +156,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
                     "description": "Zone [GND] on F.Cu, priority 0",
@@ -141,30 +164,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
-                }
-            ],
-            "severity": "error",
-            "type": "unconnected_items"
-        },
-        {
-            "description": "Missing connection between items",
-            "items": [
-                {
-                    "description": "PTH pad 3 [GND] of J_BOOT",
-                    "pos": {
-                        "x": 61.58,
-                        "y": 30.0
-                    },
-                    "uuid": "8a7eea35-d8c9-4267-bd28-e46f7eae235e"
-                },
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 }
             ],
             "severity": "error",
@@ -179,30 +179,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
-                },
-                {
-                    "description": "PTH pad 3 [GND] of J_BOOT",
-                    "pos": {
-                        "x": 61.58,
-                        "y": 30.0
-                    },
-                    "uuid": "8a7eea35-d8c9-4267-bd28-e46f7eae235e"
-                }
-            ],
-            "severity": "error",
-            "type": "unconnected_items"
-        },
-        {
-            "description": "Missing connection between items",
-            "items": [
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
                     "description": "Zone [GND] on B.Cu, priority 0",
@@ -210,7 +187,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "992739a1-6673-42b0-958d-7ebd25da1896"
+                    "uuid": "eec5d65a-bc4b-4a7c-906e-ce39846a3d17"
                 }
             ],
             "severity": "error",
@@ -220,12 +197,35 @@
             "description": "Missing connection between items",
             "items": [
                 {
-                    "description": "Pad 2 [GND] of C_SO2 on F.Cu",
+                    "description": "Zone [GND] on F.Cu, priority 0",
                     "pos": {
-                        "x": 73.3,
-                        "y": 39.05
+                        "x": 0.45,
+                        "y": 0.45
                     },
-                    "uuid": "9361bcd5-7f2a-4194-89fe-710ef875d69a"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
+                },
+                {
+                    "description": "Zone [GND] on B.Cu, priority 0",
+                    "pos": {
+                        "x": 0.45,
+                        "y": 0.45
+                    },
+                    "uuid": "eec5d65a-bc4b-4a7c-906e-ce39846a3d17"
+                }
+            ],
+            "severity": "error",
+            "type": "unconnected_items"
+        },
+        {
+            "description": "Missing connection between items",
+            "items": [
+                {
+                    "description": "Zone [GND] on F.Cu, priority 0",
+                    "pos": {
+                        "x": 0.45,
+                        "y": 0.45
+                    },
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
                     "description": "Zone [GND] on F.Cu, priority 0",
@@ -233,7 +233,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 }
             ],
             "severity": "error",
@@ -242,6 +242,14 @@
         {
             "description": "Missing connection between items",
             "items": [
+                {
+                    "description": "PTH pad 5 [GND] of J_SWD",
+                    "pos": {
+                        "x": 74.16,
+                        "y": 34.0
+                    },
+                    "uuid": "44e0eb93-c6a6-4000-ad75-aaace4716068"
+                },
                 {
                     "description": "Pad 15 [GND] of U_SI2 on F.Cu",
                     "pos": {
@@ -249,37 +257,6 @@
                         "y": 37.525
                     },
                     "uuid": "7af337ea-3d81-4893-8122-33581b539b5f"
-                },
-                {
-                    "description": "Pad 2 [GND] of C_SO2 on F.Cu",
-                    "pos": {
-                        "x": 73.3,
-                        "y": 39.05
-                    },
-                    "uuid": "9361bcd5-7f2a-4194-89fe-710ef875d69a"
-                }
-            ],
-            "severity": "error",
-            "type": "unconnected_items"
-        },
-        {
-            "description": "Missing connection between items",
-            "items": [
-                {
-                    "description": "Pad 12 [GND] of U_MCU on F.Cu",
-                    "pos": {
-                        "x": 79.325,
-                        "y": 25.75
-                    },
-                    "uuid": "4e38caf2-c938-4ebb-b7d2-6ca28cee594a"
-                },
-                {
-                    "description": "Pad 18 [GND] of U_MCU on F.Cu",
-                    "pos": {
-                        "x": 81.75,
-                        "y": 29.675
-                    },
-                    "uuid": "25c29faa-d5f8-45ef-85e7-d5cb2d39c62b"
                 }
             ],
             "severity": "error",
@@ -294,30 +271,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
-                },
-                {
-                    "description": "Pad 63 [GND] of U_MCU on F.Cu",
-                    "pos": {
-                        "x": 81.75,
-                        "y": 18.325
-                    },
-                    "uuid": "705b170f-37c4-447a-892a-c56877a3cd10"
-                }
-            ],
-            "severity": "error",
-            "type": "unconnected_items"
-        },
-        {
-            "description": "Missing connection between items",
-            "items": [
-                {
-                    "description": "Pad 18 [GND] of U_MCU on F.Cu",
-                    "pos": {
-                        "x": 81.75,
-                        "y": 29.675
-                    },
-                    "uuid": "25c29faa-d5f8-45ef-85e7-d5cb2d39c62b"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
                     "description": "Zone [GND] on F.Cu, priority 0",
@@ -325,7 +279,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 }
             ],
             "severity": "error",
@@ -340,15 +294,15 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
-                    "description": "Pad 18 [GND] of U_MCU on F.Cu",
+                    "description": "Pad 15 [GND] of U_SI2 on F.Cu",
                     "pos": {
-                        "x": 81.75,
-                        "y": 29.675
+                        "x": 77.625,
+                        "y": 37.525
                     },
-                    "uuid": "25c29faa-d5f8-45ef-85e7-d5cb2d39c62b"
+                    "uuid": "7af337ea-3d81-4893-8122-33581b539b5f"
                 }
             ],
             "severity": "error",
@@ -363,15 +317,15 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
-                    "description": "Zone [GND] on B.Cu, priority 0",
+                    "description": "Zone [GND] on F.Cu, priority 0",
                     "pos": {
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "992739a1-6673-42b0-958d-7ebd25da1896"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 }
             ],
             "severity": "error",
@@ -386,15 +340,15 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
-                    "description": "Zone [GND] on B.Cu, priority 0",
+                    "description": "Zone [GND] on F.Cu, priority 0",
                     "pos": {
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "992739a1-6673-42b0-958d-7ebd25da1896"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 }
             ],
             "severity": "error",
@@ -404,81 +358,12 @@
             "description": "Missing connection between items",
             "items": [
                 {
-                    "description": "Zone [GND] on B.Cu, priority 0",
+                    "description": "Via [GND] on F.Cu - B.Cu",
                     "pos": {
-                        "x": 0.45,
-                        "y": 0.45
+                        "x": 92.58969,
+                        "y": 19.245314
                     },
-                    "uuid": "992739a1-6673-42b0-958d-7ebd25da1896"
-                },
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
-                }
-            ],
-            "severity": "error",
-            "type": "unconnected_items"
-        },
-        {
-            "description": "Missing connection between items",
-            "items": [
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
-                },
-                {
-                    "description": "Pad 31 [GND] of U_MCU on F.Cu",
-                    "pos": {
-                        "x": 88.25,
-                        "y": 29.675
-                    },
-                    "uuid": "aa134fc6-2b3d-48da-a4e1-be214f75665c"
-                }
-            ],
-            "severity": "error",
-            "type": "unconnected_items"
-        },
-        {
-            "description": "Missing connection between items",
-            "items": [
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
-                },
-                {
-                    "description": "Pad 31 [GND] of U_MCU on F.Cu",
-                    "pos": {
-                        "x": 88.25,
-                        "y": 29.675
-                    },
-                    "uuid": "aa134fc6-2b3d-48da-a4e1-be214f75665c"
-                }
-            ],
-            "severity": "error",
-            "type": "unconnected_items"
-        },
-        {
-            "description": "Missing connection between items",
-            "items": [
-                {
-                    "description": "Zone [GND] on F.Cu, priority 0",
-                    "pos": {
-                        "x": 0.45,
-                        "y": 0.45
-                    },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "84b6e4f0-45f1-48f8-b448-add8489a11e5"
                 },
                 {
                     "description": "Pad 47 [GND] of U_MCU on F.Cu",
@@ -496,12 +381,12 @@
             "description": "Missing connection between items",
             "items": [
                 {
-                    "description": "Zone [GND] on F.Cu, priority 0",
+                    "description": "Zone [GND] on B.Cu, priority 0",
                     "pos": {
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "eec5d65a-bc4b-4a7c-906e-ce39846a3d17"
                 },
                 {
                     "description": "Zone [GND] on F.Cu, priority 0",
@@ -509,7 +394,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 }
             ],
             "severity": "error",
@@ -524,7 +409,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
                     "description": "Zone [GND] on F.Cu, priority 0",
@@ -532,7 +417,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 }
             ],
             "severity": "error",
@@ -547,7 +432,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
                     "description": "Zone [GND] on F.Cu, priority 0",
@@ -555,7 +440,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 }
             ],
             "severity": "error",
@@ -570,15 +455,15 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
-                    "description": "Zone [GND] on F.Cu, priority 0",
+                    "description": "Zone [GND] on B.Cu, priority 0",
                     "pos": {
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "eec5d65a-bc4b-4a7c-906e-ce39846a3d17"
                 }
             ],
             "severity": "error",
@@ -593,7 +478,7 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 },
                 {
                     "description": "Zone [GND] on F.Cu, priority 0",
@@ -601,7 +486,99 @@
                         "x": 0.45,
                         "y": 0.45
                     },
-                    "uuid": "5e6dcc7a-8fa5-44c5-90c2-a2705f515f37"
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
+                }
+            ],
+            "severity": "error",
+            "type": "unconnected_items"
+        },
+        {
+            "description": "Missing connection between items",
+            "items": [
+                {
+                    "description": "Zone [GND] on F.Cu, priority 0",
+                    "pos": {
+                        "x": 0.45,
+                        "y": 0.45
+                    },
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
+                },
+                {
+                    "description": "Zone [GND] on F.Cu, priority 0",
+                    "pos": {
+                        "x": 0.45,
+                        "y": 0.45
+                    },
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
+                }
+            ],
+            "severity": "error",
+            "type": "unconnected_items"
+        },
+        {
+            "description": "Missing connection between items",
+            "items": [
+                {
+                    "description": "Zone [GND] on F.Cu, priority 0",
+                    "pos": {
+                        "x": 0.45,
+                        "y": 0.45
+                    },
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
+                },
+                {
+                    "description": "Zone [GND] on F.Cu, priority 0",
+                    "pos": {
+                        "x": 0.45,
+                        "y": 0.45
+                    },
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
+                }
+            ],
+            "severity": "error",
+            "type": "unconnected_items"
+        },
+        {
+            "description": "Missing connection between items",
+            "items": [
+                {
+                    "description": "Zone [GND] on F.Cu, priority 0",
+                    "pos": {
+                        "x": 0.45,
+                        "y": 0.45
+                    },
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
+                },
+                {
+                    "description": "Zone [GND] on B.Cu, priority 0",
+                    "pos": {
+                        "x": 0.45,
+                        "y": 0.45
+                    },
+                    "uuid": "eec5d65a-bc4b-4a7c-906e-ce39846a3d17"
+                }
+            ],
+            "severity": "error",
+            "type": "unconnected_items"
+        },
+        {
+            "description": "Missing connection between items",
+            "items": [
+                {
+                    "description": "Zone [GND] on F.Cu, priority 0",
+                    "pos": {
+                        "x": 0.45,
+                        "y": 0.45
+                    },
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
+                },
+                {
+                    "description": "Zone [GND] on F.Cu, priority 0",
+                    "pos": {
+                        "x": 0.45,
+                        "y": 0.45
+                    },
+                    "uuid": "1b6de6b9-156e-456d-ad23-efc56fa777de"
                 }
             ],
             "severity": "error",

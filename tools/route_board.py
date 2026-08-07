@@ -41,6 +41,12 @@ def main():
                          "lays is wasted congestion -- it steals paths from signals to "
                          "reach a pad the zone fill was going to connect anyway. Pass "
                          "--no-route GND together with --zone GND:F.Cu --zone GND:B.Cu.")
+    ap.add_argument("--no-route-keep", action="append", default=[],
+                    help="reference prefix whose pins STAY in the --no-route net, e.g. "
+                         "U_MCU. Everything else on that net is left to the pour. Use this "
+                         "for parts the pour cannot reach -- a QFP's ground pins get boxed "
+                         "in by its own escape routing, and an MCU grounded through only "
+                         "some of its pins works on the bench then misbehaves under load.")
     ap.add_argument("--power-layer", action="append", default=[],
                     help="mark this copper layer (type power) in the DSN so "
                          "freerouting routes no wires on it (vias still pass); "
@@ -115,11 +121,25 @@ def main():
                     depth -= 1
                     if depth == 0:
                         break
-            npins = len(re.findall(r"\S+-\S+", txt[m.start():j + 1]))
-            txt = txt[:m.start()] + txt[j + 1:]
-            # the class list names every net; a dangling name upsets freerouting's parse
-            txt = re.sub(r"(?<=[\s])%s(?=[\s])" % esc, " ", txt, count=1)
-            print("  no-route %s (%d pins left to the pour)" % (net, npins))
+            block = txt[m.start():j + 1]
+            allpins = re.findall(r"[A-Za-z_][\w.]*-[\w]+", block)
+            keep = [p for p in allpins
+                    if any(p.split("-")[0] == k or p.startswith(k + "-")
+                           for k in args.no_route_keep)]
+            if keep:
+                # Keep a subset routed: rewrite the net with only those pins. Freerouting
+                # wires them together; the pour picks the cluster up from there.
+                txt = (txt[:m.start()]
+                       + '(net %s\n      (pins %s)\n    )' % (net, " ".join(keep))
+                       + txt[j + 1:])
+                print("  no-route %s: %d pins to the pour, %d kept routed (%s)"
+                      % (net, len(allpins) - len(keep), len(keep),
+                         ", ".join(args.no_route_keep)))
+            else:
+                txt = txt[:m.start()] + txt[j + 1:]
+                # the class list names every net; a dangling name upsets the parse
+                txt = re.sub(r"(?<=[\s])%s(?=[\s])" % esc, " ", txt, count=1)
+                print("  no-route %s (%d pins left to the pour)" % (net, len(allpins)))
         open(dsn, "w", encoding="utf-8").write(txt)
 
     print("== Freerouting ==")
