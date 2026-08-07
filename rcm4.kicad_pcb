@@ -13,8 +13,8 @@
 	)
 	(layers
 		(0 "F.Cu" signal)
-		(4 "In1.Cu" signal "GND_plane")
-		(6 "In2.Cu" signal "PWR_plane")
+		(4 "In1.Cu" power "GND_plane")
+		(6 "In2.Cu" power "PWR_plane")
 		(2 "B.Cu" signal)
 		(9 "F.Adhes" user "F.Adhesive")
 		(11 "B.Adhes" user "B.Adhesive")
@@ -40,6 +40,67 @@
 		(45 "User.4" user)
 	)
 	(setup
+		(stackup
+			(layer "F.SilkS"
+				(type "Top Silk Screen")
+			)
+			(layer "F.Paste"
+				(type "Top Solder Paste")
+			)
+			(layer "F.Mask"
+				(type "Top Solder Mask")
+				(thickness 0.01)
+			)
+			(layer "F.Cu"
+				(type "copper")
+				(thickness 0.035)
+			)
+			(layer "dielectric 1"
+				(type "prepreg")
+				(thickness 0.2104)
+				(material "FR4")
+				(epsilon_r 4.4)
+				(loss_tangent 0.02)
+			)
+			(layer "In1.Cu"
+				(type "copper")
+				(thickness 0.0175)
+			)
+			(layer "dielectric 2"
+				(type "core")
+				(thickness 1.065)
+				(material "FR4")
+				(epsilon_r 4.6)
+				(loss_tangent 0.02)
+			)
+			(layer "In2.Cu"
+				(type "copper")
+				(thickness 0.0175)
+			)
+			(layer "dielectric 3"
+				(type "prepreg")
+				(thickness 0.2104)
+				(material "FR4")
+				(epsilon_r 4.4)
+				(loss_tangent 0.02)
+			)
+			(layer "B.Cu"
+				(type "copper")
+				(thickness 0.035)
+			)
+			(layer "B.Mask"
+				(type "Bottom Solder Mask")
+				(thickness 0.01)
+			)
+			(layer "B.Paste"
+				(type "Bottom Solder Paste")
+			)
+			(layer "B.SilkS"
+				(type "Bottom Silk Screen")
+			)
+			(copper_finish "HASL lead free")
+			(dielectric_constraints no)
+		)
 		(pad_to_mask_clearance 0)
 		(allow_soldermask_bridges_in_footprints no)
 		(tenting
@@ -982,7 +1043,7 @@
 		(descr "KF2EDGVM-3.5-3P PCB screw terminal block, 3 poles, 3.5mm pitch, horizontal wire entry. Body 10.5 x 7.6 x 9mm, pin centreline 3.4mm from the rear face and 4.2mm from the wire-entry face. PCB hole 1.2mm. pluggable header, mates KF2EDGK-3.5 screw plug, 8A 300V 16-24AWG. LCSC C441407. Wire entry faces +Y -- rotate so it points off the board edge, or the harness has to run back across the board.")
 		(tags "THT terminal block screw 3.5mm 3P horizontal")
 		(property "Reference" "J_CAN2"
-			(at 3.5 -4.6 0)
+			(at 9.5 -4.25 0)
 			(layer "F.SilkS")
 			(uuid "97bca710-dcaf-474e-99b1-b44c705ed1e0")
 			(effects
@@ -3287,7 +3348,7 @@
 		(descr "Resistor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "resistor")
 		(property "Reference" "R_AL2"
-			(at 0 -1.65 90)
+			(at 0 -1.5 90)
 			(layer "F.SilkS")
 			(uuid "c2a082e2-8b46-4ac3-ba15-67f8b8e90881")
 			(effects
@@ -4169,7 +4230,7 @@
 		(descr "module CMS SOT223 4 pins")
 		(tags "CMS SOT")
 		(property "Reference" "U_LDO"
-			(at 0 -4.5 0)
+			(at -2.25 -4.5 0)
 			(layer "F.SilkS")
 			(uuid "394a3933-2061-4845-8eaa-bd6aa3a43cba")
 			(effects
@@ -4424,7 +4485,7 @@
 		(descr "Capacitor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf, https://docs.google.com/spreadsheets/d/1BsfQQcO9C6DZCsRaXUlFlo91Tg2WpOkGARC1WS5S8t0/edit?usp=sharing)")
 		(tags "capacitor")
 		(property "Reference" "C_SI1"
-			(at 0 -1.68 90)
+			(at 0.25 1.7 90)
 			(layer "F.SilkS")
 			(uuid "7f2ef0d3-f031-4286-b29d-09ccab58b9bd")
 			(effects
@@ -5560,7 +5621,7 @@
 		(descr "Resistor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "resistor")
 		(property "Reference" "R_AL3"
-			(at 0 -1.65 90)
+			(at 0 -1.5 90)
 			(layer "F.SilkS")
 			(uuid "54ff3b98-9d29-4e5a-bc49-00c95c77ad4b")
 			(effects
@@ -8173,7 +8234,7 @@
 		(descr "Diode SMA (DO-214AC)")
 		(tags "Diode SMA (DO-214AC)")
 		(property "Reference" "D1"
-			(at 0 -2.5 90)
+			(at 4.25 0 90)
 			(layer "F.SilkS")
 			(uuid "655bbd5b-8084-4317-a258-7a7dadd852ae")
 			(effects
@@ -9147,7 +9208,7 @@
 		(descr "Diode SMA (DO-214AC)")
 		(tags "Diode SMA (DO-214AC)")
 		(property "Reference" "D2"
-			(at 0 -2.5 90)
+			(at 4.25 0 90)
 			(layer "F.SilkS")
 			(uuid "6247ee71-4b78-46c0-a0f1-aefd7b1298a4")
 			(effects
@@ -9561,7 +9622,7 @@
 		(descr "Resistor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "resistor")
 		(property "Reference" "R_IGL"
-			(at 0 -1.65 0)
+			(at -0.5 -1.65 0)
 			(layer "F.SilkS")
 			(uuid "f69100a4-32e6-492d-ad7d-6b25405803fb")
 			(effects
@@ -12055,7 +12116,7 @@
 		(descr "Resistor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "resistor")
 		(property "Reference" "R_BOOT"
-			(at 0 -1.65 90)
+			(at 0.5 -1.65 90)
 			(layer "F.SilkS")
 			(uuid "8df1b7b9-ab1e-4062-9891-69497c4bb978")
 			(effects
@@ -12496,7 +12557,7 @@
 		(descr "Resistor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "resistor")
 		(property "Reference" "R_LHOLD"
-			(at 0 -1.65 0)
+			(at 0 -2 0)
 			(layer "F.SilkS")
 			(uuid "1e788c67-609a-4d85-a7dd-c05f211f95ab")
 			(effects
@@ -15139,7 +15200,7 @@
 		(descr "Capacitor SMD 1210 (3225 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C_BULK"
-			(at 0 -2.3 90)
+			(at 0 2.5 90)
 			(layer "F.SilkS")
 			(uuid "83ad8c3c-6be3-4302-bf66-71c45411c5d8")
 			(effects
@@ -17414,7 +17475,7 @@
 		(descr "Resistor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "resistor")
 		(property "Reference" "R_AH2"
-			(at 0 -1.65 90)
+			(at 0 -1.5 90)
 			(layer "F.SilkS")
 			(uuid "f88510bb-7337-4253-858c-58ad4279139b")
 			(effects
@@ -17982,9 +18043,9 @@
 		(descr "Capacitor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf, https://docs.google.com/spreadsheets/d/1BsfQQcO9C6DZCsRaXUlFlo91Tg2WpOkGARC1WS5S8t0/edit?usp=sharing)")
 		(tags "capacitor")
 		(property "Reference" "C_LVS"
-			(at 0 -1.68 0)
+			(at 0.25 -1.68 0)
 			(layer "F.SilkS")
-			(uuid "46107657-8ffa-4814-8bb6-5de6d0c55861")
+			(uuid "0866313a-8f12-4901-8ff9-448e25d3f53a")
 			(effects
 				(font
 					(size 0.8 0.8)
@@ -17995,7 +18056,7 @@
 		(property "Value" "100nF"
 			(at 0 1.68 0)
 			(layer "F.Fab")
-			(uuid "ab115d24-8d93-45b9-b1a6-3d3149071812")
+			(uuid "3cf7216f-0c75-45de-affe-d56ba63f402e")
 			(effects
 				(font
 					(size 1 1)
@@ -18007,7 +18068,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "70e1298c-67f3-4a5a-8cb6-94132bedfef7")
+			(uuid "60eee761-50d3-47ed-aefe-b64cbe0db6a3")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -18018,7 +18079,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "184b606e-2234-4642-8822-50d58719df73")
+			(uuid "9a179e63-2767-4122-9970-1f86d63ec300")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -18717,7 +18778,7 @@
 		(descr "LQFP, 64 Pin (https://www.analog.com/media/en/technical-documentation/data-sheets/ad7606_7606-6_7606-4.pdf)")
 		(tags "LQFP QFP")
 		(property "Reference" "U_MCU"
-			(at 0 -7.4 0)
+			(at -6.25 -5.75 0)
 			(layer "F.SilkS")
 			(uuid "c365b915-e89b-4024-9eb5-bd4affc718f0")
 			(effects
@@ -21689,7 +21750,7 @@
 		(descr "Resistor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "resistor")
 		(property "Reference" "R_AH3"
-			(at 0 -1.65 90)
+			(at 0 -1.5 90)
 			(layer "F.SilkS")
 			(uuid "4b0efde1-d12a-40b5-9f25-9a1016b2c86c")
 			(effects
@@ -22151,7 +22212,7 @@
 		(descr "KF2EDGVM-3.5-3P PCB screw terminal block, 3 poles, 3.5mm pitch, horizontal wire entry. Body 10.5 x 7.6 x 9mm, pin centreline 3.4mm from the rear face and 4.2mm from the wire-entry face. PCB hole 1.2mm. pluggable header, mates KF2EDGK-3.5 screw plug, 8A 300V 16-24AWG. LCSC C441407. Wire entry faces +Y -- rotate so it points off the board edge, or the harness has to run back across the board.")
 		(tags "THT terminal block screw 3.5mm 3P horizontal")
 		(property "Reference" "J_AUX"
-			(at 3.5 -4.6 0)
+			(at 10.75 -2.5 0)
 			(layer "F.SilkS")
 			(uuid "ac60c3f9-b768-468d-b6c9-a0fd000dc083")
 			(effects
@@ -23092,7 +23153,7 @@
 		(descr "Capacitor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf, https://docs.google.com/spreadsheets/d/1BsfQQcO9C6DZCsRaXUlFlo91Tg2WpOkGARC1WS5S8t0/edit?usp=sharing)")
 		(tags "capacitor")
 		(property "Reference" "C_SO1"
-			(at 0 -1.68 90)
+			(at 0 1.7 90)
 			(layer "F.SilkS")
 			(uuid "91a6944e-2fb6-48d3-9f68-9656511b385b")
 			(effects
@@ -23239,7 +23300,7 @@
 		(descr "Resistor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "resistor")
 		(property "Reference" "R_TERM"
-			(at 0 -1.65 0)
+			(at 0 -1.5 0)
 			(layer "F.SilkS")
 			(uuid "eeb64800-e6a2-4f9f-83e1-42ebd7300452")
 			(effects
@@ -27200,7 +27261,7 @@
 		(descr "SOIC, 16 Pin (JEDEC MS-012, variation AC, https://www.jedec.org/document_search?search_api_views_fulltext=MS-012, https://www.analog.com/media/en/package-pcb-resources/package/pkg_pdf/soic_narrow-r/r_16.pdf)")
 		(tags "SOIC SO 16-pin-NSOP R-16 R-16-S D0016A M2B SO16 SOT109-1 751B SOIC_N narrow")
 		(property "Reference" "U_SI1"
-			(at 0 -5.9 90)
+			(at -4.5 0.2 0)
 			(layer "F.SilkS")
 			(uuid "26427271-2eea-4059-a5e5-f899c9272f5a")
 			(effects
@@ -28042,7 +28103,7 @@
 		(descr "Through hole straight pin header, 1x03, 2.54mm pitch, single row")
 		(tags "Through hole pin header THT 1x03 2.54mm single row")
 		(property "Reference" "J_BOOT"
-			(at 0 -2.38 90)
+			(at -2.5 1.75 0)
 			(layer "F.SilkS")
 			(uuid "76cd1d79-be3a-4041-a71d-2ac7fa673b24")
 			(effects
@@ -29900,7 +29961,7 @@
 		(descr "SOIC, 8 Pin (JEDEC MS-012AA, https://www.analog.com/media/en/package-pcb-resources/package/pkg_pdf/soic_narrow-r/r_8.pdf)")
 		(tags "SOIC SO")
 		(property "Reference" "U_CAN"
-			(at 0 -3.4 0)
+			(at -0.5 3.25 0)
 			(layer "F.SilkS")
 			(uuid "69787aaa-7267-4d14-9b28-78699595bf71")
 			(effects

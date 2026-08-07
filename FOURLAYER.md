@@ -102,3 +102,35 @@ The 12 text-over-pad warnings are the least interesting of the two — fabs clip
 off exposed pads automatically, so those resolve themselves at manufacture. The 13
 text-over-text are real overlaps you would notice while reworking, and the only way to
 clear them is a placement change to open room in that cluster.
+
+
+## Stackup — set (2026-08-07)
+
+JLC's standard 4-layer 1.6mm build (`JLC04161H-7628`), so the board is made the way the
+quote assumes rather than however the fab feels like guessing:
+
+| Layer | Type | mm |
+|---|---|---|
+| F.Mask | solder mask | 0.010 |
+| **F.Cu** | copper **1oz** | 0.035 |
+| dielectric 1 | prepreg 7628, Er 4.4 | 0.2104 |
+| **In1.Cu** `GND_plane` | copper **0.5oz** | 0.0175 |
+| dielectric 2 | core, Er 4.6 | 1.065 |
+| **In2.Cu** `PWR_plane` | copper **0.5oz** | 0.0175 |
+| dielectric 3 | prepreg 7628, Er 4.4 | 0.2104 |
+| **B.Cu** | copper **1oz** | 0.035 |
+| B.Mask | solder mask | 0.010 |
+| | **total** | **1.611** |
+
+Finish `HASL lead free` — change this in Board Setup if ENIG is ordered, so the file agrees
+with the order.
+
+Both inner layers are now typed **`power`** rather than `signal`, which is what they are and
+stops anything trying to route on them.
+
+**Inner layers are 0.5oz, not 1oz** — that is JLC's standard and worth knowing, though it
+costs nothing here: a ground plane spanning the whole board has vastly more copper
+cross-section than any trace, even at half the weight.
+
+This closes the gap that held up pdm14-revB, where no stackup meant the fab would have
+built 1oz while the design assumed 2oz.
