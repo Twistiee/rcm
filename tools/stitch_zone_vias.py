@@ -1,40 +1,37 @@
 #!/usr/bin/env python3
-"""Stitch a poured net's islands together with a grid of vias.
+"""Stitch a poured net's ISOLATED ISLANDS to the main pour, and rescue pads it cannot reach.
 
 Companion to route_board.py --no-route NET. Taking GND out of the DSN stops freerouting
-laying traces the pour would have connected anyway -- a big win on a dense board -- but it
-also means nothing ties the F.Cu pour to the B.Cu pour, and signal traces slice the top
-pour into islands that are then genuinely unconnected.
+laying traces the pour would have connected anyway, which frees real room for signals --
+but signal traces then slice the top pour into islands, and pads boxed in by those traces
+end up genuinely unconnected.
 
-Stitching vias fix that: drop vias on a grid wherever both pours exist and there is room,
-and the islands merge through the bottom pour. This is what you would do by hand, just
-without the clicking.
+TARGETED, not blanket. An earlier version walked a grid over the whole board and dropped a
+via wherever one fitted -- 250 of them on a 140x70 board. Most joined the main pour to
+itself, achieving nothing, while perforating the pour and adding 250 holes to the drill
+file. This version finds the filled polygons, leaves the largest one alone, and stitches
+only the islands that actually need it.
 
-Candidates are rejected conservatively -- a via must clear every pad, track, via and the
-board edge by (its own radius + clearance + the other object's half-width). Being too shy
-costs a few stitch points; being too bold costs a short.
+EVERY placement IS DRC-VERIFIED. Hand-rolled clearance maths missed two things on the first
+attempt: hole-to-hole clearance against THT pads (a via landed 0.077mm from the battery
+input), and rescue traces were checked against pads but never against TRACKS -- so one drove
+straight through SR_SCK and shorted it. Rather than reimplement KiCad's rule engine, this
+places candidates, runs the real DRC, and removes whatever it complains about.
 
-WHEN THIS ACTUALLY WORKS -- measured on rcm, 2026-08-07, 140x70mm 2-layer, ~430 nets:
-
-  route with GND     426/426 routed, 0 unconnected, 2244 segments, 87s
-  --no-route GND     293/293 routed, 1715 segments (-24%), 57s ... but 49 unconnected GND
-                     + 244 stitching vias -> 45
-                     + rescue pass         -> 42  (6 pads had no legal via spot at all,
-                                                   three of them MCU grounds)
-                     + island removal      -> 42  (no change; slivers were not the problem)
-
-So on a board THIS dense the technique buys real signal-routing headroom and then hands
-back a GND net that will not close. The pour simply cannot reach pads that signal traces
-have boxed in, and no amount of stitching fixes a pad with no escape route.
-
-Use it where the board has room to breathe, or where you are willing to finish GND by hand.
-On a congested 2-layer board, letting freerouting route GND normally and relying on the
-pour for the rest is the cheaper answer, even though it looks wasteful.
+Usage: stitch_zone_vias.py <board.kicad_pcb> [--net GND] [--rescue] [--dry-run]
+                           [--drill 0.3] [--diameter 0.6] [--kicad-cli PATH]
 """
 import argparse
+import json
 import math
+import os
+import re
+import subprocess
+import tempfile
 
 import pcbnew
+
+CLI = r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe"
 
 
 def seg_dist(px, py, x1, y1, x2, y2):
@@ -45,37 +42,52 @@ def seg_dist(px, py, x1, y1, x2, y2):
     return math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
 
 
+def run_drc(board_path, cli):
+    """Real KiCad DRC. Returns the parsed report."""
+    fd, path = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    subprocess.run([cli, "pcb", "drc", "--format", "json", "-o", path,
+                    "--severity-error", "--severity-warning", board_path],
+                   capture_output=True)
+    with open(path, encoding="utf-8") as f:
+        rep = json.load(f)
+    os.unlink(path)
+    return rep
+
+
+def electrical(rep):
+    """Violations that matter -- silkscreen is cosmetic and never caused by a via."""
+    return [v for v in rep.get("violations", []) if not v["type"].startswith("silk")]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("board")
     ap.add_argument("--net", default="GND")
-    ap.add_argument("--pitch", type=float, default=5.0)
     ap.add_argument("--drill", type=float, default=0.3)
     ap.add_argument("--diameter", type=float, default=0.6)
-    ap.add_argument("--clearance", type=float, default=0.25)
-    ap.add_argument("--margin", type=float, default=2.0, help="keep-out from board edge, mm")
-    ap.add_argument("--rescue-drc", help="DRC json: rescue every unconnected pad of the "
-                    "net by dropping a via beside it and a short track to reach it. These "
-                    "are pads the pour cannot reach because signal traces box them in -- "
-                    "the handful of hand-fixes that --no-route leaves behind.")
+    ap.add_argument("--clearance", type=float, default=0.3)
+    ap.add_argument("--rescue", action="store_true",
+                    help="also try to reach pads the pour cannot, with a via + short track")
+    ap.add_argument("--kicad-cli", default=CLI)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
-    b = pcbnew.LoadBoard(a.board)
+    board_path = os.path.abspath(a.board)
+    b = pcbnew.LoadBoard(board_path)
     net = b.FindNet(a.net)
     if net is None:
         raise SystemExit("net not found: %s" % a.net)
     ncode = net.GetNetCode()
     via_r = a.diameter / 2.0
 
-    # obstacles: every pad and track, whatever the net. Same-net copper is skipped only
-    # for PADS of the stitch net -- a via on top of a GND pad is pointless, not unsafe.
+    # --- obstacles, for a cheap first filter only. DRC is the real judge. ---
     pads, tracks = [], []
     for f in b.GetFootprints():
         for p in f.Pads():
             c = p.GetPosition()
-            r = max(p.GetSize().x, p.GetSize().y) / 2e6
-            pads.append((c.x / 1e6, c.y / 1e6, r))
+            pads.append((c.x / 1e6, c.y / 1e6,
+                         max(p.GetSize().x, p.GetSize().y) / 2e6))
     for t in b.GetTracks():
         if t.GetClass() == "PCB_VIA":
             c = t.GetPosition()
@@ -83,113 +95,149 @@ def main():
         else:
             s, e = t.GetStart(), t.GetEnd()
             tracks.append((s.x / 1e6, s.y / 1e6, e.x / 1e6, e.y / 1e6,
-                           t.GetWidth() / 2e6))
+                           t.GetWidth() / 2e6, t.GetNetCode()))
 
-    box = b.GetBoardEdgesBoundingBox()
-    x0, y0 = box.GetLeft() / 1e6 + a.margin, box.GetTop() / 1e6 + a.margin
-    x1, y1 = box.GetRight() / 1e6 - a.margin, box.GetBottom() / 1e6 - a.margin
+    def clear_of_copper(x, y, r):
+        if any(math.hypot(x - px, y - py) < r + pr + a.clearance for px, py, pr in pads):
+            return False
+        return not any(seg_dist(x, y, sx, sy, ex, ey) < r + hw + a.clearance
+                       for sx, sy, ex, ey, hw, _n in tracks)
 
-    placed = 0
-    y = y0
-    while y <= y1:
-        x = x0
-        while x <= x1:
-            ok = True
-            for px, py, pr in pads:
-                if math.hypot(x - px, y - py) < via_r + pr + a.clearance:
-                    ok = False
+    added = []
+
+    # --- island stitching -------------------------------------------------------
+    # Only islands. The largest filled polygon on each layer IS the main pour and needs
+    # nothing; stitching it to itself is the waste the blanket grid was full of.
+    for zi in range(b.GetAreaCount()):
+        z = b.GetArea(zi)
+        if z.GetIsRuleArea() or z.GetNetCode() != ncode:
+            continue
+        if z.GetLayer() != pcbnew.F_Cu:
+            continue                      # bottom pour is the thing we stitch *to*
+        polys = z.GetFilledPolysList(pcbnew.F_Cu)
+        n = polys.OutlineCount()
+        if n < 2:
+            continue
+        areas = []
+        for i in range(n):
+            ol = polys.Outline(i)
+            pts = [(ol.CPoint(k).x / 1e6, ol.CPoint(k).y / 1e6)
+                   for k in range(ol.PointCount())]
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            areas.append(((max(xs) - min(xs)) * (max(ys) - min(ys)), i, pts))
+        areas.sort(reverse=True)
+        for _area, i, pts in areas[1:]:          # skip the main pour
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            placed_here = False
+            # try the centroid, then walk the island's own vertices inward
+            cands = [(sum(xs) / len(xs), sum(ys) / len(ys))]
+            cx0, cy0 = cands[0]
+            cands += [((px + cx0) / 2, (py + cy0) / 2) for px, py in pts[::2]]
+            for vx, vy in cands:
+                if clear_of_copper(vx, vy, via_r):
+                    added.append(("via", vx, vy, None))
+                    placed_here = True
                     break
-            if ok:
-                for sx, sy, ex, ey, hw in tracks:
-                    if seg_dist(x, y, sx, sy, ex, ey) < via_r + hw + a.clearance:
-                        ok = False
-                        break
-            if ok and not a.dry_run:
-                v = pcbnew.PCB_VIA(b)
-                v.SetPosition(pcbnew.VECTOR2I(pcbnew.FromMM(x), pcbnew.FromMM(y)))
-                v.SetDrill(pcbnew.FromMM(a.drill))
-                v.SetWidth(pcbnew.FromMM(a.diameter))
-                v.SetNetCode(ncode)
-                v.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-                b.Add(v)
-            if ok:
-                placed += 1
-            x += a.pitch
-        y += a.pitch
+            if not placed_here:
+                print("  island %d (%.1fmm span): no room for a via" % (i, _area ** 0.5))
 
-    # ---- rescue pass -------------------------------------------------------
-    rescued = 0
-    if a.rescue_drc:
-        import json as _json
-        import re as _re
-        drc = _json.load(open(a.rescue_drc, encoding="utf-8"))
+    # --- rescue isolated pads ---------------------------------------------------
+    if a.rescue:
+        rep = run_drc(board_path, a.kicad_cli)
         want = set()
-        for v in drc.get("unconnected_items", []):
+        for v in rep.get("unconnected_items", []):
             for i in v["items"]:
-                m = _re.match(r"Pad (\S+) \[%s\] of (\S+)" % _re.escape(a.net),
-                              i.get("description", ""))
+                m = re.match(r"Pad (\S+) \[%s\] of (\S+)" % re.escape(a.net),
+                             i.get("description", ""))
                 if m:
                     want.add((m.group(2), m.group(1)))
         for ref, padname in sorted(want):
             fp = b.FindFootprintByReference(ref)
-            if fp is None:
-                continue
-            pad = next((p for p in fp.Pads() if p.GetPadName() == padname), None)
+            pad = next((p for p in fp.Pads() if p.GetPadName() == padname), None) if fp else None
             if pad is None:
                 continue
             cx, cy = pad.GetPosition().x / 1e6, pad.GetPosition().y / 1e6
             best = None
-            for rad in [r * 0.25 for r in range(3, 25)]:      # 0.75mm out to 6mm
+            for rad in [r * 0.25 for r in range(3, 25)]:
                 for k in range(48):
                     ang = 2 * math.pi * k / 48
                     vx, vy = cx + rad * math.cos(ang), cy + rad * math.sin(ang)
-                    if not (x0 <= vx <= x1 and y0 <= vy <= y1):
+                    if not clear_of_copper(vx, vy, via_r):
                         continue
-                    okv = all(math.hypot(vx - px, vy - py) >= via_r + pr + a.clearance
-                              for px, py, pr in pads
-                              if math.hypot(cx - px, cy - py) > 0.01)
-                    if okv:
-                        okv = all(seg_dist(vx, vy, sx, sy, ex, ey) >= via_r + hw + a.clearance
-                                  for sx, sy, ex, ey, hw in tracks)
-                    if not okv:
+                    # THE BUG THAT SHORTED SR_SCK: the trace was only ever checked
+                    # against pads. It must clear every track of a DIFFERENT net too.
+                    hw = 0.1
+                    if any(seg_dist(sx, sy, cx, cy, vx, vy) < hw + thw + a.clearance or
+                           seg_dist(ex, ey, cx, cy, vx, vy) < hw + thw + a.clearance
+                           for sx, sy, ex, ey, thw, tn in tracks if tn != ncode):
                         continue
-                    # the rescue TRACK must clear other copper too, or we just made a short
-                    okt = all(seg_dist(px, py, cx, cy, vx, vy) >= 0.1 + pr + a.clearance
-                              for px, py, pr in pads
-                              if math.hypot(cx - px, cy - py) > 0.01)
-                    if okt and best is None:
-                        best = (vx, vy)
-                        break
+                    best = (vx, vy)
+                    break
                 if best:
                     break
             if best is None:
-                print("  RESCUE FAILED %s.%s -- no legal via spot, needs a hand fix"
-                      % (ref, padname))
-                continue
-            vx, vy = best
-            if not a.dry_run:
-                v = pcbnew.PCB_VIA(b)
-                v.SetPosition(pcbnew.VECTOR2I(pcbnew.FromMM(vx), pcbnew.FromMM(vy)))
-                v.SetDrill(pcbnew.FromMM(a.drill))
-                v.SetWidth(pcbnew.FromMM(a.diameter))
-                v.SetNetCode(ncode)
-                v.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-                b.Add(v)
-                tr = pcbnew.PCB_TRACK(b)
-                tr.SetStart(pad.GetPosition())
-                tr.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(vx), pcbnew.FromMM(vy)))
-                tr.SetWidth(pcbnew.FromMM(0.2))
-                tr.SetLayer(pcbnew.F_Cu)
-                tr.SetNetCode(ncode)
-                b.Add(tr)
-            rescued += 1
-        print("  rescued %d isolated pad(s)" % rescued)
+                print("  RESCUE %s.%s: boxed in, no legal escape" % (ref, padname))
+            else:
+                added.append(("rescue", best[0], best[1], pad))
 
-    if not a.dry_run:
+    if a.dry_run:
+        print("would add %d item(s)" % len(added))
+        return
+
+    # --- apply, then let the REAL DRC judge, and back out anything it dislikes ----
+    before = len(electrical(run_drc(board_path, a.kicad_cli)))
+    objs = []
+    for kind, x, y, pad in added:
+        v = pcbnew.PCB_VIA(b)
+        v.SetPosition(pcbnew.VECTOR2I(pcbnew.FromMM(x), pcbnew.FromMM(y)))
+        v.SetDrill(pcbnew.FromMM(a.drill))
+        v.SetWidth(pcbnew.FromMM(a.diameter))
+        v.SetNetCode(ncode)
+        v.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
+        b.Add(v)
+        group = [v]
+        if kind == "rescue":
+            tr = pcbnew.PCB_TRACK(b)
+            tr.SetStart(pad.GetPosition())
+            tr.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(x), pcbnew.FromMM(y)))
+            tr.SetWidth(pcbnew.FromMM(0.2))
+            tr.SetLayer(pcbnew.F_Cu)
+            tr.SetNetCode(ncode)
+            b.Add(tr)
+            group.append(tr)
+        objs.append(group)
+    pcbnew.ZONE_FILLER(b).Fill(b.Zones())
+    b.Save(board_path)
+
+    after = len(electrical(run_drc(board_path, a.kicad_cli)))
+    if after > before:
+        print("  DRC went %d -> %d electrical violations; backing out the additions"
+              % (before, after))
+        # bisect would be nicer, but one-at-a-time is honest and this runs once
+        for group in objs:
+            for o in group:
+                b.RemoveNative(o)
         pcbnew.ZONE_FILLER(b).Fill(b.Zones())
-        b.Save(a.board)
-    print("%s %d stitching via(s) on %s at %.1fmm pitch"
-          % ("would place" if a.dry_run else "placed", placed, a.net, a.pitch))
+        b.Save(board_path)
+        kept = 0
+        for group in objs:
+            for o in group:
+                b.Add(o)
+            pcbnew.ZONE_FILLER(b).Fill(b.Zones())
+            b.Save(board_path)
+            if len(electrical(run_drc(board_path, a.kicad_cli))) > before:
+                for o in group:
+                    b.RemoveNative(o)
+            else:
+                kept += 1
+        pcbnew.ZONE_FILLER(b).Fill(b.Zones())
+        b.Save(board_path)
+        print("  kept %d of %d additions" % (kept, len(objs)))
+    else:
+        print("  added %d item(s), DRC electrical violations %d -> %d"
+              % (len(added), before, after))
 
 
 if __name__ == "__main__":

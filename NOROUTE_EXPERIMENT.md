@@ -1,52 +1,64 @@
-# `rcm_noroute.kicad_pcb` — GND left to the pour
+# GND-left-to-the-pour version — APPLIED to `rcm.kicad_pcb`
 
-**This is a side-by-side experiment, not the board to order.** Open it next to
-`rcm.kicad_pcb`, which is unchanged and remains the good one.
+**This is what is currently on disk.** It is NOT orderable — see "What is still wrong".
+The good board is one command away:
 
-Built with `route_board.py --no-route GND`, which strips GND from the DSN so freerouting
-never routes it, then 250 stitching vias on a 4mm grid and an automated rescue pass.
+```
+git checkout rcm.kicad_pcb        # or: cp rcm.kicad_pcb.bak_gnd_routed rcm.kicad_pcb
+```
 
-## The comparison
+`mfg/` (gerbers, BOM, CPL) was generated from the GOOD board and does **not** match what is
+on disk now. Do not upload anything until you restore.
 
-| | `rcm.kicad_pcb` (good) | `rcm_noroute.kicad_pcb` |
+## Comparison
+
+| | good board | this one |
 |---|---|---|
 | Nets routed | 426 / 426 | 293 / 293 |
-| Track segments | 2244 | **1726 (−23%)** |
-| Route time | 87s | **51s** |
-| Stitching vias | — | 250 |
-| **Unconnected** | **0** | **36** |
+| Track segments | 2078 | **1605 (−23%)** |
+| Vias | 166 | 165 |
+| Route time | 87s | **48s** |
+| Electrical DRC violations | 0 | **0** |
+| Silkscreen (cosmetic) | 25 | 25 |
+| **Unconnected** | **0** | **25** |
 
-The signal routing really is cleaner and there is visibly more room — that part of your
-hunch was right, and it shows up plainly on screen.
+Signal routing is visibly freer, and the via count did not blow out — the stitching is
+targeted now, so it costs about the same number of holes as before.
 
-## What the 36 are
+## What is still wrong
 
-- **22 are pour-island-to-island.** Cosmetic. Signal traces slice the top pour into
-  patches; most matter little because the bottom pour carries the current.
-- **11 are genuinely isolated pads** — these are the real problem:
+**8 GND pads cannot reach the pour.** Signal traces box them in on every side, so there is
+no legal escape to the bottom pour:
 
 ```
-U_MCU.12  U_MCU.18  U_MCU.31  U_MCU.47  U_MCU.63     <- five MCU grounds
-U_IMU.6   U_IMU.7                                     <- IMU grounds
-U_CAN.2   U_LATCH.3   U_SI1.15   U_SI2.15
+U_MCU.12   U_MCU.18   U_MCU.31   U_MCU.47   U_MCU.63     <- five MCU grounds
+U_LATCH.3   U_SI2.15   C_SO2.2
 ```
 
-The automated rescue could not place a via beside any of them — signal traces box them in
-completely, so there is no escape route to the bottom pour. They need a trace threaded out
-by hand, or a small placement change to open a gap.
+The rest of the 25 unconnected items are pour-island-to-island, which matters much less.
 
-## Worth knowing before you judge it
+**Five isolated MCU grounds is the thing to weigh.** An MCU grounded through only some of
+its pins usually appears to work and then misbehaves under load or radiates — the sort of
+fault that is miserable to find once boards exist.
 
-Five isolated MCU grounds is not a cosmetic problem. An MCU with grounds connected only
-through some of its pins will often *work*, then behave badly under load or emit noise —
-the sort of fault that is miserable to diagnose after the boards are built.
+## What was fixed to get here
 
-If you want to pursue this, the honest path is fixing the **placement** so the pour can
-reach those pins, rather than hand-threading eleven traces into the tightest parts of the
-board. The MCU and the two shift registers are the recurring offenders.
+The first attempt at this was worse than I reported, because I checked connectivity but not
+the full DRC. It had a genuine **short** (a GND rescue trace driven straight through
+`SR_SCK`), two more track crossings, and a via 0.077mm from the battery input pad. Causes:
 
-## Files
+1. The rescue pass checked its trace against **pads but never against tracks**.
+2. Hand-rolled clearance maths missed **hole-to-hole** clearance against THT pads.
+3. Stitching was a blanket 4mm grid over the whole board — **250 vias**, most joining the
+   main pour to itself, achieving nothing while perforating the pour and adding 250 holes
+   to the drill file.
 
-- `rcm_noroute.kicad_pcb` — this experiment
-- `noroute.drc.json` — full DRC, every unconnected item listed
-- `rcm.kicad_pcb` — untouched, 0 unconnected, matches the gerbers in `mfg/`
+`stitch_zone_vias.py` now finds the filled polygons, leaves the largest alone, and stitches
+only genuine islands; and every placement is checked by running the **real KiCad DRC**
+rather than trusting my own arithmetic.
+
+## The honest recommendation
+
+The technique works and the copper reduction is real. But closing those last 8 pads wants a
+**placement** change — opening room around the MCU and the shift registers so the pour can
+reach — not more automated patching. Until then, the good board is the one to order.
