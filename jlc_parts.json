@@ -73,10 +73,10 @@
       "name": "0805W8F1001T5E 1%"
     },
     "2.2uF|Capacitor_SMD:C_0805_2012Metric": {
-      "lcsc": "C77081",
-      "comment": "GRM21BR71E225KE11L 25V X7R. STM32F4 VCAP, REQUIRED",
+      "lcsc": "C377773",
+      "comment": "STM32F4 VCAP, REQUIRED. JLC BASIC (was C77081, extended). 50V/X5R against the old 25V/X7R: voltage is irrelevant at ~1.2V on VCAP and there is no DC bias derating to speak of, but X5R tops out at +85C where X7R goes to +125C -- fine for a cabin-mounted board, worth knowing if it ever moves",
       "qty": 1,
-      "name": "GRM21BR71E225KE11L 25V X7R"
+      "name": "CL21A225KBQNNNE 50V X5R"
     },
     "20pF|Capacitor_SMD:C_0805_2012Metric": {
       "lcsc": "C1798",
