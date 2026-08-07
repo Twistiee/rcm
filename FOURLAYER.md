@@ -46,3 +46,35 @@ signal, and every pad connected.
 - Layer count and plane zones are applied by hand to a fresh `netlist_to_board.py` output,
   not generated. A schematic change means redoing that; worth folding into the pipeline if
   4-layer becomes the choice.
+
+
+## The 5 unconnected items, examined
+
+They are **not** isolated pads — every pad on the board is connected. They are pour
+fragments on the outer layers. Measured:
+
+| Layer | Islands | Orphaned (no pad or via inside) |
+|---|---|---|
+| `GND_plane` (In1) | **1** | **0** |
+| F.Cu | 39 | 3 — 8.2, 1.25, 0.89 mm² |
+| B.Cu | 14 | 1 — 1.34 mm² |
+
+**The layer that carries the current is perfect**: the inner ground plane is a single
+continuous island with nothing orphaned. That is the whole point of going to 4 layers.
+
+One genuine problem was found and fixed: a **43 mm²** floating patch on B.Cu at (61, 29).
+It was floating because `stitch_zone_vias.py` only ever examined F.Cu, so B.Cu islands were
+never even attempted. Stitched with a via now.
+
+The four that remain are 0.89–8.2 mm² slivers with no room for a via. Island removal is
+enabled on both outer pours so KiCad deletes unconnected copper rather than leaving it
+floating, which is the right treatment for fragments this size.
+
+**Honest note:** enabling island removal did not change the DRC count — it still reports 5.
+I have not confirmed why; the likely explanation is that KiCad's zone ratsnest wants
+same-layer continuity and does not credit the connection made through the inner plane. That
+would make it a reporting artifact rather than a defect, but I have not proven it, so treat
+the 5 as unexplained-but-benign rather than definitively fine.
+
+Nothing here is electrical: **0 electrical DRC violations, 0 schematic parity errors, and
+no pad anywhere left unconnected.**
