@@ -169,10 +169,10 @@
       "name": "Bosch 6-axis IMU"
     },
     "BOOT_SEL|Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical": {
-      "lcsc": null,
-      "comment": "1x03 2.54mm header - hand-fit",
+      "lcsc": "C2937625",
+      "comment": "1x03 2.54mm male header, assembled",
       "qty": 1,
-      "name": "1x03 2.54mm header"
+      "name": "PZ254V-11-03P 1x3 2.54mm"
     },
     "CAN_A|rcm:TerminalBlock_KF2EDG-3.5-3P_1x03_P3.50mm_Horizontal": {
       "lcsc": "C441322",
@@ -265,10 +265,10 @@
       "name": "LQFP-64 10x10"
     },
     "SWD|Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical": {
-      "lcsc": null,
-      "comment": "1x05 2.54mm header - hand-fit",
+      "lcsc": "C492404",
+      "comment": "1x05 2.54mm male header, assembled",
       "qty": 1,
-      "name": "1x05 2.54mm header"
+      "name": "PZ254V-11-05P 1x5 2.54mm"
     },
     "SZNUP2105L|Package_TO_SOT_SMD:SOT-23": {
       "lcsc": "C233494",
@@ -290,15 +290,15 @@
     },
     "WAVESHARE-IN|rcm:WaveshareBuck_IN_2x2_P3.50mm": {
       "lcsc": null,
-      "comment": "4x 2.54mm male pins at 3.50mm pitch - buck module socket, hand-fit",
+      "comment": "Buck IN column: 4 holes at 3.50mm pitch. NO off-the-shelf header exists at that pitch, so this one cannot be machine-placed and must be hand-fit with individual pins. Not a choice - a footprint constraint carried over from revB. Worth respacing to 2.54mm in a future revision.",
       "qty": 1,
       "name": "4x 2.54mm male pins at 3.50mm pitch"
     },
     "WAVESHARE-OUT|rcm:WaveshareBuck_OUT_3x3_P2.54mm": {
-      "lcsc": null,
-      "comment": "6x 2.54mm male pins - buck module socket, hand-fit",
+      "lcsc": "C37208",
+      "comment": "1x06 2.54mm male header for the buck OUT column, assembled",
       "qty": 1,
-      "name": "6x 2.54mm male pins"
+      "name": "2.54-1x6P straight pin"
     },
     "M95640|Package_SO:SOIC-8_3.9x4.9mm_P1.27mm": {
       "lcsc": "C283461",
@@ -320,11 +320,7 @@
     }
   },
   "exclude_refs": [
-    "^TP",
-    "^ST",
     "^H[0-9]",
-    "^J_SWD$",
-    "^J_BOOT$",
-    "^JB[12]$"
+    "^JB1$"
   ]
 }

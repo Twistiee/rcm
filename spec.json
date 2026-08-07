@@ -153,7 +153,10 @@
    "ref": "JB2",
    "lib": "Connector_Generic:Conn_01x02",
    "value": "WAVESHARE-OUT",
-   "footprint": "rcm:WaveshareBuck_OUT_3x3_P2.54mm"
+   "footprint": "rcm:WaveshareBuck_OUT_3x3_P2.54mm",
+   "fields": {
+    "LCSC": "C37208"
+   }
   },
   {
    "ref": "U_LDO",
@@ -294,7 +297,10 @@
    "ref": "J_BOOT",
    "lib": "Connector_Generic:Conn_01x03",
    "value": "BOOT_SEL",
-   "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
+   "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+   "fields": {
+    "LCSC": "C2937625"
+   }
   },
   {
    "ref": "SW_RST",
@@ -363,7 +369,10 @@
    "ref": "J_SWD",
    "lib": "Connector_Generic:Conn_01x05",
    "value": "SWD",
-   "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical"
+   "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
+   "fields": {
+    "LCSC": "C492404"
+   }
   },
   {
    "ref": "D_LED1",

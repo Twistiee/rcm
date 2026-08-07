@@ -137,3 +137,26 @@ regions (F.Cu ~27, B.Cu ~6). A zipped gerber set around 120kB has no pour; with 
 
 Re-routing invalidates the silk pass twice over — `silk_over_copper` counts pour copper as
 well as tracks — so silk is always the **last** step before export.
+
+
+## Default: assemble EVERYTHING (user, 2026-08-08)
+
+**Do not exclude parts from the BOM/CPL unless told to.** `exclude_refs` in
+`jlc_parts.json` is now down to the two things that physically cannot be placed:
+
+| Excluded | Why |
+|---|---|
+| `^H[0-9]` | mounting holes — NPTH, no pads, no part to fit |
+| `^JB1$` | 4 holes at **3.50mm pitch**; no header exists at that pitch |
+
+`JB1` is the one to revisit. It is not a preference — the buck's input column was drawn at
+3.50mm spacing (carried over from revB) and no off-the-shelf pin header is made at that
+pitch, so it can only be hand-fit with individual pins. **Respacing it to 2.54mm in a future
+revision would make it machine-placeable.**
+
+Leaving it in the BOM with no LCSC number is worse than excluding it: JLC's uploader
+auto-matches unsourced lines, and a guessed connector fitted to the power-input footprint is
+a worse outcome than a missing one. `gen_jlc_bom_cpl.py` warns loudly about unsourced lines
+for exactly this reason.
+
+`J_SWD`, `J_BOOT` and `JB2` are all standard 2.54mm headers and are now **assembled**.
