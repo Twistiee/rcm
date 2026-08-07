@@ -134,3 +134,37 @@ cross-section than any trace, even at half the weight.
 
 This closes the gap that held up pdm14-revB, where no stackup meant the fab would have
 built 1oz while the design assumed 2oz.
+
+
+## Manufacturing files — `mfg4/` (2026-08-07)
+
+```
+mfg4/rcm4_gerbers.zip   16 files, incl. both inner layers
+mfg4/bom_jlc.csv        40 lines, every one with an LCSC number
+mfg4/cpl_jlc.csv        149 placements, centroid, Y negated
+```
+
+Verified:
+
+| Check | Result |
+|---|---|
+| Outline | exactly **140.00 x 70.00 mm** |
+| `G36` in Edge.Cuts | 0 — no phantom cutouts |
+| `GND_plane` | **1 filled region** — one continuous plane |
+| `PWR_plane` | **1 filled region** |
+| Silkscreen pad flashes | 0 front, 0 back |
+| Clear-polarity silk blocks | 0 (no `--subtract-soldermask`) |
+| PTH drills | 0.3 / 0.6 / 1.0 / 1.2mm |
+| NPTH | 0.65, 3.2mm (M3 mounting) |
+| BOM lines missing LCSC | 0 |
+| CPL Y negated | yes |
+| Designator ranges in BOM | none |
+
+The single filled region on each plane is the check that matters — a plane broken into
+fragments would mean the pour never closed.
+
+**BOM and CPL are byte-for-byte equivalent to the 2-layer set** — identical part numbers,
+identical 149 designators. Nothing about going to 4 layers changes what gets assembled, so
+only the PCB half of the quote moves.
+
+`mfg/` (2-layer) is untouched. Upload whichever directory matches the board you order.
