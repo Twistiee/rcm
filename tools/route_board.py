@@ -124,7 +124,7 @@ def main():
             block = txt[m.start():j + 1]
             allpins = re.findall(r"[A-Za-z_][\w.]*-[\w]+", block)
             keep = [p for p in allpins
-                    if any(p.split("-")[0] == k or p.startswith(k + "-")
+                    if any(p.split("-")[0].startswith(k)
                            for k in args.no_route_keep)]
             if keep:
                 # Keep a subset routed: rewrite the net with only those pins. Freerouting
