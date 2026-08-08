@@ -730,3 +730,30 @@ different BOM: industrial-grade STM32, a different IMU, different crystals.
 - If the +70C reset switch bothers you, **not fitting it is free** — NRST is on the SWD
   header, so the button is redundant. That alone lifts the board to -30 .. +80C, and it is
   also the worst-value line in the BOM ($1.13 each, 455 in stock).
+
+
+## What is actually on the CAN bus (user, 2026-08-08)
+
+- **rusEFI uaEFI SUPER** — the ECU
+- **rusEFI uaDASH** — dash display, Waveshare screen/board
+- **RCM** (this board), and a second one built as the keypad
+
+The Haltech in this repo is the **fuse/relay box** and nothing else — it is a passive panel,
+not a CAN node. Do not infer an ECU from it. (I made exactly that mistake once and reasoned
+about bitrates from it.)
+
+### Why this matters
+
+**Bitrate.** rusEFI's default is **500 kbps**, set in TunerStudio. Worth confirming against
+the actual tune rather than assuming, but 500k is the sensible default for the firmware and
+for `CFG_BAUD` (config DIP position 5). The hardware covers both rates either way, which is
+the point of putting it on a switch — get it wrong and the node is silent, and you cannot
+fix that over the bus.
+
+**The protocol is open.** rusEFI is open source with a documented CAN broadcast format, so
+integration is reading a spec rather than reverse-engineering a proprietary one. That is a
+material difference to how the firmware work will go.
+
+**The dash is a consumer.** uaDASH already renders CAN data, so switch states and IMU output
+from this board can appear there without writing any display code — worth designing the
+message IDs with that in mind rather than inventing a private format.
