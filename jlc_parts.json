@@ -316,7 +316,7 @@
       "lcsc": "C6386921",
       "qty": 1,
       "name": "1.27-8P DIP switch",
-      "comment": "1.27-8P TPPT, 8-way half-pitch SMD DIP. VERIFY THE LAND before ordering: the footprint is the standard 1.27mm 8-position gull-wing (W=7.62mm row spacing) and this part was not checked against a dimensioned drawing"
+      "comment": "1.27-8P TPPT, 8-way half-pitch SMD DIP. LAND VERIFIED against the datasheet PCB layout 2026-08-08: row spacing 7.62mm c-to-c (drawing gives 6.35 inner + 1.27 pad), pitch 1.27mm, 16 pads - all match. Our pads run 0.76mm along the row against the drawing's 0.51mm, which is deliberate KiCad IPC generosity and leaves 0.51mm between pads. The drawing's 11.43 is the BODY length (8x1.27+1.27), not pad centres"
     }
   },
   "exclude_refs": [
