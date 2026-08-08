@@ -74,8 +74,12 @@ C("D2", "Device:D_TVS", "SMAJ33A", SMA)
 C("C_BULK", "Device:C", "10uF_50V", C1210)
 
 N("+12V_IN", "J_PWR.1", "F1.1")
-N("+12V_FUSED", "F1.2", "D1.1")
-N("+12V_P", "D1.2", "D2.1", "C_BULK.1")
+# D1 ORIENTATION: Diode:SS34 follows KiCad's convention of pin 1 = K, pin 2 = A --
+# NOT the pin1=anode you might assume. Wired the other way round the diode blocks the
+# battery feed and the board never powers up. ERC passes either way, because a diode
+# is a valid two-pin connection in both directions; only reading the symbol catches it.
+N("+12V_FUSED", "F1.2", "D1.2")        # anode  <- fuse
+N("+12V_P", "D1.1", "D2.1", "C_BULK.1")  # cathode -> protected rail
 N("GND", "J_PWR.2", "D2.2", "C_BULK.2")
 
 # ---------------------------------------------------------------------------

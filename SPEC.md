@@ -715,3 +715,44 @@ $0.171 beat an extended one at $0.044.
 
 `X-Ray Inspection $8.20` is the BMI270 LGA-14 — bottom-terminated, no visible joints. It is
 also the reason ENIG is worth taking over HASL.
+
+
+## D1 WAS WIRED BACKWARDS (found by the user, 2026-08-08)
+
+`Diode:SS34` follows KiCad's convention of **pin 1 = K, pin 2 = A** — not the pin-1-is-anode
+you would assume. The netlist had `D1.1` (cathode) on `+12V_FUSED` and `D1.2` (anode) on
+`+12V_P`, i.e. the reverse-polarity diode **facing the wrong way**. It would have blocked the
+battery feed outright and the board would never have powered up.
+
+Caught by looking at the schematic symbol and noticing the cathode bar pointed at the fuse.
+
+**Nothing automated caught this, and nothing was going to.** ERC passes either orientation,
+because a diode is a valid two-pin connection both ways round. DRC, the netlist round-trip
+and the BOM are all equally blind to it. This is the same class of fault as the four found in
+the first schematic review — correct-looking connectivity, wrong circuit.
+
+### The other polarised parts were checked and are correct
+
+| Part | Symbol convention | Wiring | Verdict |
+|---|---|---|---|
+| `D_LED1/2` | `LED` pin 1 = K, 2 = A | anode(2) to resistor, cathode(1) to GND | correct |
+| `D2` SMAJ33A | `D_TVS` pins A1/A2 | pad 1 to `+12V_P`, pad 2 to GND | correct |
+| `F1` | Polyfuse, unpolarised | — | n/a |
+
+`D2` deserves a note: `Device:D_TVS` is drawn as a **bidirectional** TVS (both pins named
+"anode"), but SMAJ33A is **unidirectional**. The schematic symbol therefore cannot express
+the polarity. It comes out right because the `D_SMA` footprint's pad 1 is the cathode, and
+pad 1 is on `+12V_P` — but the symbol is misleading and worth swapping for a directional one
+if this is ever revised.
+
+### Everything downstream is now STALE
+
+The fix changes the netlist, so both boards and both manufacturing sets were built from the
+wrong circuit:
+
+- `rcm.kicad_pcb` (2-layer) — **stale, do not order**
+- `rcm4.kicad_pcb` (4-layer) — **stale, do not order**
+- `mfg/` and `mfg4/` — **stale**
+
+Both need `netlist_to_board.py`, a re-route, the thermal and silk passes, and fresh
+manufacturing files.
