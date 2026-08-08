@@ -284,7 +284,7 @@
     },
     "USB-C|Connector_USB:USB_C_Receptacle_HCTL_HC-TYPE-C-16P-01A": {
       "lcsc": "C165948",
-      "comment": "TYPE-C-31-M-12 16P. VERIFY the land against the HCTL footprint before ordering - the two are commonly treated as interchangeable but that is not something I confirmed from a drawing",
+      "comment": "TYPE-C-31-M-12 16P. LAND VERIFIED against the datasheet recommended PCB layout 2026-08-08: signal span 6.40mm, pitch 0.50mm, alignment posts 5.78mm apart (+/-2.89) and shield tabs 8.65mm (+/-4.325) - all match, inside the drawing's +/-0.05 tolerance. Our alignment holes are 0.65mm against the recommended 0.60mm, i.e. 0.05mm more peg clearance, which is harmless since the pads do the alignment",
       "qty": 1,
       "name": "TYPE-C-31-M-12 16P"
     },
