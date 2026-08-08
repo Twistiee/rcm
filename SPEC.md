@@ -756,3 +756,45 @@ wrong circuit:
 
 Both need `netlist_to_board.py`, a re-route, the thermal and silk passes, and fresh
 manufacturing files.
+
+
+# ORDERED — 2026-08-08
+
+Order placed with JLCPCB. The set uploaded was **`mfg4/`** (4-layer, `rcm4.kicad_pcb`).
+
+Final state at order time:
+
+| | |
+|---|---|
+| DRC | **0 violations** — electrical and silkscreen |
+| Unconnected | **0** |
+| Schematic parity | **0** |
+| Footprints | **all verified against manufacturer drawings** |
+| Stackup | 4-layer 1.6mm, leaded HASL |
+| BOM | 43 lines, every one with an LCSC number |
+| CPL | 152 placements |
+
+Order-side settings (confirm against the actual JLC order if it matters later): Standard
+PCBA — required for the BMI270 — which adds ~$25 setup and panelises to 140x80mm with two
+5mm breakaway rails. Leaded HASL over ENIG, on the grounds that the X-ray inspection already
+in the quote covers the LGA-14's hidden joints.
+
+## What still needs doing
+
+- **3D models** for the five KF2EDG terminal footprints and `JB1`. Deferred throughout, but
+  now on the critical path: the button panel is designed to suit the board, and it cannot be
+  modelled accurately without them.
+- **Firmware.** Target is the rusEFI bus at 500kbps — see the CAN peers section in
+  `DESIGN.md`. `CFG_ROLE`, `CFG_ADDR0/1`, `CFG_BAUD` and `CFG_IMU_EN` are read on PC0-PC4.
+- **`JB1` hand-fitting.** 4 pins at 3.50mm pitch, excluded from assembly because no header
+  exists at that pitch. Respacing it to 2.54mm is the obvious fix for any future revision.
+
+## Three faults caught late, worth remembering how
+
+- **No ground pour** — `route_board.py --zone` defaults to empty; a fully routed, DRC-clean,
+  0-unconnected board came back with no copper pour and nothing flagged it.
+- **D1 backwards** — `Diode:SS34` is pin 1 = K. ERC passes either orientation.
+- **Stale manufacturing files** — regenerated from an older board state.
+
+Two of the three were found by the user looking at the board, not by any check in this
+pipeline. Every automated gate was green throughout.
