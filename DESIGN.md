@@ -683,3 +683,50 @@ revision; only the copper is gone.
 **Verify the DIP land before ordering.** The footprint is the standard 1.27mm 8-position
 gull-wing (7.62mm row spacing); `C6386921` was not checked against a dimensioned drawing.
 Same caveat as the USB-C.
+
+
+## Temperature audit — the board is a +70C board (2026-08-08)
+
+Prompted by the question: if one part is rated lower than the rest, that part sets the
+board's limit. Correct, and worth doing properly rather than spot-checking. Every line
+audited against its JLC datasheet range:
+
+| Limit | Parts |
+|---|---|
+| **-20 .. +70C** | `SW_RST` TL3342 tactile switch |
+| **-30 .. +80C** | `J_USB` TYPE-C receptacle |
+| **-40 .. +85C** | `U_MCU`, `U_IMU`, `U_CAN`, `U_EEP`, `U_SI1-3`, `Y1`, `Y2`, `F1` |
+| -30 .. +85C | `D_LED1`, `D_LED2`, `SW_CFG` |
+| -40 .. +105C | all three terminal blocks |
+| -40 .. +125C | `U_DRV1-3`, `U_SO1-3`, `U_LDO`, `D1` |
+| -55 .. +155C | every resistor |
+| -40 .. +175C | `U_LATCH` |
+
+Capacitors are not stated in JLC's description but follow their dielectric: **X5R is +85C**
+(`C_3V3I`, `C_5V`, `C_MB`, `C_VCAP`), **X7R and C0G are +125C** (`C_3V3O` and the other
+100nF, `C_BULK`, the crystal load caps).
+
+**So the board is -20 .. +70C, set by the reset switch**, and -30 .. +80C once that is
+discounted. A cabin in direct sun can reach 60-80C, so this is not academic.
+
+### What that does and does not mean
+
+These are *guaranteed operating* ranges, not destruction limits — a +70C part does not fail
+at 71C, it leaves spec. And the two lowest-rated parts are both **bench items**: the reset
+switch and the USB port are used for programming, not while driving. A reset switch that
+drifts out of spec on a hot day is an inconvenience; the MCU doing so is a dead board.
+
+That reframes the practical limit as the **+85C cluster** — MCU, IMU, CAN transceiver,
+EEPROM, shift registers and both crystals. Raising *that* is not a part swap, it is a
+different BOM: industrial-grade STM32, a different IMU, different crystals.
+
+### Consequences
+
+- **+85C is the practical ceiling** for this design. Fine for a cabin; do not mount it in an
+  engine bay, which was already the intent (see the mounting note in `CLAUDE.md`).
+- **The `C_VCAP` X7R -> X5R swap costs nothing.** It dropped that part from +125C to +85C,
+  but the board was already pinned at +85C by parts that cannot be swapped. Worth recording,
+  because it turns a hedge into a confirmed non-issue.
+- If the +70C reset switch bothers you, **not fitting it is free** — NRST is on the SWD
+  header, so the button is redundant. That alone lifts the board to -30 .. +80C, and it is
+  also the worst-value line in the BOM ($1.13 each, 455 in stock).
