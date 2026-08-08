@@ -5,7 +5,7 @@
       "Application": "Pcbnew",
       "Version": "10.0.3"
     },
-    "CreationDate": "2026-08-08T17:43:16+12:00"
+    "CreationDate": "2026-08-08T19:08:54+12:00"
   },
   "GeneralSpecs": {
     "ProjectId": {
@@ -17,9 +17,9 @@
       "X": 140.1,
       "Y": 70.1
     },
-    "LayerNumber": 2,
+    "LayerNumber": 4,
     "BoardThickness": 1.6,
-    "Finish": "None"
+    "Finish": "HAL SnPb"
   },
   "DesignRules": [
     {
@@ -28,6 +28,14 @@
       "PadToTrack": 0.2,
       "TrackToTrack": 0.2,
       "MinLineWidth": 0.2,
+      "TrackToRegion": 0.3,
+      "RegionToRegion": 0.3
+    },
+    {
+      "Layers": "Inner",
+      "PadToPad": 0.0,
+      "PadToTrack": 0.0,
+      "TrackToTrack": 0.2,
       "TrackToRegion": 0.3,
       "RegionToRegion": 0.3
     }
@@ -39,8 +47,18 @@
       "FilePolarity": "Positive"
     },
     {
+      "Path": "rcm-GND_plane.gbr",
+      "FileFunction": "Copper,L2,Inr",
+      "FilePolarity": "Positive"
+    },
+    {
+      "Path": "rcm-PWR_plane.gbr",
+      "FileFunction": "Copper,L3,Inr",
+      "FilePolarity": "Positive"
+    },
+    {
       "Path": "rcm-B_Cu.gbr",
-      "FileFunction": "Copper,L2,Bot",
+      "FileFunction": "Copper,L4,Bot",
       "FilePolarity": "Positive"
     },
     {
@@ -100,10 +118,34 @@
     },
     {
       "Type": "Dielectric",
-      "Thickness": 1.51,
+      "Thickness": 0.2104,
       "Material": "FR4",
-      "Name": "F.Cu/B.Cu",
-      "Notes": "Type: dielectric layer 1 (from F.Cu to B.Cu)"
+      "Name": "F.Cu/GND_plane",
+      "Notes": "Type: dielectric layer 1 (from F.Cu to GND_plane)"
+    },
+    {
+      "Type": "Copper",
+      "Thickness": 0.0175,
+      "Name": "GND_plane"
+    },
+    {
+      "Type": "Dielectric",
+      "Thickness": 1.065,
+      "Material": "FR4",
+      "Name": "GND_plane/PWR_plane",
+      "Notes": "Type: dielectric layer 2 (from GND_plane to PWR_plane)"
+    },
+    {
+      "Type": "Copper",
+      "Thickness": 0.0175,
+      "Name": "PWR_plane"
+    },
+    {
+      "Type": "Dielectric",
+      "Thickness": 0.2104,
+      "Material": "FR4",
+      "Name": "PWR_plane/B.Cu",
+      "Notes": "Type: dielectric layer 3 (from PWR_plane to B.Cu)"
     },
     {
       "Type": "Copper",
