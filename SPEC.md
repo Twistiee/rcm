@@ -798,3 +798,22 @@ in the quote covers the LGA-14's hidden joints.
 
 Two of the three were found by the user looking at the board, not by any check in this
 pipeline. Every automated gate was green throughout.
+
+
+## Mating plugs — buy separately from LCSC (2026-08-08)
+
+JLC fits only the **board-side headers**. The screw plugs that mate with them are ordinary
+parts you buy yourself; they are not on the BOM and never were.
+
+`KF2EDGK-3.5-xP` is the plug half of the `KF2EDGV-3.5-xP` headers on the board:
+
+| Plug | LCSC | Mates with | Per board | 5 boards | Unit |
+|---|---|---|---|---|---|
+| 2P | `C440847` | `J_PWR`, `J_IGN` | 2 | 10 | $0.21 |
+| 3P | `C440848` | `J_AUX`, `J_CAN1`, `J_CAN2` | 3 | 15 | $0.28 |
+| 7P | `C440852` | `J_CH1`, `J_CH2`, `J_CH3` | 3 | 15 | $0.64 |
+
+About **$16** for all five boards. Worth buying the full set rather than just for the two
+being used — spares matter when making up looms.
+
+**Watch the 7P: only ~513 in stock** against 15 needed, the thinnest of the three.
