@@ -168,3 +168,42 @@ identical 149 designators. Nothing about going to 4 layers changes what gets ass
 only the PCB half of the quote moves.
 
 `mfg/` (2-layer) is untouched. Upload whichever directory matches the board you order.
+
+
+## Standard PCBA required, and the edge-rail problem (2026-08-08)
+
+JLC will not place the **BMI270** under Economic PCBA — it needs **Standard PCBA**. There is
+no way around it: LGA-14 is bottom-terminated with no reachable joints, so "do not place"
+would mean hand-soldering something that cannot be hand-soldered.
+
+Consequences:
+
+- **+$25 setup per assembly side.** Everything here is top-side, so paid once.
+- **Board is panelised to 140 x 80mm** — two 5mm breakaway rails added on the short
+  dimension. The delivered board is still 140 x 70; the rails snap off. PCB is priced on the
+  larger area, roughly +14%.
+
+### The thing to check before ordering
+
+**Every terminal block sits 0.55mm from the top or bottom edge** — measured, not estimated:
+
+```
+J_CH1, J_CH2, J_CH3          0.55 mm from the BOTTOM edge
+J_PWR, J_IGN, J_AUX,
+J_CAN1, J_CAN2               0.56 mm from the TOP edge
+```
+
+Those are exactly the edges the rails attach to. JLC normally wants several mm of component
+clearance from a breakaway rail because de-panelling stresses that edge, V-scoring more than
+mouse bites.
+
+**Ask them to confirm the de-panelling method clears the terminals** — put it in the PCB
+remarks rather than discovering it after the fact. `Confirm Production File` is already
+enabled, so it will be reviewed either way.
+
+In our favour: these are chunky THT plastic blocks rather than fragile SMD parts, and mouse
+bites need far less clearance than V-scoring. But it is a genuine question and the answer
+costs nothing to get.
+
+If it ever comes back as a problem, the fix is to inset the terminal rows a few mm from both
+edges — a layout change and a re-route, so worth knowing now rather than later.
