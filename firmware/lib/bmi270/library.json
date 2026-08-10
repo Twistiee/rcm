@@ -1,0 +1,16 @@
+{
+  "name": "bmi270",
+  "version": "2.86.1",
+  "description": "Bosch Sensortec BMI270 Sensor API, vendored verbatim. Only bmi2.c/bmi270.c and their headers are kept -- the context/dsd/legacy/max_fifo variants each carry their own 8KB configuration blob and none of them are wanted here. Vendored rather than pulled from git so the repo builds with no network, which matters for anyone cloning this to flash a board.",
+  "keywords": ["imu", "bmi270", "bosch"],
+  "license": "BSD-3-Clause",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/boschsensortec/BMI270_SensorAPI"
+  },
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "flags": ["-Wno-unused-parameter", "-Wno-sign-compare"]
+  }
+}

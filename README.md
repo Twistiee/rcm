@@ -107,6 +107,8 @@ gen_plan.py      -> board_plan.json  every part's physical position
 jlc_parts.json                     LCSC part per line; stamped into the schematic
 tools/                             scripted-board pipeline (schematic, place, route, export)
 mfg/                               gerbers, BOM, CPL as ordered
+firmware/                          STM32 firmware + host unit tests
+docs/rcm.dbc                       CAN database, generated from the firmware headers
 SPEC.md / DESIGN.md                what was built, and why
 ```
 
@@ -115,7 +117,36 @@ real design files. Editing `rcm.kicad_sch` by hand gets overwritten.
 
 ## Firmware
 
-Not started. Targets the rusEFI CAN protocol at 500 kbps. Config bits are read on PC0–PC4.
+PlatformIO + STM32duino, in [`firmware/`](firmware/) — read
+[`firmware/README.md`](firmware/README.md) for the detail. Written and unit-tested, but
+**never run on hardware**: the boards have not arrived yet.
+
+- 21 channels, in or out per channel as a **software** table, changeable over CAN
+- **Coil-circuit diagnosis** — blown fuse, missing relay, open coil or broken wire, all
+  reported per channel, and a short-to-12V too
+- CAN at **500 kbps by default and any exact bitrate you like**, with a DIP switch that
+  forces 500k back if you configure yourself off the bus
+- Node addressing for 8 boards, CAN-loss failsafe, ignition-off shutdown, watchdog
+- Optional **keypad → relay peer mirroring**, so a button panel can drive a relay module
+  with no ECU in the middle
+
+### rusEFI
+
+Message IDs were checked against rusEFI's own source rather than guessed. The board sits at
+base `0x300`, clear of everything rusEFI uses (`0x100`/`0x102`, `0x130`/`0x131`, `0x190`,
+`0x200`–`0x20B`, OpenBLT, OBD2).
+
+[`docs/rcm.dbc`](docs/rcm.dbc) is generated from the firmware headers, so **uaDASH and
+TunerStudio can render channel state, inputs and faults with no custom display code**.
+
+The BMI270 publishes as a **Bosch MM5.10** at `0x174`/`0x178`/`0x17C` — frames rusEFI
+already decodes. Set `imuType = IMU_MM5_10` and yaw rate plus lateral, longitudinal and
+vertical G appear in the ECU with nothing else to configure.
+
+```
+pio run -d firmware                build
+pio test -d firmware -e native     79 host unit tests
+```
 
 ## Honest notes
 
