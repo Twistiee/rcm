@@ -13,6 +13,10 @@ fp-info-cache
 # folder holding old-rev gerbers and a mirrored CPL is an active hazard).
 output/
 
+# FreeCAD autosave backups (the FCStd files themselves are generated but
+# tracked, so the printable shape is reviewable without running FreeCAD)
+*.FCBak
+
 # Python
 __pycache__/
 *.pyc
@@ -22,3 +26,6 @@ scratchpad/
 # generated verification artifacts (regenerable in seconds)
 *.kicad_sch.erc.json
 *.kicad_sch.net
+
+# PlatformIO build output
+firmware/.pio/

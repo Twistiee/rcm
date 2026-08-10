@@ -10,8 +10,10 @@ design — the two roles are the same circuit (low-side sink outputs + divider i
 one design halves the fixed cost that dominates at qty 1. See `DESIGN.md` "ONE BOARD, TWO
 ROLES".
 
-Status: **architecture agreed 2026-08-04, nothing drawn yet.** See `DESIGN.md` for the cost
-analysis behind the pivot, the agreed architecture, and what is still open.
+Status: **boards ORDERED 2026-08-08** (the 4-layer variant, 5 off, Standard PCBA, leaded
+HASL). Firmware is written and unit-tested but has **never run on hardware** — see
+`firmware/README.md`. See `DESIGN.md` for the cost analysis behind the pivot and the
+decisions taken along the way.
 
 ## Why this exists
 
@@ -35,23 +37,66 @@ thermal-via arrays, no M5 power studs), which is what actually shrinks the board
   dump as a replaceable part.
 - CAN as the control bus, and the general firmware lineage (see below).
 
-## Firmware lineage
+## Firmware — see `firmware/README.md` first
 
-Upstream is joesbox's SynapsePDM (`C:\github\SynapsePDM`, STM32F446 PlatformIO, on-car
-proven; MIT-style headers). `C:\github\Cortex` is the Avalonia C# PC config app,
-`C:\github\SynapsePDM-SD-Bootloader` the signed-update bootloader.
+Written from scratch on **PlatformIO + STM32duino**, not derived from joesbox's SynapsePDM
+(`C:\github\SynapsePDM`) after all. The scope here is small enough — CAN in, relays out,
+IMU out — that inheriting a PDM firmware would have cost more in unpicking than in typing.
+The SynapsePDM DBC and the Cortex app are therefore **not** compatible with this board;
+that compatibility goal lapsed when `../keypad` was folded into this repo and there is no
+longer another node that needs it.
 
-**But the firmware scope here is deliberately tiny** (user, 2026-08-04): CAN in → relay
-on/off, plus IMU data out on CAN. Undecided between butchering joesbox's firmware down to
-that and writing something simple in the Arduino IDE. Because the program is small either
-way, **firmware reuse is not a real constraint on the MCU choice** — and with shift
-registers absorbing the I/O, neither is pin count. Pick the STM32 on toolchain preference.
-Wireless is handled by an *optional* `ESP32-C3-MINI-1` co-processor footprint rather than
-by making the main MCU an ESP32. See `DESIGN.md` "MCU".
+Things worth knowing before touching it:
 
-What *is* worth preserving whichever route is taken: **CAN message compatibility** with the
-existing DBC (`../SynapsePDM/SynapsePDM/CAN DB/`) and the Cortex app, so the `../keypad`
-node and existing tooling keep working.
+- **`-D HAL_CAN_MODULE_ENABLED` is mandatory.** STM32duino leaves bxCAN out of the HAL
+  build by default. Without it `CAN_HandleTypeDef` simply does not exist, with fifty
+  confusing errors and no clue as to why.
+- **Clean builds hit an intermittent GCC ICE.** `arm-none-eabi-g++ 12.3.1` segfaults while
+  compiling the STM32duino core under parallel jobs. Not our code, not deterministic —
+  re-run, or `pio run -j 1`. Do not go looking for a bug in `src/`.
+- **`pio test -e native`** runs 79 host unit tests against a model of the board. Needs a
+  host gcc (MinGW-w64/WinLibs on Windows). They compile the real `src/*.cpp`, so they
+  break when the firmware breaks.
+- **CAN IDs were checked against rusEFI's actual source**, not guessed. Base `0x300`,
+  clear of everything rusEFI uses. The IMU deliberately emits **Bosch MM5.10** frames at
+  `0x174`/`0x178`/`0x17C` because rusEFI decodes those natively — set
+  `imuType = IMU_MM5_10` and it just works.
+- **`docs/rcm.dbc` is generated** by `firmware/tools/gen_dbc.py`, which reads the IDs out
+  of `protocol.h`. Do not hand-edit it. Validate with `cantools` after changes.
+- **`include/board.h` mirrors `gen_spec.py`'s `PINMAP`.** A firmware pin map that has
+  drifted from the netlist is a miserable afternoon with a multimeter.
+
+## Enclosure — `enclosure/`, and it is generated, not modelled
+
+A sealed box plus two lids (keypad face, blank plate for the relay role) live in
+[`enclosure/`](enclosure). See `enclosure/README.md` for the dimensions and the
+reasoning; the things worth knowing at this level:
+
+- **`build_enclosure.py` is the model.** The `.FCStd` files are output and are
+  overwritten on every run — never edit them by hand, change `PARAMS` and re-run.
+  This is the same approach as `C:\github\Exocet-Dash`, taken for the same reason:
+  hand-built PartDesign trees break when a dimension moves.
+- **Part primitives and booleans only.** No sketch is attached to a generated
+  face, so nothing goes topologically stale.
+- **`Vector.multiply()` mutates in place in FreeCAD.** Use `v * scalar`. This
+  silently corrupts a reused axis vector and the failure looks like a geometry bug.
+- **The switch geometry is inherited, not derived.** Ø25.0 through, Ø28.0 × 2.0
+  bezel recess, 35 mm pitch, from `G:\My Drive\CAD\Exocet\Keypad\Keypad-Face.FCStd`,
+  which was printed and fitted. Do not "improve" it without a test print.
+- **The lid prints face down, and nothing on either part needs support.** The
+  bezel recess ends in a 45° cone rather than a square shoulder, because the
+  shoulder was a 1.5 mm horizontal ceiling — the sole support-needing feature.
+  The recess stays full Ø28 for its 2 mm first, so the head is still flush. That
+  cone is why `lid_t` is 6 mm: at 4 it left 0.5 mm of straight bore under it.
+- **One DEUTSCH footprint fits DT04-2P / -3P / -4P.** All three share the flange
+  and the 30.35 × 22.45 hole pattern; their cutouts differ, but a round Ø25.4
+  contains the largest (the 4-way's 22.10 × 20.98 R6.35) with 0.09 mm to spare.
+  So the walls get one round aperture and the ports are interchangeable.
+- **`pcb_tall_comp_h` (12 mm, the buck on its headers) sets the box height on its
+  own** — the switches sit directly over the buck, so switch tail and component
+  stack rather than overlap. It is an estimate and is the first thing to measure.
+- Wire entry is DEUTSCH only; there is deliberately **no USB window**, because an
+  open hole would undo the lid seal. USB is reached by removing the lid.
 
 ## Conventions inherited from the pdm work
 
