@@ -8,10 +8,13 @@ were ordered 2026-08-08 and have not arrived. Everything below is written, compi
 unit-tested against a model of the board. None of it has seen a relay.
 
 ```
-pio run                     build for the board
-pio run -t upload           flash over J_SWD with an ST-Link
-pio test -e native          79 host unit tests
-python tools/gen_dbc.py     regenerate ../docs/rcm.dbc
+pio run                          build for the board
+pio run -t upload                flash over J_SWD with an ST-Link
+pio run -e selftest -t upload    bring-up console on the USB-C port
+pio test -e native               99 host unit tests
+python tools/gen_dbc.py          regenerate ../docs/rcm.dbc
+python tools/test_rcm_bench.py   self-test the bench tool, no hardware needed
+python tools/rcm_bench.py --help talk to a board over CAN
 ```
 
 ---
@@ -29,8 +32,11 @@ python tools/gen_dbc.py     regenerate ../docs/rcm.dbc
 | `src/config.cpp` | straps from the DIP, configuration from EEPROM |
 | `src/imu.cpp` | BMI270 → Bosch MM5.10 CAN frames |
 | `src/main.cpp` | boot order, scheduler, ignition shutdown, watchdog |
+| `src/selftest_main.cpp` | bring-up console over USB CDC, its own build environment |
 | `lib/bmi270/` | Bosch's own BMI270 driver, vendored (BSD-3) |
 | `test/` | host unit tests + a model of the board |
+| `tools/rcm_bench.py` | PC-side CAN tool: monitor, command, channel walk |
+| `tools/gen_dbc.py` | generates `docs/rcm.dbc` from `protocol.h` |
 
 ---
 
@@ -204,9 +210,48 @@ deliberate act.
 
 ---
 
+## Two ways to bring a board up
+
+### `pio run -e selftest -t upload` — needs nothing but the USB-C cable
+
+An interactive console on the USB-C port. This exists because the first hour with a new
+board is exactly when you least want a CAN adapter as a second unknown. It can prove, with
+no other hardware at all:
+
+- the board holds its own power on, and the DIP reads
+- the EEPROM answers and survives a 40-byte write **across a page boundary**
+- the CAN controller, its bit timing and its filter banks, via **internal loopback** —
+  a lone CAN node normally cannot transmit at all, because nothing is there to ACK it
+- the IMU initialises and reports about 1 g of gravity whichever way up the board is
+- every channel drives, and what its sense line reads back
+
+`w` walks all 21 channels with a 2 s dwell, which is bring-up step 5 done for you.
+
+The one thing it cannot prove is that the transceiver reaches another node.
+
+### `tools/rcm_bench.py` — over CAN, needs an adapter
+
+```
+rcm_bench.py -i slcan -c COM5 scan          find nodes
+rcm_bench.py -i slcan -c COM5 monitor       live state, sense and faults
+rcm_bench.py -i slcan -c COM5 set 3 on
+rcm_bench.py -i slcan -c COM5 walk          bit-order check
+rcm_bench.py -i slcan -c COM5 faults
+```
+
+Any python-can interface works (slcan, socketcan, pcan, kvaser). Decoding goes through
+`docs/rcm.dbc`, so the tool and the dash see identical fields.
+
+`--with-sim` runs a fake board in a background thread, which is how the tool was
+developed and tested with no hardware. `tools/test_rcm_bench.py` drives that end to end
+and also cross-checks the tool's byte packing against the DBC — so bench tool, DBC and
+`protocol.h` are pinned to each other.
+
+---
+
 ## Testing
 
-79 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
+99 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
 `.cpp` files against a model of the board in `test/stubs/`, so they test the code that
 ships rather than a transcription of it.
 
@@ -222,22 +267,37 @@ That last one matters: `store_write()` splitting at page boundaries is the only 
 between the config record and quiet corruption, and a model that did not reproduce the
 misbehaviour would prove nothing.
 
-### Two things the tests already caught
+`canbus.cpp` gets the same treatment through a small bxCAN shim in
+`test/stubs/stm32_hal_shim.*` — three transmit mailboxes with controllable availability,
+a receive FIFO, and filter banks indexed the way the hardware indexes them.
+
+### What the tests have caught so far
 
 - **The 165 chain mapping.** The two chains run in opposite directions, and the first
   draft of the *model* copied the 595 formula. The driver and the model disagreed
   immediately. That is the whole point — two independent derivations from the netlist only
   agree if both are right, and this is a bug you cannot see by reading either side alone.
+- **A surviving accept-all CAN filter.** `can_begin()` parks an accept-all in bank 0 so a
+  caller that installs nothing is noisy rather than deaf — but banks are ORed, so it made
+  every later filter decorative and left a 3-deep FIFO exposed to the whole bus. The first
+  real filter now overwrites bank 0. Found only because the shim indexes banks by number
+  rather than appending them.
+- **Four broadcast frames into three mailboxes.** STATUS was being dropped every cycle,
+  silently and always the same frame. Hence the transmit queue.
 - **A reboot latch** in `proto_poll()` that was never cleared. Harmless on real hardware,
   where `NVIC_SystemReset()` does not return, but a reset loop anywhere it did.
+- **Stale receive frames** in the bench tool — read-back after a command returned frames
+  captured *before* it, so every command looked like it had done nothing. True of a real
+  slcan adapter as much as of the simulator.
 
 ### What is NOT covered
 
-**`canbus.cpp` has no host test** — it needs the STM32 HAL and will not compile on a PC.
-The bit-timing solver is `constexpr` and asserted at compile time for 125k/250k/500k/1M on
-both 45MHz and 42MHz APB1, but the register setup, the filter banks and the transmit queue
-are unexercised until real hardware arrives. Same for `imu.cpp` and the parts of
-`main.cpp` that touch peripherals.
+- **`imu.cpp`** — the BMI270 needs an 8KB config upload over I2C to a real chip. Only the
+  MM5.10 encoding is checked, via the DBC.
+- **The peripherals themselves.** The HAL shim proves this firmware drives bxCAN the way
+  ST document it, not that the silicon then behaves. The self-test build's loopback check
+  is what covers that, on hardware.
+- **`main.cpp`'s scheduler and shutdown path.**
 
 ---
 
@@ -245,18 +305,23 @@ are unexercised until real hardware arrives. Same for `imu.cpp` and the parts of
 
 Each step is verifiable with a multimeter before any bus is involved.
 
+Flash the **selftest** build first — steps 1 to 6 need only the USB cable.
+
 | # | Check | How |
 |---|---|---|
 | 1 | Board stays alive | LED1 blinks; board stays on with the ignition input pulled low |
-| 2 | Node address | LED2 flashes N+1 times at boot |
-| 3 | Channels | command one over CAN, meter the terminal |
-| 4 | Sense | short a terminal to +12V, watch the raw sense bit in the `INPUTS` frame |
-| 5 | **Bit order** | drive channel 1 and channel 21 and confirm it is *those* terminals |
-| 6 | Fuse detection | pull a fuse, watch the `FAULTS` frame |
-| 7 | IMU | close DIP 6, watch `0x174` |
+| 2 | Node address | LED2 flashes N+1 times at boot; then `d` in the console |
+| 3 | EEPROM | `e` |
+| 4 | CAN controller | `c` — internal loopback, no other node needed |
+| 5 | IMU | `i` — should read about 1 g total, sitting still |
+| 6 | **Bit order** | `w` — walks all 21 channels, meter each terminal as it goes |
+| 7 | Fuse detection | wire one relay, pull its fuse, `s` |
+| 8 | On the real bus | flash the normal build, then `rcm_bench.py scan` |
 
-Step 5 is worth doing explicitly even though the tests cover it. The model is only as good
-as my reading of the netlist, and the netlist is only as good as the board.
+Step 6 is worth doing by hand even though the tests cover it. The tests verify the
+firmware against **my reading of the netlist**; this verifies the netlist against the
+board you are holding. If a terminal lights up that is not the one named, look for an
+offset of 14 — that is a mirrored shift-register byte order.
 
 ---
 

@@ -757,3 +757,39 @@ material difference to how the firmware work will go.
 **The dash is a consumer.** uaDASH already renders CAN data, so switch states and IMU output
 from this board can appear there without writing any display code — worth designing the
 message IDs with that in mind rather than inventing a private format.
+
+## Next revision: one-piece screw terminals instead of two-piece? (user, 2026-08-12)
+
+Raised after JLC refused to ship the mating plugs — they only ship parts the assembly
+process solders down, so the `KF2EDGK` plugs bought into the JLC parts library are stuck
+there and had to be re-bought from AliExpress. A one-piece screw terminal (`KF128-3.5`,
+`DG128`, and similar) would arrive soldered to the board and delete that whole problem.
+
+**The case for it is stronger than it first looks, because of the enclosure.** The
+original reason for a two-piece terminal was that you can unplug the loom and lift the
+board out. But the enclosure now terminates the loom at DEUTSCH DT bulkhead connectors on
+the wall of the box — so the real disconnect point has moved off the PCB entirely. The
+loom already unplugs at the enclosure; the board's terminals only ever see short internal
+pigtails that stay with the box.
+
+**What is still lost.** Removing the board from its own enclosure goes from unplugging
+three connector bodies to undoing up to 27 screw terminals and keeping track of which
+wire came from where. That is the difference between a five-minute swap and a careful
+afternoon, and it is felt every time the board comes out — which, for a board still under
+development, is often.
+
+**Costs, roughly.** Two-piece is header (~$0.30) + plug (~$0.35); one-piece is ~$0.25.
+Around $2–3 a board plus a separate order and its shipping.
+
+**Not a factor either way:** wire gauge, current rating and vibration resistance are the
+same. Both are 3.5mm-pitch screw clamps and both will need re-torquing in a car.
+
+**Suggested resolution for a revision:** mixed, not all-or-nothing. The three 7-way
+channel terminals are the ones with 21 wires and the ones you most want to unplug — keep
+those pluggable. `J_PWR`, `J_IGN`, `J_AUX` and the two CAN terminals are 13 wires between
+them and are the ones most likely to be landed once and forgotten — those can be
+one-piece. That keeps the servicing benefit where it matters and removes most of the
+loose-plug purchase.
+
+Bundle this with the other known revision item: `JB1` (the buck's input pins, 4 holes at
+3.50mm pitch) is hand-fit because no header is made at that pitch — respace it to 2.54mm.

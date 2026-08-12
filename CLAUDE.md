@@ -54,9 +54,18 @@ Things worth knowing before touching it:
 - **Clean builds hit an intermittent GCC ICE.** `arm-none-eabi-g++ 12.3.1` segfaults while
   compiling the STM32duino core under parallel jobs. Not our code, not deterministic —
   re-run, or `pio run -j 1`. Do not go looking for a bug in `src/`.
-- **`pio test -e native`** runs 79 host unit tests against a model of the board. Needs a
+- **`pio test -e native`** runs 99 host unit tests against a model of the board. Needs a
   host gcc (MinGW-w64/WinLibs on Windows). They compile the real `src/*.cpp`, so they
-  break when the firmware breaks.
+  break when the firmware breaks. Model the hardware's *structure*, not the driver's
+  arithmetic — every bug these have caught came from two independent derivations
+  disagreeing, and the one that indexes CAN filter banks by number rather than appending
+  them is what exposed a surviving accept-all filter.
+- **`pio run -e selftest -t upload`** builds a USB-CDC bring-up console instead of the
+  normal firmware. Swapped in by `build_src_filter`, so it cannot ship by accident. USB
+  CDC is enabled only in that environment.
+- **`firmware/tools/rcm_bench.py`** is the PC side, over any python-can interface.
+  `--with-sim` fakes a board so it works with no hardware; `test_rcm_bench.py` is its
+  gate and also pins its byte packing to the DBC.
 - **CAN IDs were checked against rusEFI's actual source**, not guessed. Base `0x300`,
   clear of everything rusEFI uses. The IMU deliberately emits **Bosch MM5.10** frames at
   `0x174`/`0x178`/`0x17C` because rusEFI decodes those natively — set

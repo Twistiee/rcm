@@ -32,6 +32,7 @@ static bool      up;
 static uint32_t  actual_rate;
 static uint16_t  sample_permille;
 static uint8_t   next_bank;
+static bool      default_filter;   /* bank 0 still holds can_begin's accept-all */
 
 /* Software transmit queue -- see the note above can_send(). Declared here so
  * can_begin() can reset it. */
@@ -119,7 +120,9 @@ static_assert(rate_exact(42000000, 1000000) && sp_sane(42000000, 1000000), "42MH
  * so rather than quietly running the bus 1% out. */
 static_assert(!solve_timing(45000000, 800000).found, "800k must FAIL cleanly on 45MHz");
 
-bool can_begin(uint32_t bitrate)
+bool can_begin(uint32_t bitrate) { return can_begin_ex(bitrate, false); }
+
+bool can_begin_ex(uint32_t bitrate, bool loopback)
 {
     up = false;
     next_bank = 0;
@@ -148,7 +151,7 @@ bool can_begin(uint32_t bitrate)
 
     hcan.Instance = CAN1;
     hcan.Init.Prescaler     = brp;
-    hcan.Init.Mode          = CAN_MODE_NORMAL;
+    hcan.Init.Mode          = loopback ? CAN_MODE_LOOPBACK : CAN_MODE_NORMAL;
     hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
     hcan.Init.TimeSeg1      = (ts1 - 1) << CAN_BTR_TS1_Pos;
     hcan.Init.TimeSeg2      = (ts2 - 1) << CAN_BTR_TS2_Pos;
@@ -195,8 +198,29 @@ static void set_filter(uint8_t bank, uint16_t id, uint16_t mask)
     HAL_CAN_ConfigFilter(&hcan, &f);
 }
 
-void can_filter_block(uint16_t base, uint16_t mask) { set_filter(next_bank++, base, mask); }
-void can_filter_id(uint16_t id)                     { set_filter(next_bank++, id, 0x7FF); }
+/* The FIRST explicit filter overwrites bank 0.
+ *
+ * can_begin() leaves an accept-all filter there so that a caller which installs nothing
+ * is merely noisy rather than deaf. But an accept-all bank makes every LATER bank
+ * pointless -- the filters are ORed, so bank 0 keeps waving the whole bus through and
+ * the 3-deep FIFO can overrun with traffic meant for other nodes, dropping our own
+ * commands. Rewinding to bank 0 here replaces it with the first real filter. */
+static void claim_bank_zero(void)
+{
+    if (default_filter) { next_bank = 0; default_filter = false; }
+}
+
+void can_filter_block(uint16_t base, uint16_t mask)
+{
+    claim_bank_zero();
+    set_filter(next_bank++, base, mask);
+}
+
+void can_filter_id(uint16_t id)
+{
+    claim_bank_zero();
+    set_filter(next_bank++, id, 0x7FF);
+}
 
 void can_filter_accept_all(void)
 {
@@ -209,6 +233,7 @@ void can_filter_accept_all(void)
     f.SlaveStartFilterBank = 14;
     HAL_CAN_ConfigFilter(&hcan, &f);
     next_bank = 1;
+    default_filter = true;
 }
 
 /* --- transmit ---------------------------------------------------------------

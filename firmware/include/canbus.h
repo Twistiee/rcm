@@ -24,6 +24,12 @@ struct can_frame_t {
  * silently dead CAN node is the single most annoying thing to diagnose in a car. */
 bool can_begin(uint32_t bitrate);
 
+/* Loopback puts the peripheral in CAN_MODE_LOOPBACK: it still drives the bus, but it
+ * also receives its own frames. That is how the self-test proves the controller, the
+ * bit timing and the filter banks with nothing else connected -- normally a lone CAN
+ * node cannot transmit at all, because no other node is there to acknowledge it. */
+bool can_begin_ex(uint32_t bitrate, bool loopback);
+
 /* Queues if all three hardware mailboxes are busy. Returns false only if the software
  * queue is also full, which at our frame rates means the bus is not running. */
 bool can_send(uint16_t id, const uint8_t *data, uint8_t len);

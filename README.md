@@ -88,9 +88,13 @@ also sold as `15EDGK-3.5`:
 About $3.20 a board. Generic parts — any supplier stocks them.
 
 > **Do not buy these into JLC's Parts Library expecting them to ship with the boards.**
-> That library is consignment stock for future assembly runs; nothing in the assembly
-> process consumes a loose plug, so it will sit there. Order them from LCSC with combined
-> shipping, or locally.
+> Confirmed the hard way on the 2026-08-08 order. That library is consignment stock for
+> assembly runs, and JLC will only ship a part if the assembly process solders it down —
+> a loose mating plug does not qualify. They will not add it to the board, and they will
+> not put it in the box for a sane handling fee either. Money spent there is stuck: you
+> own the parts and there is no way to take delivery of them.
+>
+> Buy the plugs somewhere else entirely — AliExpress, or LCSC as a separate order.
 
 ### Optional
 
