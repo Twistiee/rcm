@@ -231,6 +231,28 @@ The one thing it cannot prove is that the transceiver reaches another node.
 
 ### `tools/rcm_bench.py` — over CAN, needs an adapter
 
+**What an adapter is:** a PC has no CAN port. A USB-CAN adapter is a dongle with USB on
+one end and CANH/CANL on the other, letting the PC join the bus as another node.
+
+**Get one with `slcan` firmware.** It enumerates as an ordinary virtual COM port on
+Windows — no driver wrangling — and it is what this tool defaults to. A
+[CANable 2.0](https://canable.io/) ships that way. The `candleLight`/`gs_usb` firmware is
+also fine and slightly faster, but on Windows it needs a WinUSB driver swapped in with
+Zadig, and then the tool wants `-i gs_usb` instead.
+
+**Avoid the generic blue/black "USB-CAN Analyzer" dongles** (Waveshare USB-CAN-A and the
+many AliExpress lookalikes). They use a vendor-specific serial protocol, not slcan;
+python-can only reaches some of them through its `seeedstudio` interface and it is a
+fight. Buying on price here costs an evening.
+
+**Wiring and termination.** CANH and CANL to `J_CAN1` or `J_CAN2`, and tie the grounds
+together. A CAN bus wants exactly **two** 120Ω terminators, one at each physical end:
+
+- *bench, adapter plus board only* — enable both. `SW_CFG` position 1 on the board, and
+  the adapter's own termination jumper.
+- *on the car's bus* — the ECU and dash are already terminated. Turn both of yours off,
+  or you will load the bus down to four terminators and errors will start appearing.
+
 ```
 rcm_bench.py -i slcan -c COM5 scan          find nodes
 rcm_bench.py -i slcan -c COM5 monitor       live state, sense and faults
