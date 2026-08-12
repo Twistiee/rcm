@@ -456,7 +456,14 @@ def main():
     args = ap.parse_args()
 
     kw = {"interface": args.interface, "channel": args.channel}
-    if args.interface not in ("virtual",):
+    if args.interface == "gs_usb":
+        # candleLight firmware. python-can addresses these by DEVICE INDEX, not by a
+        # port name, and it needs `pip install "python-can[gs-usb]"` plus a WinUSB
+        # driver (Zadig) on Windows. Prefer slcan unless you have a reason not to.
+        kw["channel"] = int(args.channel) if str(args.channel).isdigit() else 0
+        kw["index"] = 0
+        kw["bitrate"] = args.bitrate
+    elif args.interface != "virtual":
         kw["bitrate"] = args.bitrate
     try:
         bus = can.Bus(**kw)

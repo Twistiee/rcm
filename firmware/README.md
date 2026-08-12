@@ -236,9 +236,14 @@ one end and CANH/CANL on the other, letting the PC join the bus as another node.
 
 **Get one with `slcan` firmware.** It enumerates as an ordinary virtual COM port on
 Windows — no driver wrangling — and it is what this tool defaults to. A
-[CANable 2.0](https://canable.io/) ships that way. The `candleLight`/`gs_usb` firmware is
-also fine and slightly faster, but on Windows it needs a WinUSB driver swapped in with
-Zadig, and then the tool wants `-i gs_usb` instead.
+[CANable 2.0](https://canable.io/) ships that way, and so does the
+[WeAct Studio USB2CANFD](https://github.com/WeActStudio/WeActStudio.USB2CANFDV1)
+(STM32G0B1, CAN-FD, works with Cangaroo — this is the one in use here, about NZ$17 on
+AliExpress).
+
+The `candleLight`/`gs_usb` firmware is also fine and slightly faster, but on Windows it
+needs `pip install "python-can[gs-usb]"` and a WinUSB driver swapped in with Zadig, and
+then the tool wants `-i gs_usb -c 0` — a device index rather than a port name.
 
 **Avoid the generic blue/black "USB-CAN Analyzer" dongles** (Waveshare USB-CAN-A and the
 many AliExpress lookalikes). They use a vendor-specific serial protocol, not slcan;
