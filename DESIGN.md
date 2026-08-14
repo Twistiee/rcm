@@ -881,3 +881,42 @@ pull-down draws, so the node stays low and the channel looks blown, forever.
 **Set `CH_F_NO_DIAG` on any channel driving something that is not a coil.** That flag
 exists for exactly this. The cost is that the channel keeps working but loses its
 fault reporting, which is the honest trade — there is nothing there to sense.
+
+### Driving anything SENSITIVE from a channel — R_PU bites (2026-08-12)
+
+Found while looking at off-the-shelf relay modules for the LED lamps. It applies to
+anything with a high-impedance or sensitive input, so it is worth stating as a rule.
+
+**Every channel has a fitted 10 kΩ pull-down (`R_PU`).** With the driver off, the channel
+node is held near ground through ~9.92 kΩ (`R_PU` in parallel with the sense divider).
+That is deliberate and it is what makes the fuse sense and the button inputs work.
+
+It also means an un-driven channel is **not open** — it is a 10 kΩ resistor to ground, and
+it will pass ~1 mA from anything that tries to pull it up.
+
+| Load pulled up to +12 V | Current when the channel is OFF | Does it activate? |
+|---|---|---|
+| 85 Ω relay coil | 1.20 mA | No — a relay needs ~100 mA to pick up |
+| Optocoupler input (1 kΩ + LED) | **0.99 mA** | **Yes** — an opto is specified at 1–5 mA |
+| MOSFET gate, high impedance | — | **Yes** — the node sits wherever the divider puts it |
+
+So the board drives **relay coils** exactly as intended and quietly misdrives anything
+sensitive. A generic "low level trigger" relay module wired straight to a channel will sit
+with its relays energised or chattering, because ~1 mA through the opto is roughly its
+normal operating current.
+
+**Two fixes, both fine:**
+
+1. **A 470 Ω pull-up from the channel node to +12 V**, at the module end. Holds the node at
+   11.5 V when off — above the opto's ~10.8 V conduction threshold with 0.66 V of margin —
+   and lets it swing to 0.2 V when driven. Costs 25 mA per channel while on. **Use 470 Ω,
+   not 1 kΩ: at 1 kΩ the node sits at 10.9 V, which is 0.1 V the wrong side of the
+   threshold.**
+2. **Desolder `R_PU` on those channels.** Electrically cleaner, needs no added parts, and
+   loses nothing — the coil-circuit sense does not work on a non-coil load anyway. Costs
+   an 0805 rework.
+
+**The same trap caught a P-FET high-side circuit sketched earlier in this conversation**: a
+gate fed from the channel through a resistor sits at ~6 V with the channel off, which turns
+the FET on. Any such circuit has to be checked against a 9.92 kΩ pull-down, not against an
+open drain.
