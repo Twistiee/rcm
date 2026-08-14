@@ -968,3 +968,50 @@ under vibration, which is why both options exist).
 
 The dash, and a laptop CAN adapter, sit mid-bus as stubs and must NOT be terminated. The
 rule is two terminators at the two ends, not "one per device".
+
+## Solid state relays: G3MB-202P is AC ONLY (2026-08-12)
+
+Asked whether cheap Omron `G3MB-202P` SSR boards would sidestep the contact-wear question.
+**They will not — that part cannot switch DC at all.**
+
+Its output is a **phototriac**, rated **100–240 VAC** with an operating range of 75–264 VAC.
+A triac only turns off when the load current crosses zero, and DC never does: trigger one
+on a 12 V circuit and it latches on and stays on. The zero-cross feature means it may not
+turn on predictably either. The "5 V / 12 V versions" of these modules differ only in the
+**input** LED drive; every one of them has the same mains AC output.
+
+**If contactless switching is genuinely wanted**, the part class is a MOSFET-output SSR /
+PhotoMOS — Omron `G3VM`, Panasonic `AQY`, Toshiba `TLP` — which are DC-capable and
+isolated. Note they are LED-input, so the `R_PU` trap above applies to them exactly as it
+does to an optocoupler: they need the 470 Ω pull-up too.
+
+**But do not buy a worse part to solve a small problem.** The contact concern at 160 mA and
+12 V is borderline, not dire — dry-circuit territory proper is more like <10 mA at low
+voltage. A 10 A relay module switching LED tail lights will very probably be fine for
+years. The reasons to prefer semiconductors here are silence and no wear, not reliability.
+
+## Two RCMs: engine-critical loads must not depend on one (2026-08-12)
+
+A second board is planned at the front for coils, injectors, fan. Addressing handles that
+cleanly — both boards are role=relay, DIP addresses 0 and 1, giving CAN blocks 0x300 and
+0x310. Bus termination goes on the two physical extremities, which will now be the two
+RCMs.
+
+Two things that are not automatic:
+
+**1. Any reset drops every channel.** On reset `SR_OE_N` is released and `R_OE` parks the
+595 outputs high-impedance. Firmware now detects a watchdog reset, skips the address blink
+and the IMU init, applies `failsafe_state` and re-enables the outputs within a few
+milliseconds — but it is still a dropout. **The same reasoning that keeps the brake lights
+hardwired applies to anything that stops the engine.** An EFI main relay or coil supply
+behind this board means a watchdog reset is a stall. Fan, fuel pump, lighting and
+convenience loads are all fine — a few milliseconds off does not matter to them.
+
+**2. `failsafe_state` defaults to ALL OFF.** That is right for a lighting board and wrong
+for an engine board: a quiet CAN bus would shut the engine down. Any engine-adjacent
+channel must be set to stay ON in `failsafe_state`, deliberately. It is per-channel, so one
+board can drop its lighting and hold its engine loads.
+
+**Temperature.** This is a +70 °C board (see the temperature audit). "Front, for coils and
+injectors" means a front CABIN location feeding an engine-bay fuse box — not the engine bay
+itself. Same rule as recorded for `pdm`: the zone names the loads, not the mounting place.
