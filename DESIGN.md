@@ -920,3 +920,51 @@ normal operating current.
 gate fed from the channel through a resistor sits at ~6 V with the channel off, which turns
 the FET on. Any such circuit has to be checked against a 9.92 kΩ pull-down, not against an
 open drain.
+
+## Installation topology: board at the battery, CAN to the front (user, 2026-08-12)
+
+Battery and RCM live behind the passenger seat; the tail lights are a short run away. Only
+the CAN bus goes forward. That is the right way round — it keeps every load feed short and
+fat and sends only signals down the car.
+
+### It needs FOUR cores forward, not three
+
+The one that is easy to miss is **ignition**. The board latches its own power on
+(`U_LATCH`, a BTS7040) and `J_IGN` is what wakes it. Without an ignition-switched wire the
+choice is a board that never wakes, or one wired permanently live that flattens the battery
+— the whole point of the latch is to avoid the second.
+
+It is a **signal, not a supply**: `J_IGN` drives a 47 kΩ/22 kΩ divider into the latch's IN
+pin plus the 1 MΩ/270 kΩ sense divider, so the wire carries **~185 µA**. Any conductor will
+do.
+
+| Core | Carries | Current |
+|---|---|---|
+| CAN-H, CAN-L | bus, **twisted pair** | — |
+| Ignition | wakes the latch | ~0.2 mA |
+| Brake switch | see below | 0.16 A as LEDs, 3.0 A if ever incandescent |
+
+**Keep the brake core out of the CAN twisted pair.** At 160 mA of LED there is little
+switching energy to couple, but the pair should stay a pair, and if the brake circuit ever
+went back to filament bulbs the switch-off transient would be sitting inside the CAN cable.
+
+### Brake lights hardwired — and monitored
+
+Running the brake pedal switch straight through to the lamps, with the RCM not in the path,
+is the right call: a relay fails on or off, a microcontroller can hang. That is a decision
+worth making deliberately rather than by default.
+
+It does not have to be either/or. **Tap the switched brake feed into a spare channel
+configured `CH_INPUT`.** The channel presents ~9.9 kΩ so it draws 1.2 mA and cannot affect
+the lamps, but the board then knows the brakes are on and can broadcast it. Free brake
+telemetry with no safety cost.
+
+### Termination: this board is now a bus END
+
+With the RCM at the back of the car and the ECU at the front, the two of them are the
+physical extremities of the trunk — so **the RCM should be terminated**: `SW_CFG` position
+1 on, or fit the 0R `R_TJ` for permanence (a mechanical contact carrying ~17 mA can chatter
+under vibration, which is why both options exist).
+
+The dash, and a laptop CAN adapter, sit mid-bus as stubs and must NOT be terminated. The
+rule is two terminators at the two ends, not "one per device".
