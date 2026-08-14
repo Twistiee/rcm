@@ -858,3 +858,26 @@ a load dump before the TVS conducts hard. Transient-only exposure, and `D1` plus
 add some series impedance, but the numbers do not currently stack in the right order.
 Worth a proper look before a revision — a lower-clamp TVS is the obvious lever, subject to
 staying clear of a 16 V charging fault.
+
+### Driving LED lamps directly instead of relays
+
+Prompted by a pair of Narva Model 38 combination lamps (`93824BL2`). Narva quote tail
+0.02 A, stop 0.08 A, indicator 0.08 A at 10–30 V, so **current is a non-issue** — two
+lamps with everything lit is well under half of one channel's 600 mA.
+
+Two things stop it being a free win:
+
+**1. Low-side switching cannot select functions on a common-earth lamp.** These channels
+sink to ground. A combination lamp is almost always wired as one earth plus one feed per
+function, so switching that earth switches the whole lamp, not a function of it.
+Per-function control still needs the feed switched — which is what the relays are for.
+Count the wires before assuming: 5 wires for 4 functions means a shared earth.
+
+**2. The coil-circuit sense reports a permanent open circuit on an LED load.** The
+diagnosis works because an ~85 Ω coil pulls the channel node to +12 V through the 10 kΩ
+pull-down when the driver is off. An LED string will not conduct at the ~1.2 mA that
+pull-down draws, so the node stays low and the channel looks blown, forever.
+
+**Set `CH_F_NO_DIAG` on any channel driving something that is not a coil.** That flag
+exists for exactly this. The cost is that the channel keeps working but loses its
+fault reporting, which is the honest trade — there is nothing there to sense.
