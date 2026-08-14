@@ -793,3 +793,68 @@ loose-plug purchase.
 
 Bundle this with the other known revision item: `JB1` (the buck's input pins, 4 holes at
 3.50mm pitch) is hand-fit because no header is made at that pitch — respace it to 2.54mm.
+
+## Channel current ratings (worked out 2026-08-12)
+
+Asked directly and never written down before. Four separate limits; the binding one is
+not the driver chip.
+
+| Limit | Value | Notes |
+|---|---|---|
+| **`TPL7407LA` per channel** | **600 mA** | TI's rated drain current. Also 30 V max output. |
+| **0.2 mm channel trace, 1 oz outer copper** | ~0.74 A @ +10°C, ~1.0 A @ +20°C | IPC-2221 external. Every `CH*` net is 0.2 mm on `F.Cu`/`B.Cu`, both outer layers. Not the limit. |
+| **TSSOP-16 package, all 7 on** | ~200–250 mA each | The real per-channel ceiling when a whole tile is energised. |
+| **Ground return through `J_PWR` pin 2** | ~8 A (connector) | **Every channel's coil current returns through this one 3.5 mm pole.** |
+
+### Package thermals are what cap the all-on figure
+
+Using the ~0.25 V drop at 200 mA from the driver comparison above (R_DS(on) ≈ 1.25 Ω) and
+θJA ≈ 108 °C/W for TSSOP-16 on a 4-layer board:
+
+| Per channel | Total, 7 channels | Junction rise |
+|---|---|---|
+| 150 mA | 0.20 W | +21 °C |
+| 200 mA | 0.35 W | +38 °C |
+| 250 mA | 0.55 W | +59 °C |
+| 300 mA | 0.79 W | +85 °C |
+| 600 mA | 3.15 W | **+340 °C — not survivable** |
+
+So **600 mA is a one-or-two-channels-at-a-time number, not a continuous all-on number.**
+This board is a +70 °C board (see the temperature audit), which leaves roughly a 60 °C
+rise to play with, so ~250 mA per channel with all seven on is the honest continuous
+figure. A tile with only two or three channels energised can run each much harder.
+
+### It suits the load it was designed for
+
+A typical automotive relay coil is ~85 Ω:
+
+| Supply | Per coil | All 21 |
+|---|---|---|
+| 12.0 V | 141 mA | 2.96 A |
+| 13.8 V | 162 mA | 3.41 A |
+| 14.4 V | 169 mA | 3.56 A |
+
+Comfortably inside every limit above, with the total sitting at under half the ground
+pole's rating. The design is well matched to relay coils and has no headroom worth
+speaking of for driving actual loads — which is the whole point of the architecture.
+
+### The constraint most likely to bite
+
+**All 21 channels share one ground return pole.** The coils are fed from the fuse box, so
+their current does not pass through `F1` (the 1 A PPTC only protects the board's own
+supply) — but every milliamp of it comes back through `J_PWR` pin 2 and the ground pour.
+At ~3.5 A that is fine. It is the thing that would fail first if someone decided to drive
+something bigger than a coil, and it is not obvious from the schematic.
+
+If a revision ever needs more, the fix is a second ground pole on `J_PWR` (or a dedicated
+power-ground terminal), not wider channel traces.
+
+### Open, noticed while working this out
+
+`TPL7407LA` is rated **30 V max output** and its clamp diodes return to `COM`, which is
+tied to `+12V_P`. `+12V_P` is protected by `D2`, an **SMAJ33A** — 33 V standoff, ~36.7 V
+minimum breakdown. So the rail can legitimately sit above the driver's 30 V rating during
+a load dump before the TVS conducts hard. Transient-only exposure, and `D1` plus the PPTC
+add some series impedance, but the numbers do not currently stack in the right order.
+Worth a proper look before a revision — a lower-clamp TVS is the obvious lever, subject to
+staying clear of a 16 V charging fault.

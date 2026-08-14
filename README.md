@@ -23,6 +23,21 @@ Designed for a [rusEFI](https://rusefi.com/) bus (uaEFI SUPER ECU + uaDASH displ
 | **IMU** | Bosch BMI270, 6-axis |
 | **Board** | 140 × 70 mm, 4-layer, solid ground plane |
 
+## Ratings
+
+| | |
+|---|---|
+| Supply | 7–30 V (12 V nominal); board draws ~100 mA |
+| **Per channel, one or two on** | **600 mA** sink, 30 V max |
+| **Per channel, all 7 of a tile on** | **~250 mA** — limited by the driver package, not the silicon |
+| All 21 channels | ~3.5 A total with typical 85 Ω relay coils |
+| Ground return | **all channels share one pole on `J_PWR`**, ~8 A |
+| Ambient | −20 to +70 °C |
+
+The channels **switch relay coils, they do not carry load current** — that is the whole
+architecture. `DESIGN.md` has the worked numbers, including why 600 mA is not an all-on
+figure.
+
 ## The channel trick
 
 Each channel's terminal connects to three things at once — a driver output, a permanently
