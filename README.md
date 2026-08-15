@@ -28,10 +28,11 @@ This is a PDM. Running a main relay, a fuel pump and an injector feed is the job
 edge case. But there is one behaviour to design around:
 
 **On any reset, `R_OE` parks all 21 channels high-impedance until firmware re-enables
-them.** Every channel drops. The firmware detects a watchdog reset, skips its startup
-diagnostics, applies `failsafe_state` and goes live immediately — the software part of
-that is well under a millisecond, so the gap is dominated by crystal and PLL startup and
-should land around **10 ms**. The self-test build reports its own measured figure; a scope
+them.** Every channel drops. The firmware adopts `failsafe_state` and goes live as its
+first act — the software part of that is well under a millisecond, so the gap is dominated
+by crystal and PLL startup and should land around **10 ms**. That applies equally to a
+cold start and to a watchdog reset, so a main relay behind this board closes with the key
+rather than after a timeout. The self-test build reports its own measured figure; a scope
 on any channel gives the true one including pre-`main()` time.
 
 So the question for each load is not "is this engine-critical" but **"what does 10 ms off
@@ -44,10 +45,11 @@ do to it?"**
 | **ECU power itself** | the ECU reboots, which really is a stall | **give the ECU its own ignition-switched feed** |
 | **Brake lights** | harmless in itself | **hardwire anyway** — see below |
 
-**`failsafe_state` defaults to all-off.** That is right for lighting and wrong for anything
-that should stay on when the bus goes quiet, and it is what the firmware applies coming out
-of a watchdog reset. It is per-channel, so one board can drop its lighting and hold its
-engine loads. Set it deliberately.
+**`failsafe_state` is the board's resting state**, not just a bus-timeout behaviour: it is
+what gets applied at power-up, after a watchdog reset, and whenever the bus goes quiet —
+anything a CAN command has not overridden. It defaults to all-off, which is right for
+lighting and wrong for anything that should be on by default. It is per-channel, so one
+board can drop its lighting and hold its engine loads. Set it deliberately.
 
 **Brake lights are a different argument.** Not dropout time — a hardwired brake switch is
 simply simpler and more reliable than anything running on a microcontroller, and there is

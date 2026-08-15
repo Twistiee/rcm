@@ -166,42 +166,42 @@ void setup(void)
 
     ch_begin();
 
-    /* Was this a watchdog reset rather than a real power-up?
-     *
-     * It matters a great deal. On any reset SR_OE_N is released and R_OE parks the 595
-     * outputs high-impedance, so EVERY channel drops until firmware turns them back on.
-     * A cold boot can take its time about that. A watchdog reset in the middle of a
-     * drive cannot: the address blink alone is up to 2.4s on node 7, and the IMU's 8KB
-     * config upload adds more. Several seconds with every channel off is the difference
-     * between a glitch and a stall.
-     *
-     * So on a watchdog reset: skip the blink, skip the IMU until later, and get the
-     * outputs back within a few milliseconds. */
     const bool wdg_reset = IWatchdog.isReset(true);
 
-    if (wdg_reset) {
-        /* failsafe_state is exactly "what should be on when nobody is telling us" --
-         * which is precisely the situation after an unplanned reset. Better than
-         * all-off, and CAN commands take over as soon as they arrive. */
-        ch_apply_failsafe();
-        ch_tick(millis());
-        app_set_outputs_live(true);
-    }
+    /* 3. Adopt the configured resting state, THEN go live.
+     *
+     * `failsafe_state` means "what should be on when nobody has told us otherwise", and
+     * that is as true at power-up as it is after the bus goes quiet. It used to be
+     * applied only on a CAN timeout, which meant a board came up with every channel off
+     * and did not reach its configured state until can_timeout_ms had elapsed -- so a
+     * main relay behind this board closed a second and a half after the key rather than
+     * at boot.
+     *
+     * The boot-order invariant is unchanged and still the important thing: a KNOWN state
+     * has to be latched into the 595s before SR_OE_N is allowed to drop. sr_begin()
+     * latched zeros; this latches the configured state; only then do the outputs go
+     * live. What has gone is the idea that they must go live LAST.
+     *
+     * Both reset paths do this identically, so the outputs are back within a few
+     * milliseconds either way -- on a watchdog reset that is the difference between a
+     * glitch and a stall, and on a cold start it is the difference between the engine
+     * being ready to crank and waiting on a timeout. */
+    ch_apply_failsafe();
+    ch_tick(millis());
+    app_set_outputs_live(true);
 
     can_up = can_begin(cfg_effective_bitrate());
     if (can_up) proto_begin();
 
     if (!wdg_reset) {
-        /* Cold boot. Blink the node address on the red LED before anything else can
-         * claim it: N+1 flashes = node N. Confirms the DIP is being read with nothing
-         * attached, which is worth 2 seconds once but not on every reset. */
+        /* Cold boot only: blink the node address on the red LED. N+1 flashes = node N,
+         * which confirms the DIP is being read with nothing attached. Worth two seconds
+         * once; not worth it on every watchdog reset, and no longer in the way of the
+         * outputs coming up. */
         for (uint8_t i = 0; i <= straps.node; i++) {
             digitalWrite(PIN_LED2, HIGH); delay(120);
             digitalWrite(PIN_LED2, LOW);  delay(180);
         }
-        /* 3. NOW the outputs may go live. Everything above this line ran with the 595s
-         *    high-impedance and a zeroed frame latched into them. */
-        app_set_outputs_live(true);
     }
 
     /* Last, because the BMI270 config upload is slow and nothing depends on it. */

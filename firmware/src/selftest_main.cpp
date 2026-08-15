@@ -256,10 +256,12 @@ void setup(void)
     proto_sanitise_base();
     ch_begin();
 
-    /* Mirror the real firmware's watchdog-reset path, so the recovery time measured
-     * here is the one the board would actually have in a car. */
+    /* Mirror the real firmware exactly, so the recovery time measured here is the one
+     * the board would actually have in a car. Both paths adopt failsafe_state and go
+     * live immediately. */
     was_wdg_reset = IWatchdog.isReset(true);
-    if (was_wdg_reset) { ch_apply_failsafe(); ch_tick(millis()); }
+    ch_apply_failsafe();
+    ch_tick(millis());
     app_set_outputs_live(true);
     live_at_ms = millis();
 
