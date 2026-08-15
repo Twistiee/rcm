@@ -1098,3 +1098,44 @@ as soon as the supply recovers. Two tests cover both halves.
 This is a real limit of the divider ratio rather than a firmware choice. A revision wanting
 margin here would lower the ratio — but 1 M/270 k was picked so a permanently connected
 divider draws almost nothing across 21 channels, and that trade still looks right.
+
+## Using a panel switch as the ignition (2026-08-15)
+
+Proposed: feed one keypad switch from a permanently-hot fused supply and take its output
+to `J_IGN`, replacing the key.
+
+**Electrically it works, and the switch barely notices.** `J_IGN` is a signal input — it
+drives the 47 kΩ/22 kΩ divider into the BTS7040's IN pin plus the 1 MΩ/270 kΩ sense
+divider, **0.18 mA total**. Closed, `LATCH_IN` sits at 3.83 V, comfortably above the
+latch's threshold, and `IGN_SENSE` reads the full 12 V at `PA0`. The board wakes, firmware
+raises `LATCH_HOLD`, and it holds itself on from there. Any small switch will do; nothing
+carries load current.
+
+**Do not also wire it to an input channel.** That was part of the proposal and it is
+redundant: `IGN_SENSE` on `PA0` is reading that exact node already, and the result is
+broadcast in the `STATUS` frame as `ign_mv` plus the `RCM_ST_IGN_ON` flag. An input channel
+would cost 1.21 mA and a channel to learn something the board already knows.
+
+### Latching or momentary decides whether firmware changes
+
+| Switch | Behaviour |
+|---|---|
+| **Latching (maintained)** | **Works today, no changes.** Closed = ignition on. Open → `ign_mv` falls below `IGN_ON_MV` (6 V) → after `IGN_OFF_HOLD` (2 s) the board runs its shutdown and drops `LATCH_HOLD`. Identical to a key. |
+| **Momentary** | **Does not work as-is.** The board wakes and latches on fine, but the moment the button is released `IGN_SENSE` reads low, and two seconds later `shutdown_check()` powers the board down. |
+
+A momentary button needs a push-to-start / push-to-stop state machine that does not exist
+yet: treat a rising edge as a toggle rather than treating the level as the ignition state,
+and hold the latch across the released periods. Small, but it is real work and it must not
+be faked by lengthening `IGN_OFF_HOLD`, which would break the ordinary shutdown.
+
+### This replaces OFF/IGN, not START
+
+A key does off / accessory / ignition / **crank**. This covers the first and third. Cranking
+still needs its own button or a channel driving the starter solenoid relay — and if it is a
+channel, note that unintended cranking is a genuinely dangerous failure and deserves the
+same treatment as the brake lights rather than a default channel.
+
+**Failure directions**, for completeness: a chafe of this wire to chassis reads OFF, which
+is the safe direction. A chafe to +12 V holds the board awake and flattens the battery
+overnight — annoying rather than dangerous, but it argues for running the ignition core
+alongside the CAN pair rather than through a loom full of permanent 12 V.
