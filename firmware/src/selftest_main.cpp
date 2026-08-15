@@ -22,6 +22,7 @@
  * That needs a second node.
  */
 #include <Arduino.h>
+#include <IWatchdog.h>
 #include "app.h"
 #include "board.h"
 #include "canbus.h"
@@ -45,6 +46,10 @@ uint16_t app_ignition_mv(void)
 bool app_ignition_on(void) { return app_ignition_mv() >= 6000; }
 
 static bool can_ok;
+static bool     was_wdg_reset;
+static uint32_t live_at_ms;      /* millis() when the outputs came back up */
+
+#define WDG_US 200000
 
 static void tick_a_while(uint32_t ms)
 {
@@ -225,6 +230,7 @@ static void menu(void)
     Serial.println(F("  0  all off"));
     Serial.println(F("  o  toggle the output enable (595 OE)"));
     Serial.println(F("  A  run d/e/c/i in one go"));
+    Serial.println(F("  W  force a watchdog reset, and time the output dropout"));
     Serial.println(F("  ?  this menu"));
 }
 
@@ -249,7 +255,13 @@ void setup(void)
     cfg_load();
     proto_sanitise_base();
     ch_begin();
+
+    /* Mirror the real firmware's watchdog-reset path, so the recovery time measured
+     * here is the one the board would actually have in a car. */
+    was_wdg_reset = IWatchdog.isReset(true);
+    if (was_wdg_reset) { ch_apply_failsafe(); ch_tick(millis()); }
     app_set_outputs_live(true);
+    live_at_ms = millis();
 
     Serial.begin(115200);
     /* No watchdog in this build: it is an interactive console and half the commands
@@ -258,6 +270,15 @@ void setup(void)
     while (!Serial && millis() - t0 < 5000) delay(10);
     delay(200);
     menu();
+
+    if (was_wdg_reset) {
+        Serial.println(F("\n*** recovered from a WATCHDOG RESET ***"));
+        Serial.printf("outputs were re-enabled %lu ms after reset, with failsafe_state "
+                      "applied.\n", (unsigned long)live_at_ms);
+        Serial.println(F("That figure excludes the time before main() -- crystal and PLL"));
+        Serial.println(F("startup -- which a scope on any channel would include. Expect"));
+        Serial.println(F("the true gap to be a few ms longer."));
+    }
     Serial.print(F("\n> "));
 }
 
@@ -312,6 +333,17 @@ void loop(void)
     }
     case 'A':
         show_straps(); test_eeprom(); test_can(); test_imu(); show_channels();
+        break;
+    case 'W':
+        /* Deliberately hang so the watchdog fires. The board comes back and reports how
+         * long its outputs were down -- which is the number the README claims and the
+         * only honest way to check it. Drive a channel first so you can watch it on a
+         * scope or hear the relay. */
+        Serial.println(F("hanging on purpose -- the watchdog will reset the board."));
+        Serial.println(F("Reconnect the serial port; it will report the recovery time."));
+        Serial.flush();
+        IWatchdog.begin(WDG_US);
+        for (;;) { }
         break;
     default:
         menu();

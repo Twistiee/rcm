@@ -226,6 +226,9 @@ no other hardware at all:
 - every channel drives, and what its sense line reads back
 
 `w` walks all 21 channels with a 2 s dwell, which is bring-up step 5 done for you.
+`W` deliberately hangs so the watchdog fires, then reports how long the outputs were
+down coming back — the number the top-level README quotes for a reset dropout, measured
+rather than estimated.
 
 The one thing it cannot prove is that the transceiver reaches another node.
 

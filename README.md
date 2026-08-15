@@ -22,20 +22,38 @@ Take it as a design worth reading, not a design worth trusting. If you build one
 to find things. `DESIGN.md` records what has already been found and fixed, which is a fair
 guide to how much else is probably in there.
 
-### Safety
+### What happens when it resets
 
-This drives vehicle electrics. A few things the design work turned up that are worth
-knowing before you wire anything to it:
+This is a PDM. Running a main relay, a fuel pump and an injector feed is the job, not an
+edge case. But there is one behaviour to design around:
 
-- **Don't put engine-critical loads behind it.** Any reset parks all 21 channels
-  high-impedance for a few milliseconds. That is nothing to a fan or a fuel pump and
-  everything to an EFI main relay.
-- **Don't put brake lights behind it either.** A relay fails on or off; a microcontroller
-  can hang. Hardwire the brake switch and let the board *watch* the circuit if you want
-  the telemetry.
-- **`failsafe_state` defaults to all-off**, which is right for lighting and wrong for
-  anything that should stay on when the bus goes quiet. It is per-channel; set it
-  deliberately.
+**On any reset, `R_OE` parks all 21 channels high-impedance until firmware re-enables
+them.** Every channel drops. The firmware detects a watchdog reset, skips its startup
+diagnostics, applies `failsafe_state` and goes live immediately — the software part of
+that is well under a millisecond, so the gap is dominated by crystal and PLL startup and
+should land around **10 ms**. The self-test build reports its own measured figure; a scope
+on any channel gives the true one including pre-`main()` time.
+
+So the question for each load is not "is this engine-critical" but **"what does 10 ms off
+do to it?"**
+
+| Load | 10 ms off | Verdict |
+|---|---|---|
+| Fan, fuel pump, lights, horn, accessories | invisible | fine |
+| Injector / coil supply via a main relay | at worst a single missed event | **fine — set `failsafe_state` to hold it on** |
+| **ECU power itself** | the ECU reboots, which really is a stall | **give the ECU its own ignition-switched feed** |
+| **Brake lights** | harmless in itself | **hardwire anyway** — see below |
+
+**`failsafe_state` defaults to all-off.** That is right for lighting and wrong for anything
+that should stay on when the bus goes quiet, and it is what the firmware applies coming out
+of a watchdog reset. It is per-channel, so one board can drop its lighting and hold its
+engine loads. Set it deliberately.
+
+**Brake lights are a different argument.** Not dropout time — a hardwired brake switch is
+simply simpler and more reliable than anything running on a microcontroller, and there is
+no upside to inserting one. Wire the switch straight through, and tap the switched feed
+into a spare channel set to `CH_INPUT` if you want the board to know about it. 1.2 mA, and
+it cannot affect the lamps.
 
 Roadworthiness and legal compliance of anything you build with this are yours.
 
@@ -271,8 +289,10 @@ power-up, which is not something worth reimplementing.
 
 ## Licence
 
-**Not yet chosen — which currently means all rights reserved.** Until a licence is added,
-default copyright applies and you do not have permission to use, modify or redistribute
-this. That is an oversight rather than an intention; it will be fixed.
+[MIT](LICENSE) — hardware design files included. Copy it, change it, sell it, no
+attribution burden beyond keeping the notice.
 
-Bosch's vendored driver is separately licensed under BSD-3-Clause and is unaffected.
+MIT rather than a public-domain dedication for one reason: the **"AS IS, WITHOUT WARRANTY"**
+clause. This switches vehicle electrics, and that paragraph is worth keeping.
+
+Bosch's vendored BMI270 driver is separately licensed under BSD-3-Clause.
