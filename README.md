@@ -6,19 +6,50 @@ A CAN-controlled relay driver for a car. **21 universal channels**, each of whic
 simultaneously a low-side output *and* an input — so the same board builds as a relay
 controller or as a switch panel, decided in firmware rather than by a different PCB.
 
-Designed for a [rusEFI](https://rusefi.com/) bus (uaEFI SUPER ECU + uaDASH display).
+Designed for a [rusEFI](https://rusefi.com/) bus (uaEFI SUPER ECU + uaDASH display), but
+nothing about it is rusEFI-specific beyond the choice of message IDs.
 
-**Status: ordered 2026-08-08.** Boards are in fabrication; firmware has not been written yet.
+---
+
+## Status — read this first
+
+**The boards were ordered on 2026-08-08 and have not been powered on.** The firmware is
+written, builds, and passes 99 host unit tests against a simulated board, but **not one
+line of it has run on real hardware.** The PCB has never been checked against a
+multimeter.
+
+Take it as a design worth reading, not a design worth trusting. If you build one, expect
+to find things. `DESIGN.md` records what has already been found and fixed, which is a fair
+guide to how much else is probably in there.
+
+### Safety
+
+This drives vehicle electrics. A few things the design work turned up that are worth
+knowing before you wire anything to it:
+
+- **Don't put engine-critical loads behind it.** Any reset parks all 21 channels
+  high-impedance for a few milliseconds. That is nothing to a fan or a fuel pump and
+  everything to an EFI main relay.
+- **Don't put brake lights behind it either.** A relay fails on or off; a microcontroller
+  can hang. Hardwire the brake switch and let the board *watch* the circuit if you want
+  the telemetry.
+- **`failsafe_state` defaults to all-off**, which is right for lighting and wrong for
+  anything that should stay on when the bus goes quiet. It is per-channel; set it
+  deliberately.
+
+Roadworthiness and legal compliance of anything you build with this are yours.
+
+---
 
 ## What it does
 
 | | |
 |---|---|
-| **Channels** | 21, low-side switched, ~7 per driver |
+| **Channels** | 21, low-side switched, 7 per driver |
 | **Drivers** | 3 × TPL7407L (MOSFET, not Darlington — see below) |
 | **I/O expansion** | 74HC595 out / 74HC165 in, daisy-chained |
 | **MCU** | STM32F446RET6, LQFP-64 |
-| **Bus** | CAN, 3.3V transceiver, switchable termination |
+| **Bus** | CAN, switchable termination, any exact bitrate |
 | **Sensing** | every channel is read back continuously, including while driving |
 | **IMU** | Bosch BMI270, 6-axis |
 | **Board** | 140 × 70 mm, 4-layer, solid ground plane |
@@ -53,6 +84,11 @@ connected 1M/270k sense divider, and a fitted 10k pull-down:
 Getting all three from one resistor took a few goes. A pull-*up* would have been the obvious
 choice and it silently breaks fuse sensing: blown and healthy both read high, 20mV apart.
 
+The same pull-down has a sting worth knowing: an un-driven channel is **not open**, it is
+10k to ground, and it will pass ~1mA from anything pulled up to 12V. Relay coils ignore
+that. Optocouplers and MOSFET gates do not — so a generic "active low" relay module wired
+straight to a channel sits with its relays energised. `DESIGN.md` has the fix.
+
 ## Configuration
 
 An 8-way DIP sets what can't be fixed over the bus once it's wrong:
@@ -62,12 +98,85 @@ An 8-way DIP sets what can't be fixed over the bus once it's wrong:
 | 1 | CAN termination (passive, parallels a solder jumper) |
 | 2 | Role — relay module or keypad |
 | 3–4 | Node address |
-| 5 | CAN bitrate |
+| 5 | CAN bitrate — forces 500k, for when you configure yourself off the bus |
 | 6 | Publish IMU data — only one board per car should |
+
+Four relay modules and four keypads can share a bus. Everything else — channel modes,
+bitrate, message IDs, failsafe states — lives in EEPROM and is changeable over CAN.
+
+## Firmware
+
+PlatformIO + STM32duino, in [`firmware/`](firmware/) — see
+[`firmware/README.md`](firmware/README.md) for the detail.
+
+- 21 channels, in or out per channel as a **software** table, changeable over CAN
+- **Coil-circuit diagnosis** — blown fuse, missing relay, open coil or broken wire, all
+  reported per channel, and a short-to-12V too
+- CAN at **500 kbps by default and any exact bitrate you like**. Bit timing is solved at
+  runtime for an 87.5% sample point; if a rate cannot be produced exactly, it refuses to
+  start rather than running the bus 1% out
+- Node addressing for 8 boards, CAN-loss failsafe, ignition-off shutdown, watchdog
+- Optional **keypad → relay peer mirroring**, so a button panel can drive a relay module
+  with no ECU in the middle
+
+```
+pio run -d firmware                     build
+pio run -d firmware -e selftest -t upload   bring-up console over USB-C
+pio test -d firmware -e native          99 host unit tests
+```
+
+**Two bring-up paths.** A **USB-C console** needs nothing but the cable — it proves the
+DIP, the EEPROM, the CAN controller via internal loopback, the IMU, and walks all 21
+channels. A **PC-side CAN tool** (`firmware/tools/rcm_bench.py`, any python-can interface)
+does monitoring, commanding and the same channel walk over the bus.
+
+The unit tests compile the firmware's own source against a model of the board — the shift
+register chains bit by bit, each channel's electrical behaviour, and the EEPROM including
+its page-wrap misbehaviour. They exist because the shift-register byte order is the one
+thing in this design that cannot be checked by reading the code back.
+
+### rusEFI
+
+Message IDs were checked against rusEFI's own source rather than guessed. The board sits at
+base `0x300`, clear of everything rusEFI uses (`0x100`/`0x102`, `0x130`/`0x131`, `0x190`,
+`0x200`–`0x20B`, OpenBLT, OBD2). The base is configurable if it clashes with something on
+your loom.
+
+[`docs/rcm.dbc`](docs/rcm.dbc) is generated from the firmware headers, so **uaDASH and
+TunerStudio can render channel state, inputs and faults with no custom display code**.
+
+The BMI270 publishes as a **Bosch MM5.10** at `0x174`/`0x178`/`0x17C` — frames rusEFI
+already decodes. Set `imuType = IMU_MM5_10` and yaw rate plus lateral, longitudinal and
+vertical G appear in the ECU with nothing else to configure.
+
+## Enclosure
+
+[`enclosure/`](enclosure/) generates a sealed 3D-printable box and two lids — a keypad face
+carrying eight 25 mm anti-vandal switches, and a blank plate for the relay-control build.
+Wire entry is DEUTSCH DT, one aperture that fits 2, 3 and 4-way alike.
+
+Like the PCB, it is generated by a script rather than modelled by hand; the `.FCStd` files
+are output and are overwritten on every build.
+
+## Building one
+
+The schematic and PCB are **generated, not drawn**:
+
+```
+python gen_spec.py     ->  spec.json        the circuit, and the source of truth
+python gen_plan.py     ->  board_plan.json  every part's physical position
+tools/                                      schematic, placement, routing, export
+```
+
+Editing `rcm.kicad_sch` or `rcm.kicad_pcb` by hand gets overwritten. Change the generator.
+
+`mfg/` holds the gerbers, BOM and CPL exactly as ordered, so you can send that folder to a
+board house without running any of the above. It is set up for JLCPCB assembly: 4-layer,
+leaded HASL, Standard PCBA (the BMI270's LGA-14 package requires it).
 
 ## Parts you must supply yourself
 
-The JLC order builds the board. **These are not on the BOM and will not arrive with it** —
+The board house builds the board. **These are not on the BOM and will not arrive with it** —
 either because they do not mount to the PCB, or because no standard part fits.
 
 ### The buck module (required — the board does not power up without it)
@@ -109,7 +218,7 @@ About $3.20 a board. Generic parts — any supplier stocks them.
 > not put it in the box for a sane handling fee either. Money spent there is stuck: you
 > own the parts and there is no way to take delivery of them.
 >
-> Buy the plugs somewhere else entirely — AliExpress, or LCSC as a separate order.
+> Buy the plugs somewhere else entirely.
 
 ### Optional
 
@@ -117,66 +226,53 @@ About $3.20 a board. Generic parts — any supplier stocks them.
 |---|---|
 | `R_TJ` | 0R 0805 (`C17477`) — solder for permanent CAN termination instead of the DIP |
 | Momentary buttons | for a keypad build: 8 off, positive-switched to +12V |
+| USB-CAN adapter | for the PC-side tool. Get one with **slcan** firmware |
 
 ## Repository layout
 
 ```
-gen_spec.py      -> spec.json      circuit definition, the source of truth
-gen_plan.py      -> board_plan.json  every part's physical position
-jlc_parts.json                     LCSC part per line; stamped into the schematic
-tools/                             scripted-board pipeline (schematic, place, route, export)
-mfg/                               gerbers, BOM, CPL as ordered
-firmware/                          STM32 firmware + host unit tests
-docs/rcm.dbc                       CAN database, generated from the firmware headers
-SPEC.md / DESIGN.md                what was built, and why
-```
-
-The schematic and PCB are **generated, not drawn** — `gen_spec.py` and `gen_plan.py` are the
-real design files. Editing `rcm.kicad_sch` by hand gets overwritten.
-
-## Firmware
-
-PlatformIO + STM32duino, in [`firmware/`](firmware/) — read
-[`firmware/README.md`](firmware/README.md) for the detail. Written and unit-tested, but
-**never run on hardware**: the boards have not arrived yet.
-
-- 21 channels, in or out per channel as a **software** table, changeable over CAN
-- **Coil-circuit diagnosis** — blown fuse, missing relay, open coil or broken wire, all
-  reported per channel, and a short-to-12V too
-- CAN at **500 kbps by default and any exact bitrate you like**, with a DIP switch that
-  forces 500k back if you configure yourself off the bus
-- Node addressing for 8 boards, CAN-loss failsafe, ignition-off shutdown, watchdog
-- Optional **keypad → relay peer mirroring**, so a button panel can drive a relay module
-  with no ECU in the middle
-
-### rusEFI
-
-Message IDs were checked against rusEFI's own source rather than guessed. The board sits at
-base `0x300`, clear of everything rusEFI uses (`0x100`/`0x102`, `0x130`/`0x131`, `0x190`,
-`0x200`–`0x20B`, OpenBLT, OBD2).
-
-[`docs/rcm.dbc`](docs/rcm.dbc) is generated from the firmware headers, so **uaDASH and
-TunerStudio can render channel state, inputs and faults with no custom display code**.
-
-The BMI270 publishes as a **Bosch MM5.10** at `0x174`/`0x178`/`0x17C` — frames rusEFI
-already decodes. Set `imuType = IMU_MM5_10` and yaw rate plus lateral, longitudinal and
-vertical G appear in the ECU with nothing else to configure.
-
-```
-pio run -d firmware                build
-pio test -d firmware -e native     79 host unit tests
+gen_spec.py      -> spec.json         circuit definition, the source of truth
+gen_plan.py      -> board_plan.json   every part's physical position
+jlc_parts.json                        LCSC part per line; stamped into the schematic
+tools/                                scripted-board pipeline
+mfg/                                  gerbers, BOM, CPL as ordered
+firmware/                             STM32 firmware, host unit tests, PC tools
+enclosure/                            generated 3D-printable box and lids
+docs/rcm.dbc                          CAN database, generated from the firmware headers
+SPEC.md / DESIGN.md                   what was built, and why
 ```
 
 ## Honest notes
 
-Three faults were caught *after* the board looked finished and every automated check was
-green: a missing ground pour, a reverse-polarity diode wired backwards, and stale
+`DESIGN.md` is a decision log rather than a specification, and it keeps the mistakes in.
+Some that seem worth repeating here:
+
+**Three faults were caught after the board looked finished and every automated check was
+green** — a missing ground pour, a reverse-polarity diode wired backwards, and stale
 manufacturing files. Two were spotted by eye, not by tooling. ERC passes a diode in either
 orientation, and DRC says nothing at all about an absent copper pour.
 
-`JB1` (the buck's input pins, 4 holes at 3.50mm pitch) is hand-fit — no header is made at
-that pitch. Respacing it to 2.54mm is the obvious fix for a revision.
+**The unit tests earned their keep before any hardware existed.** They caught a mirrored
+shift-register byte order, a CAN filter that made every other filter decorative, four
+broadcast frames being handed to three transmit mailboxes, and a multi-second output
+dropout after a watchdog reset. The pattern in every case was two independent derivations
+of the same fact disagreeing — which is why the tests model the hardware rather than
+restating the driver.
+
+**`JB1`** (the buck's input pins, 4 holes at 3.50mm pitch) is hand-fit — no header is made
+at that pitch. Respacing it to 2.54mm is the obvious fix for a revision.
+
+## Credits
+
+`firmware/lib/bmi270/` is Bosch Sensortec's own
+[BMI270 Sensor API](https://github.com/boschsensortec/BMI270_SensorAPI), vendored verbatim
+under BSD-3-Clause. It carries the 8 KB configuration image the sensor needs at every
+power-up, which is not something worth reimplementing.
 
 ## Licence
 
-Not yet chosen.
+**Not yet chosen — which currently means all rights reserved.** Until a licence is added,
+default copyright applies and you do not have permission to use, modify or redistribute
+this. That is an oversight rather than an intention; it will be fixed.
+
+Bosch's vendored driver is separately licensed under BSD-3-Clause and is unaffected.
