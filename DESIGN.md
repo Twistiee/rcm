@@ -1015,3 +1015,39 @@ board can drop its lighting and hold its engine loads.
 **Temperature.** This is a +70 °C board (see the temperature audit). "Front, for coils and
 injectors" means a front CABIN location feeding an engine-bay fuse box — not the engine bay
 itself. Same rule as recorded for `pdm`: the zone names the loads, not the mounting place.
+
+## Choosing `failsafe_state` per channel (2026-08-15)
+
+Prompted by the reasonable-sounding idea of defaulting the fuel pump ON so it primes the
+instant the key turns. The priming half works. The rest does not, and the reasoning
+generalises.
+
+**`failsafe_state` is a resting state, not a pulse.** Nothing times it out. A channel set
+ON there comes up at power-on and **stays on** until a CAN command says otherwise or the
+ignition goes away. "It'll go off again if you don't hit start" does not happen — there is
+nothing in the firmware to make it happen.
+
+**And it is re-applied when the bus goes quiet**, which is the part that decides the answer.
+Ask the question in that direction instead: *if everything else on the bus stopped talking,
+should this channel be on or off?*
+
+| Channel | Bus goes quiet | Why |
+|---|---|---|
+| Main relay / injector + coil supply | **ON** | The engine may still be running. A CAN glitch must not stall it. |
+| **Fuel pump** | **OFF** | If things have gone wrong you want the pump stopped, not running. That is the same reasoning behind an inertia switch. |
+| Headlights, wipers | ON | Losing them at night is worse than the fault that caused it |
+| Indicators, interior, accessories | OFF | No reason to hold them |
+
+So a fuel pump is close to the worst channel to default ON: it would prime nicely, then run
+continuously, and a lost bus would switch it back on rather than off.
+
+**Let the ECU own the fuel pump.** rusEFI already has prime duration and an RPM-based
+cutoff, and it can drive a channel on this board with a Lua `txCan()` script writing to the
+`CMD_SET` frame. Keep that channel's `failsafe_state` at OFF so a lost bus stops the pump.
+The prime then happens as soon as the ECU boots, which is a few hundred milliseconds, not
+the "instant" of a resting state but far better than fighting the failsafe logic.
+
+If autonomy from the ECU is genuinely wanted, the right shape is a **one-shot / prime
+channel mode** — energise for a configured duration at power-up, then release unless
+commanded. That is a firmware feature that does not exist yet, and it should not be faked
+with `failsafe_state`.
