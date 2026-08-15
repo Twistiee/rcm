@@ -49,6 +49,10 @@ static uint16_t open_ms[RCM_CHANNELS];
 static uint16_t short_ms[RCM_CHANNELS];
 static uint32_t fault_open;
 static uint32_t fault_short;
+static bool     diag_inhibited;
+
+void ch_inhibit_diag(bool inhibit) { diag_inhibited = inhibit; }
+bool ch_diag_inhibited(void)       { return diag_inhibited; }
 
 void ch_begin(void)
 {
@@ -60,6 +64,7 @@ void ch_begin(void)
     memset(short_ms, 0, sizeof(short_ms));
     memset(aux_ct, 0, sizeof(aux_ct));
     aux_stable = aux_last_raw = 0;
+    diag_inhibited = false;
 
     uint32_t now = millis();
     for (uint8_t i = 0; i < RCM_CHANNELS; i++) change_ms[i] = now;
@@ -163,8 +168,15 @@ void ch_tick(uint32_t now_ms)
         }
         /* Hi-Z outputs tell you nothing about the coil circuit -- with the 595s
          * disabled the TPL7407L inputs are floating low and every channel reads as
-         * if it were simply off. Do not manufacture faults out of that. */
-        if (!sr_outputs_enabled() || (now_ms - change_ms[ch]) < cfg.output_settle_ms) {
+         * if it were simply off. Do not manufacture faults out of that.
+         *
+         * Nor when the supply has sagged: the sense divider needs ~10.9V at the
+         * channel node to read HIGH, so below roughly 11V of battery a healthy coil
+         * circuit is indistinguishable from an open one. Cranking does exactly that,
+         * and without this every un-driven channel would report a fault on every
+         * start. */
+        if (!sr_outputs_enabled() || diag_inhibited
+            || (now_ms - change_ms[ch]) < cfg.output_settle_ms) {
             open_ms[ch] = short_ms[ch] = 0;
             continue;
         }

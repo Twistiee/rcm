@@ -100,11 +100,21 @@ static void leds(uint32_t now)
     digitalWrite(PIN_LED2, fault ? (((now % 400) < 200) ? HIGH : LOW) : LOW);
 }
 
+/* Below this the channel sense divider cannot tell a healthy coil circuit from an open
+ * one -- see ch_inhibit_diag(). 11.5V leaves a little margin over the ~11.0V where the
+ * 74HC165 stops seeing a HIGH. The ignition feed is the only supply the board can
+ * measure, but it comes off the same battery as the coils, so it tracks. */
+#define DIAG_MIN_MV 11500
+
 static void read_ignition(void)
 {
     const uint32_t raw = analogRead(PIN_IGN_SENSE);           /* 12-bit */
     const uint32_t mv  = (raw * 3300UL) / 4095UL;
     ign_mv = (uint16_t)((mv * IGN_NUM) / IGN_DEN);
+
+    /* Cranking drags the battery down far enough to make every un-driven output look
+     * like a blown fuse. Stop diagnosing rather than report a boardful of faults. */
+    ch_inhibit_diag(ign_mv < DIAG_MIN_MV);
 }
 
 /* --- shutdown --------------------------------------------------------------

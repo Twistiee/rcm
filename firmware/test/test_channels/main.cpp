@@ -290,6 +290,42 @@ static void test_hiz_outputs_are_not_diagnosed(void)
     TEST_ASSERT_EQUAL_HEX32(0, ch_fault_open());
 }
 
+static void test_a_sagging_supply_does_not_manufacture_faults(void)
+{
+    /* The sense divider needs ~10.9V at the channel node to read HIGH, so during a
+     * crank a perfectly healthy coil circuit reads exactly like an open one. Without
+     * the inhibit, every un-driven output would report a fault on every start. */
+    for (uint8_t i = 0; i < RCM_CHANNELS; i++) SIM.wiring[i] = SIM_COIL_OK;
+    run_ms(SETTLE + CONFIRM + 100);
+    TEST_ASSERT_EQUAL_HEX32(0, ch_fault_open());
+
+    ch_inhibit_diag(true);
+    /* cranking: the node collapses, so every channel now senses low */
+    for (uint8_t i = 0; i < RCM_CHANNELS; i++) SIM.wiring[i] = SIM_COIL_OPEN;
+    run_ms(SETTLE + CONFIRM + 500);
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(0, ch_fault_open(),
+                                    "faults raised while the supply was too low to judge");
+
+    /* Supply recovers and the circuits really were fine -- still no fault. */
+    ch_inhibit_diag(false);
+    for (uint8_t i = 0; i < RCM_CHANNELS; i++) SIM.wiring[i] = SIM_COIL_OK;
+    run_ms(SETTLE + CONFIRM + 100);
+    TEST_ASSERT_EQUAL_HEX32(0, ch_fault_open());
+}
+
+static void test_a_real_fault_is_still_found_once_the_supply_recovers(void)
+{
+    /* The inhibit must delay diagnosis, not disable it. */
+    SIM.wiring[6] = SIM_COIL_OPEN;
+    ch_inhibit_diag(true);
+    run_ms(SETTLE + CONFIRM + 200);
+    TEST_ASSERT_EQUAL_HEX32(0, ch_fault_open());
+
+    ch_inhibit_diag(false);
+    run_ms(SETTLE + CONFIRM + 200);
+    TEST_ASSERT_EQUAL_HEX32(1ul << 6, ch_fault_open());
+}
+
 static void test_switching_a_channel_drops_its_stale_fault(void)
 {
     SIM.wiring[7] = SIM_COIL_OPEN;
@@ -342,6 +378,8 @@ int main(void)
     RUN_TEST(test_no_diag_suppresses_reporting);
     RUN_TEST(test_unused_and_input_channels_never_fault);
     RUN_TEST(test_hiz_outputs_are_not_diagnosed);
+    RUN_TEST(test_a_sagging_supply_does_not_manufacture_faults);
+    RUN_TEST(test_a_real_fault_is_still_found_once_the_supply_recovers);
     RUN_TEST(test_switching_a_channel_drops_its_stale_fault);
     RUN_TEST(test_failsafe_applies_physical_states);
     return UNITY_END();

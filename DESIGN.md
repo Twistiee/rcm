@@ -1051,3 +1051,50 @@ If autonomy from the ECU is genuinely wanted, the right shape is a **one-shot / 
 channel mode** — energise for a configured duration at power-up, then release unless
 commanded. That is a firmware feature that does not exist yet, and it should not be faked
 with `failsafe_state`.
+
+## Input thresholds: these are 12V inputs, not logic inputs (2026-08-15)
+
+Asked whether the inputs sense high or low. **High** — a button wires the terminal to
+**+12V**, and the fitted 10 kΩ `R_PU` pulls it back down when released. Positive-switched
+throughout; see "The trade: buttons are positive-switched" above for why.
+
+The numbers, from the 1 MΩ/270 kΩ divider into an `SN74HC165` running at 3.3 V
+(V_IH = 0.7 × VCC = 2.31 V, V_IL = 0.3 × VCC = 0.99 V, divider ratio 0.21260):
+
+| Terminal | At the 165 | Reads |
+|---|---|---|
+| **above 10.87 V** | ≥ 2.31 V | **HIGH** |
+| 4.66 – 10.87 V | — | indeterminate |
+| **below 4.66 V** | ≤ 0.99 V | **LOW** |
+
+| Real case | Terminal | Reads |
+|---|---|---|
+| Charging | 14.4 V | HIGH |
+| Nominal | 12.0 V | HIGH (0.24 V of margin at the 165) |
+| Weak battery | 11.0 V | HIGH, barely |
+| Cranking dip | 9.5 V | **indeterminate** |
+| 5 V logic | 5.0 V | **indeterminate — do not do this** |
+| 3.3 V logic | 3.3 V | LOW |
+
+**So an input needs most of battery voltage to register.** Feeding a 5 V sensor or logic
+output into a channel does not work — it lands squarely in the forbidden zone. Anything
+that is not switching a genuine +12 V needs a pull-up to 12 V or an interface of its own.
+
+### The consequence for fuse detection, and the fix
+
+The same threshold governs the coil-circuit diagnosis, and there the thin margin bites.
+A healthy coil circuit puts the node at supply × 0.9915, so it stops reading HIGH at about
+**11.0 V of battery** — and cranking goes well below that.
+
+Without mitigation every un-driven output channel would read as an open circuit during a
+crank, and `fault_confirm_ms` (500 ms) is short enough that a long crank would confirm
+them. A boardful of spurious faults on every start.
+
+**`ch_inhibit_diag()` suspends diagnosis below 11.5 V**, driven from the ignition sense on
+`PA0` — the only supply the board can measure, but it comes off the same battery as the
+coils so it tracks. Faults are delayed, not disabled: a genuine open circuit is still found
+as soon as the supply recovers. Two tests cover both halves.
+
+This is a real limit of the divider ratio rather than a firmware choice. A revision wanting
+margin here would lower the ratio — but 1 M/270 k was picked so a permanently connected
+divider draws almost nothing across 21 channels, and that trade still looks right.

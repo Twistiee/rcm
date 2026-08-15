@@ -40,4 +40,13 @@ uint32_t ch_fault_short(void);   /* driver on but the node stays at +12V:
                                   * the low side is not pulling down, or a 12V short */
 void     ch_clear_faults(void);
 
+/* Suspend coil-circuit diagnosis while the supply is too low to trust it.
+ *
+ * The sense divider needs the channel node above ~10.9V to read HIGH, and the node
+ * follows the battery. Below about 11V a perfectly healthy coil circuit reads LOW and
+ * looks exactly like an open one -- so during a long crank every un-driven output
+ * channel would report a fault. Main watches the ignition feed and sets this. */
+void     ch_inhibit_diag(bool inhibit);
+bool     ch_diag_inhibited(void);
+
 #endif /* RCM_CHANNELS_H */
