@@ -68,4 +68,15 @@ bool ign_engine_running(void);
  * gets the same graceful ignition-off it would get from a key. */
 uint32_t ign_shutdown_since(void);
 
+/* True only when the board can ACTUALLY power itself down: a stop has been requested,
+ * the ECU has had its shutdown window, and the ignition input has gone low.
+ *
+ * That last condition is not politeness, it is electrical. LATCH_HOLD reaches the
+ * BTS7040 through R_LHOLD (1k) while the switch reaches it through R_LIGN (47k). With
+ * the switch CLOSED, driving LATCH_HOLD low pulls LATCH_IN to only ~0.24V, so the latch
+ * does turn off -- and then the MCU dies, its pin goes high-impedance, and R_LIGN/R_LPD
+ * put LATCH_IN straight back to 3.83V and switch the board on again. A power cycle, not
+ * a power off. Waiting for the release is the only thing that works. */
+bool ign_may_cut_power(uint32_t now_ms);
+
 #endif /* RCM_IGNITION_H */

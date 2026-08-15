@@ -1239,3 +1239,39 @@ switch-off.
 failsafe that could clear the RUN output would mean a moment of CAN silence switching the
 ignition off and stopping the engine — the ignition state machine owns that channel and
 nothing else writes it.
+
+### Can the MCU still see the switch once it is holding its own latch? (2026-08-15)
+
+Good question, and the answer turns on a detail of where the divider is tapped.
+
+`IGN_SENSE` hangs off **`LATCH_IGN`** — the switch side of `R_LIGN` — not off `LATCH_IN`
+where `LATCH_HOLD` lands. Solving the network:
+
+| | LATCH_IGN | PA0 | firmware reads |
+|---|---|---|---|
+| Switch closed | 12.00 V | 2.551 V | 12000 mV → **ON** |
+| Switch open, MCU holding | 3.04 V | 0.647 V | 3042 mV → **OFF** |
+
+The MCU's 3.3 V does back-feed through the 47 kΩ and lift the sense node to 3.04 V, but
+that is comfortably under the 6000 mV threshold. About 2:1 of margin in both directions,
+so **yes, the button is readable at all times**.
+
+Worth noticing how narrowly that works. Had `R_IGH` been connected to `LATCH_IN` instead
+of `LATCH_IGN` — a one-net difference in the schematic — the MCU would be permanently
+blind to the switch and momentary mode would be impossible to implement at all.
+
+### The board cannot switch itself off while the button is held
+
+Fell out of the same question. `LATCH_HOLD` reaches the BTS7040 through `R_LHOLD` (1 kΩ);
+the switch reaches it through `R_LIGN` (47 kΩ). With the switch **closed**, driving
+`LATCH_HOLD` low pulls `LATCH_IN` to only ~0.24 V — the latch does release, but then the
+MCU dies, its pin goes high-impedance, and `R_LIGN`/`R_LPD` immediately put `LATCH_IN`
+back at 3.83 V and switch the board on again.
+
+**A power cycle, not a power off** — and a reboot loop for as long as anyone leans on the
+button. `ign_may_cut_power()` therefore requires the release before `LATCH_HOLD` is
+dropped. Channels and outputs go down on schedule; only the final power cut waits.
+
+The test for this found a second bug in the fix itself: `ign_tick()` returns early once a
+shutdown is latched, so `sw_prev` was never updated and the release could never be
+observed. The board would have shut its channels down and then stayed powered forever.

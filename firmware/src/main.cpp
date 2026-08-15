@@ -132,13 +132,18 @@ static void shutdown_check(uint32_t now)
      * and finish its own shutdown -- park the throttle, run the fan down, write back
      * whatever it has learned. Yanking the rail instantly would be the equivalent of
      * pulling the battery lead, every single time you switch the car off. */
-    if ((now - ign_shutdown_since()) < cfg.ign_shutdown_ms) return;
+    if ((now - ign_shutdown_since()) >= cfg.ign_shutdown_ms) {
+        ch_all_off();
+        sr_exchange();                 /* make sure the zeros actually reach the pins */
+        sr_outputs_enable(false);
+        digitalWrite(PIN_LED1, LOW);
+        digitalWrite(PIN_LED2, LOW);
+    }
 
-    ch_all_off();
-    sr_exchange();                     /* make sure the zeros actually reach the pins */
-    sr_outputs_enable(false);
-    digitalWrite(PIN_LED1, LOW);
-    digitalWrite(PIN_LED2, LOW);
+    /* Everything is down, but cutting our own power still has to wait for the button
+     * to be released -- with it held, dropping LATCH_HOLD power-CYCLES the board rather
+     * than switching it off. See ign_may_cut_power(). */
+    if (!ign_may_cut_power(now)) return;
 
     digitalWrite(PIN_LATCH_HOLD, LOW); /* goodnight */
 

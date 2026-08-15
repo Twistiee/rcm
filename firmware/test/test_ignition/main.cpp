@@ -377,6 +377,41 @@ static void test_stopping_drops_run_first_and_waits(void)
     TEST_ASSERT_NOT_EQUAL_MESSAGE(0, ign_shutdown_since(), "shutdown time not recorded");
 }
 
+static void test_power_cannot_be_cut_while_the_button_is_held(void)
+{
+    /* Electrical, not cosmetic. LATCH_HOLD reaches the BTS7040 through 1k while the
+     * switch reaches it through 47k, so with the switch closed, dropping LATCH_HOLD
+     * pulls LATCH_IN to ~0.24V -- the latch releases, the MCU dies, its pin goes
+     * high-impedance, and R_LIGN/R_LPD immediately put LATCH_IN back to 3.83V and
+     * switch the board on again. A power CYCLE, not a power off.
+     *
+     * So the board must wait for the release. Anything else is a reboot loop for as
+     * long as somebody leans on the button. */
+    momentary_setup(true);
+
+    sw = true; tick(HOLD_MS + 100);              /* hold to stop, and keep holding */
+    TEST_ASSERT_TRUE(ign_wants_shutdown());
+
+    tick(cfg.ign_shutdown_ms + 500);             /* well past the ECU window */
+    TEST_ASSERT_FALSE_MESSAGE(ign_may_cut_power(SIM.now_ms),
+                              "would have cut power with the button still held");
+
+    sw = false; tick(TICK_MS * 4);
+    TEST_ASSERT_TRUE_MESSAGE(ign_may_cut_power(SIM.now_ms),
+                             "did not power down after the button was released");
+}
+
+static void test_power_is_not_cut_before_the_ecu_window(void)
+{
+    momentary_setup(true);
+    sw = true; tick(HOLD_MS + 100);
+    sw = false; tick(TICK_MS * 4);
+    TEST_ASSERT_FALSE_MESSAGE(ign_may_cut_power(SIM.now_ms),
+                              "cut power before the ECU had its shutdown window");
+    tick(cfg.ign_shutdown_ms);
+    TEST_ASSERT_TRUE(ign_may_cut_power(SIM.now_ms));
+}
+
 /* --- the starter must never be a resting state ------------------------------ */
 
 static void test_failsafe_can_never_engage_the_starter(void)
@@ -413,6 +448,8 @@ int main(void)
     RUN_TEST(test_a_hold_while_running_stops_the_engine);
     RUN_TEST(test_stopping_is_never_conditional);
     RUN_TEST(test_stopping_works_with_no_run_channel_at_all);
+    RUN_TEST(test_power_cannot_be_cut_while_the_button_is_held);
+    RUN_TEST(test_power_is_not_cut_before_the_ecu_window);
     RUN_TEST(test_run_output_is_held_while_awake);
     RUN_TEST(test_run_output_survives_a_failsafe);
     RUN_TEST(test_stopping_drops_run_first_and_waits);

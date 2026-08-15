@@ -154,7 +154,14 @@ static void tick_momentary(uint32_t now, bool sw)
 
 void ign_tick(uint32_t now, bool sw)
 {
-    if (want_shutdown) return;               /* latched; main() is powering us down */
+    if (want_shutdown) {
+        /* The decision is latched and main() is powering us down -- but keep tracking
+         * the button, because ign_may_cut_power() needs to see it released before the
+         * latch can actually be dropped. Returning without this leaves sw_prev stuck
+         * at "held" forever and the board never switches off. */
+        sw_prev = sw;
+        return;
+    }
 
     if (cfg.ign_mode == IGN_MOMENTARY) tick_momentary(now, sw);
     else                               tick_maintained(now, sw);
@@ -178,3 +185,10 @@ bool ign_wants_shutdown(void)      { return want_shutdown; }
 bool ign_cranking(void)            { return state == IGN_ST_CRANKING; }
 bool ign_engine_running(void)      { return state == IGN_ST_RUNNING; }
 uint32_t ign_shutdown_since(void)  { return shutdown_at; }
+
+bool ign_may_cut_power(uint32_t now)
+{
+    if (!want_shutdown) return false;
+    if ((now - shutdown_at) < cfg.ign_shutdown_ms) return false;
+    return !sw_prev;                 /* see the note in ignition.h */
+}
