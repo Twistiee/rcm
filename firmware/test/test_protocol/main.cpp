@@ -344,6 +344,65 @@ static void test_config_can_be_saved_and_comes_back(void)
     TEST_ASSERT_EQUAL_UINT32(250000, cfg.can_bitrate);
 }
 
+/* --- boot state ------------------------------------------------------------- */
+
+static void test_a_default_board_boots_with_nothing_energised(void)
+{
+    /* setup() adopts failsafe_state and enables the outputs as its first act, so the
+     * obvious worry is that this turns things on at boot. It does not: failsafe_state
+     * defaults to zero, and an unconfigured board comes up with all 21 channels off --
+     * exactly as it did when failsafe was only applied on a bus timeout. */
+    cfg_defaults(&cfg);
+    for (uint8_t i = 0; i < RCM_CHANNELS; i++) cfg.ch[i].mode = CH_OUTPUT;
+    ch_begin();
+
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(0, cfg.failsafe_state, "default must be all-off");
+
+    ch_apply_failsafe();          /* what setup() does */
+    run_ms(TICK_MS * 2);
+
+    for (uint8_t ch = 0; ch < RCM_CHANNELS; ch++)
+        TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(ch), "a channel came up energised");
+    TEST_ASSERT_EQUAL_HEX32(0, ch_commanded());
+}
+
+static void test_boot_state_honours_an_inverted_channel(void)
+{
+    /* failsafe_state is the PHYSICAL state wanted, so a zero bit must mean "not
+     * energised" even on a channel whose logic is inverted. Getting this backwards
+     * would energise every inverted channel at boot -- the exact failure the question
+     * was about. */
+    cfg_defaults(&cfg);
+    for (uint8_t i = 0; i < RCM_CHANNELS; i++) cfg.ch[i].mode = CH_OUTPUT;
+    cfg.ch[3].flags = CH_F_INVERT;
+    ch_begin();
+
+    ch_apply_failsafe();
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(3), "inverted channel energised itself");
+
+    /* And with the bit set it really does come up on. */
+    cfg.failsafe_state = (1ul << 3);
+    ch_apply_failsafe();
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_TRUE(sim_driver_on(3));
+}
+
+static void test_only_configured_channels_come_up(void)
+{
+    cfg_defaults(&cfg);
+    for (uint8_t i = 0; i < RCM_CHANNELS; i++) cfg.ch[i].mode = CH_OUTPUT;
+    cfg.ch[9].mode = CH_INPUT;          /* an input must never be driven */
+    cfg.failsafe_state = 0x1FFFFF;      /* ask for everything, deliberately */
+    ch_begin();
+
+    ch_apply_failsafe();
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(9), "an input channel was energised");
+    TEST_ASSERT_TRUE(sim_driver_on(8));
+    TEST_ASSERT_TRUE(sim_driver_on(10));
+}
+
 /* --- bus timeout ----------------------------------------------------------- */
 
 static void test_silence_triggers_the_failsafe(void)
@@ -497,6 +556,9 @@ int main(void)
     RUN_TEST(test_set_failsafe_and_bitrate);
     RUN_TEST(test_reboot_needs_the_magic_byte);
     RUN_TEST(test_config_can_be_saved_and_comes_back);
+    RUN_TEST(test_a_default_board_boots_with_nothing_energised);
+    RUN_TEST(test_boot_state_honours_an_inverted_channel);
+    RUN_TEST(test_only_configured_channels_come_up);
     RUN_TEST(test_silence_triggers_the_failsafe);
     RUN_TEST(test_traffic_clears_the_failsafe);
     RUN_TEST(test_traffic_for_someone_else_does_not_count);
