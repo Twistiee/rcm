@@ -19,6 +19,7 @@
 #include "../../src/store.cpp"
 #include "../../src/config.cpp"
 #include "../../src/channels.cpp"
+#include "../../src/ignition.cpp"
 
 /* --- fakes ----------------------------------------------------------------- */
 
@@ -310,6 +311,48 @@ static void test_set_ch_mode_rejects_nonsense(void)
     TEST_ASSERT_EQUAL(CH_OUTPUT, cfg.ch[3].mode);
 }
 
+static void test_set_ignition_rejects_bad_channel_numbers(void)
+{
+    /* A typo here would point the starter at whatever channel shares the low bits.
+     * Only a real channel or the explicit "none" is accepted, and a rejected frame
+     * must leave every field alone rather than half-applying. */
+    cfg.ign_mode = IGN_MAINTAINED;
+    cfg.ign_brake_ch = cfg.ign_start_ch = cfg.ign_run_ch = IGN_CH_NONE;
+
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 10, 99, IGN_CH_NONE });   /* bad start */
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_IGNITION, 7, 10, 4, IGN_CH_NONE });                /* bad mode  */
+    run_ms(TICK_MS * 6);
+    TEST_ASSERT_EQUAL_MESSAGE(IGN_MAINTAINED, cfg.ign_mode, "a bad frame was applied");
+    TEST_ASSERT_EQUAL_UINT8(IGN_CH_NONE, cfg.ign_start_ch);
+
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 10, 4, 11 });
+    run_ms(TICK_MS * 6);
+    TEST_ASSERT_EQUAL(IGN_MOMENTARY, cfg.ign_mode);
+    TEST_ASSERT_EQUAL_UINT8(10, cfg.ign_brake_ch);
+    TEST_ASSERT_EQUAL_UINT8(4,  cfg.ign_start_ch);
+    TEST_ASSERT_EQUAL_UINT8(11, cfg.ign_run_ch);
+}
+
+static void test_set_ign_times_clamps(void)
+{
+    /* A zero hold means the lightest touch stops the engine; an unbounded crank cooks
+     * the starter. Both are refused rather than clamped silently. */
+    cfg.ign_hold_stop_ms = 1000;
+    cfg.ign_crank_max_ms = 8000;
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IGN_TIMES, 0, 0, 0, 0 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT16(1000, cfg.ign_hold_stop_ms);
+    TEST_ASSERT_EQUAL_UINT16(8000, cfg.ign_crank_max_ms);
+
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IGN_TIMES, 0xE8, 0x03, 0xB8, 0x0B });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT16(1000, cfg.ign_hold_stop_ms);
+    TEST_ASSERT_EQUAL_UINT16(3000, cfg.ign_crank_max_ms);
+}
+
 static void test_set_failsafe_and_bitrate(void)
 {
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_FAILSAFE, 0x03, 0x00, 0x10 });
@@ -554,6 +597,8 @@ int main(void)
     RUN_TEST(test_set_ch_mode_turns_the_channel_off_first);
     RUN_TEST(test_set_ch_mode_rejects_nonsense);
     RUN_TEST(test_set_failsafe_and_bitrate);
+    RUN_TEST(test_set_ignition_rejects_bad_channel_numbers);
+    RUN_TEST(test_set_ign_times_clamps);
     RUN_TEST(test_reboot_needs_the_magic_byte);
     RUN_TEST(test_config_can_be_saved_and_comes_back);
     RUN_TEST(test_a_default_board_boots_with_nothing_energised);

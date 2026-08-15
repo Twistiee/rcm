@@ -90,6 +90,17 @@ void cfg_defaults(struct rcm_config_t *c)
     c->imu_map[1] = 1;
     c->imu_map[2] = 2;
 
+    /* Ignition defaults to a plain level, which is what a key or a maintained switch
+     * gives. Nothing about cranking is configured out of the box: a board that could
+     * turn a starter without anyone having asked it to would be a poor default. */
+    c->ign_mode         = IGN_MAINTAINED;
+    c->ign_brake_ch     = IGN_CH_NONE;
+    c->ign_start_ch     = IGN_CH_NONE;
+    c->ign_run_ch       = IGN_CH_NONE;
+    c->ign_hold_stop_ms = 1000;
+    c->ign_crank_max_ms = 8000;
+    c->ign_off_hold_ms  = 2000;
+
     /* Leave the record self-consistent. Nothing depends on it -- cfg_save() always
      * recomputes -- but it means cfg_valid(&cfg) is a usable invariant on the live
      * config rather than something that only holds after a save. */

@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "board.h"
+#include "ignition.h"
 
 /* ---- channel mode table --------------------------------------------------- */
 enum ch_mode_t {
@@ -43,7 +44,10 @@ struct ch_cfg_t {
 
 /* ---- persisted configuration ---------------------------------------------- */
 #define RCM_CFG_MAGIC    0x314D4352UL   /* "RCM1" little-endian */
-#define RCM_CFG_VERSION  1
+/* v2 added the ignition block. A stored v1 record is rejected by cfg_valid() and the
+ * board falls back to defaults rather than misreading it -- which is the whole reason
+ * `version` and `size` are in there. */
+#define RCM_CFG_VERSION  2
 
 struct rcm_config_t {
     uint32_t magic;
@@ -84,7 +88,26 @@ struct rcm_config_t {
      * flat with its +X edge pointing down the car. */
     uint8_t  imu_map[3];
 
-    uint8_t  reserved[3];
+    /* --- ignition (see ignition.h) ---
+     * ign_mode picks between a level (a key, or a maintained switch) and a push
+     * button. The three channel numbers are only consulted in momentary mode and are
+     * IGN_CH_NONE when unused.
+     *
+     * ign_start_ch is the one to think twice about: it drives a starter solenoid, and
+     * an unintended crank is dangerous. Cranking is refused outright unless
+     * ign_brake_ch is also configured, so the dangerous action needs two deliberate
+     * settings rather than one. */
+    uint8_t  ign_mode;
+    uint8_t  ign_brake_ch;      /* CH_INPUT channel, brake pressed = high */
+    uint8_t  ign_start_ch;      /* CH_OUTPUT channel driving the starter relay */
+    uint8_t  ign_run_ch;        /* CH_INPUT channel, engine running (alternator D+,
+                                 * oil pressure switch...). NONE = no running signal,
+                                 * in which case cranking follows the button. */
+    uint16_t ign_hold_stop_ms;  /* how long to hold the button to stop the engine */
+    uint16_t ign_crank_max_ms;  /* give up cranking after this */
+    uint16_t ign_off_hold_ms;   /* maintained mode: ignition low this long -> shut down */
+
+    uint8_t  reserved[8];
     uint16_t crc;                  /* CRC-16/CCITT over every byte before this */
 } __attribute__((packed));
 

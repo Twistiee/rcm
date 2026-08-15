@@ -1139,3 +1139,74 @@ same treatment as the brake lights rather than a default channel.
 is the safe direction. A chafe to +12 V holds the board awake and flattens the battery
 overnight — annoying rather than dangerous, but it argues for running the ignition core
 alongside the CAN pair rather than through a loom full of permanent 12 V.
+
+## Push-button start: `ign_mode` (2026-08-15)
+
+Both ignition behaviours are now built in and selected by `cfg.ign_mode`.
+
+| Mode | J_IGN is | Behaviour |
+|---|---|---|
+| `IGN_MAINTAINED` (default) | a **level** | Closed = ignition on. Open for `ign_off_hold_ms` (2 s) → shut down. A key, or a maintained panel switch. |
+| `IGN_MOMENTARY` | a **button** | A state machine, roughly a VW start button. |
+
+Momentary, with `ign_brake_ch` / `ign_start_ch` / `ign_run_ch` naming the channels:
+
+| From | Gesture | Result |
+|---|---|---|
+| engine off | press, **brake held** | crank |
+| engine off | press, brake **not** held | shut the car down |
+| any state | **press and hold** `ign_hold_stop_ms` | shut the car down |
+| running | short press | **nothing, deliberately** |
+
+Cranking ends on the run signal, on `ign_crank_max_ms`, or when the brake is released.
+With no `ign_run_ch` configured there is nothing to say when it caught, so the button
+behaves like a key's spring-return START position: crank while held.
+
+### The rule the module is built around
+
+**Starting is conditional. Stopping never is.**
+
+Cranking needs a configured brake input, needs it pressed, needs the engine not already
+running, and gives up on a timer. **Configuring `ign_start_ch` without `ign_brake_ch`
+disables cranking entirely** — the dangerous capability takes two deliberate settings, not
+one.
+
+Stopping asks nothing. It is not gated on RPM, on a running signal, or on any sensor,
+because every one of those can be broken in precisely the situation where the engine has
+to stop. This was raised as "RPM dependent maybe? though safety for runaway" — and the
+answer is no, never: a hold always shuts the board down. `test_stopping_is_never_conditional`
+holds the button mid-crank with the brake down and a stale run signal, and it still stops.
+
+A short press while running does nothing so that brushing the button at speed cannot cut
+the engine. Stopping takes a deliberate hold.
+
+### Two guards that look like one
+
+The press that woke the board through the hardware latch is still happening when firmware
+starts, and it must not count as a command. Two separate things prevent that, and it is
+worth knowing they are not interchangeable:
+
+- `sw_prev` is seeded from the boot state, so the wake press never looks like a rising
+  edge — this covers **cranking**.
+- `armed` blocks everything until the button is released — this covers the **hold**, whose
+  timer would otherwise start at zero and fire the stop gesture about a second after boot.
+  Holding a start button is what people actually do, and without this the car switches
+  itself straight back off. Presents as "it won't start", and you would suspect hardware.
+
+The first test written here only exercised the crank path, and a mutation showed it still
+passed with `armed` removed. `test_holding_the_wake_press_does_not_shut_the_board_down`
+is the one that covers the other half.
+
+### The starter is never a resting state
+
+`ch_apply_failsafe()` forces `ign_start_ch` off regardless of `failsafe_state`. That state
+is applied at power-up and every time the bus goes quiet, so a stray bit would mean a board
+that cranks on boot and again on every CAN hiccup. Only the ignition state machine ever
+turns a starter.
+
+### What this does not do
+
+It stops the engine by dropping `LATCH_HOLD`, which cuts whatever the board is holding on.
+**If fuel and ignition are not on this board's channels, it cannot stop the engine** — and
+nothing electrical stops a diesel runaway. Cranking, likewise, needs the starter solenoid
+on a channel; this replaces the key's OFF/IGN/START, not its steering lock or immobiliser.

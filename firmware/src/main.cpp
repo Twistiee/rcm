@@ -38,6 +38,7 @@
 #include "canbus.h"
 #include "channels.h"
 #include "config.h"
+#include "ignition.h"
 #include "imu.h"
 #include "protocol.h"
 #include "shiftreg.h"
@@ -53,14 +54,12 @@
  * 15.5V means "at least 15.5V" and nothing more precise. */
 #define IGN_NUM      1270L
 #define IGN_DEN       270L
-#define IGN_ON_MV    6000   /* below this the ignition is considered off */
-#define IGN_OFF_HOLD 2000   /* ms it must stay off before we shut down */
+#define IGN_ON_MV    6000   /* below this the ignition input is considered open */
 
 static bool     outputs_live;
 static bool     eeprom_ok;
 static bool     can_up;
 static uint16_t ign_mv;
-static uint32_t ign_off_since;
 
 static uint32_t next_tick, next_bcast, next_imu, next_slow;
 
@@ -124,10 +123,10 @@ static void read_ignition(void)
  */
 static void shutdown_check(uint32_t now)
 {
-    if (app_ignition_on()) { ign_off_since = 0; return; }
-
-    if (ign_off_since == 0) { ign_off_since = now; return; }
-    if ((now - ign_off_since) < IGN_OFF_HOLD) return;
+    (void)now;
+    /* WHEN to shut down is ignition.cpp's decision now -- a level going away, or a
+     * button gesture. This function only knows HOW. */
+    if (!ign_wants_shutdown()) return;
 
     ch_all_off();
     sr_exchange();                     /* make sure the zeros actually reach the pins */
@@ -140,15 +139,15 @@ static void shutdown_check(uint32_t now)
     /* Wait for the rail to collapse. The watchdog has to be fed while we do -- it is
      * a 200ms window and this wait is 250ms, so a plain delay() would reset the board
      * instead of letting it die. Feeding it here is not defeating the watchdog: if
-     * the power really is going away we never finish this loop anyway.
-     *
-     * Reaching the end means the latch had nothing to cut, which is the normal case
-     * on a bench supply. Carry on rather than spinning, so the board stays usable. */
+     * the power really is going away we never finish this loop anyway. */
     const uint32_t t0 = millis();
     while (millis() - t0 < 250) IWatchdog.reload();
 
-    ign_off_since = 0;
+    /* Still here: the latch had nothing to cut, which is the normal case on a bench
+     * supply. Come back up rather than spinning, and re-arm the ignition logic so the
+     * board stays usable. */
     digitalWrite(PIN_LATCH_HOLD, HIGH);
+    ign_begin(app_ignition_on());
 }
 
 /* --- setup ----------------------------------------------------------------- */
@@ -196,6 +195,9 @@ void setup(void)
      * milliseconds either way -- on a watchdog reset that is the difference between a
      * glitch and a stall, and on a cold start it is the difference between the engine
      * being ready to crank and waiting on a timeout. */
+    read_ignition();
+    ign_begin(app_ignition_on());
+
     ch_apply_failsafe();
     ch_tick(millis());
     app_set_outputs_live(true);
@@ -245,6 +247,8 @@ void loop(void)
         if ((int32_t)(now - next_tick) >= 0) next_tick = now + TICK_MS;
 
         ch_tick(now);
+        read_ignition();
+        ign_tick(now, app_ignition_on());
         IWatchdog.reload();
     }
 
@@ -261,7 +265,6 @@ void loop(void)
 
     if ((int32_t)(now - next_slow) >= 0) {
         next_slow = now + 100;
-        read_ignition();
         shutdown_check(now);
     }
 

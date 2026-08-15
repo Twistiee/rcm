@@ -7,6 +7,7 @@
 #include "canbus.h"
 #include "channels.h"
 #include "config.h"
+#include "ignition.h"
 #include "imu.h"
 #include "protocol.h"
 #include "app.h"
@@ -221,6 +222,37 @@ static void handle_ctl(const struct can_frame_t *f)
 
     case RCM_OP_SET_FAILSAFE:
         if (f->len >= 4) cfg.failsafe_state = unpack21(&f->data[1]);
+        break;
+
+    case RCM_OP_SET_IGNITION:
+        if (f->len >= 5 && f->data[1] <= IGN_MOMENTARY) {
+            /* Channel numbers are only accepted if they are real channels or the
+             * explicit "none" -- a typo must not silently point the starter at
+             * whatever channel happens to share the low bits. */
+            const uint8_t b = f->data[2], s = f->data[3], r = f->data[4];
+            if ((b < RCM_CHANNELS || b == IGN_CH_NONE)
+             && (s < RCM_CHANNELS || s == IGN_CH_NONE)
+             && (r < RCM_CHANNELS || r == IGN_CH_NONE)) {
+                cfg.ign_mode     = f->data[1];
+                cfg.ign_brake_ch = b;
+                cfg.ign_start_ch = s;
+                cfg.ign_run_ch   = r;
+                /* Reconsider the ignition from scratch under the new settings rather
+                 * than carrying a state that was reached under the old ones. */
+                ign_begin(app_ignition_on());
+            }
+        }
+        break;
+
+    case RCM_OP_SET_IGN_TIMES:
+        if (f->len >= 5) {
+            const uint16_t hold  = (uint16_t)(f->data[1] | (f->data[2] << 8));
+            const uint16_t crank = (uint16_t)(f->data[3] | (f->data[4] << 8));
+            /* A zero hold time would mean the lightest touch stops the engine, and an
+             * unbounded crank cooks the starter. */
+            if (hold >= 200 && hold <= 10000)  cfg.ign_hold_stop_ms = hold;
+            if (crank >= 500 && crank <= 30000) cfg.ign_crank_max_ms = crank;
+        }
         break;
 
     default:
