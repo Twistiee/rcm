@@ -100,6 +100,8 @@ void cfg_defaults(struct rcm_config_t *c)
     c->ign_hold_stop_ms = 1000;
     c->ign_crank_max_ms = 8000;
     c->ign_off_hold_ms  = 2000;
+    c->ign_run_out_ch   = IGN_CH_NONE;
+    c->ign_shutdown_ms  = 3000;
 
     /* Leave the record self-consistent. Nothing depends on it -- cfg_save() always
      * recomputes -- but it means cfg_valid(&cfg) is a usable invariant on the live

@@ -81,9 +81,11 @@
 #define RCM_OP_SET_BASE_ID    0x12   /* b1..b2 LE;    needs SAVE + REBOOT */
 #define RCM_OP_SET_TIMING     0x13   /* b1..b2 broadcast_ms, b3..b4 can_timeout_ms */
 #define RCM_OP_SET_FAILSAFE   0x14   /* b1..b3 channel bits */
-#define RCM_OP_SET_IGNITION   0x15   /* b1 mode, b2 brake ch, b3 start ch, b4 run ch;
+#define RCM_OP_SET_IGNITION   0x15   /* b1 mode, b2 brake ch, b3 start ch, b4 run ch,
+                                      * b5 RUN-position output ch (optional);
                                       * 0xFF on any channel means "not configured" */
-#define RCM_OP_SET_IGN_TIMES  0x16   /* b1..b2 hold-to-stop ms, b3..b4 crank max ms */
+#define RCM_OP_SET_IGN_TIMES  0x16   /* b1..b2 hold-to-stop ms, b3..b4 crank max ms,
+                                      * b5..b6 shutdown hold ms (optional) */
 
 /* --- OUTPUTS frame, byte 3 status flags ------------------------------------ */
 #define RCM_ST_OUT_ENABLED  0x01

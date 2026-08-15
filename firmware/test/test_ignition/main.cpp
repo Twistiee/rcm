@@ -22,6 +22,7 @@ struct rcm_straps_t straps;
 #define BRAKE_CH 10
 #define START_CH 4
 #define RUN_CH   11
+#define RUNOUT_CH 6
 #define HOLD_MS  1000
 #define CRANK_MS 8000
 
@@ -66,6 +67,8 @@ static void momentary_setup(bool with_run_channel)
     cfg.ign_brake_ch      = BRAKE_CH;
     cfg.ign_start_ch      = START_CH;
     cfg.ign_run_ch        = with_run_channel ? RUN_CH : IGN_CH_NONE;
+    cfg.ign_run_out_ch    = RUNOUT_CH;
+    cfg.ign_shutdown_ms   = 3000;
     cfg.ign_hold_stop_ms  = HOLD_MS;
     cfg.ign_crank_max_ms  = CRANK_MS;
     cfg.ign_off_hold_ms   = 2000;
@@ -335,6 +338,45 @@ static void test_stopping_works_with_no_run_channel_at_all(void)
     TEST_ASSERT_TRUE(ign_wants_shutdown());
 }
 
+/* --- the RUN position output ------------------------------------------------ */
+
+static void test_run_output_is_held_while_awake(void)
+{
+    /* This is what feeds the ECU's ignition input -- the key's RUN position. It must
+     * be on the whole time the board is awake. */
+    momentary_setup(true);
+    tick(100);
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(RUNOUT_CH), "RUN output was not asserted");
+}
+
+static void test_run_output_survives_a_failsafe(void)
+{
+    /* failsafe_state is applied at boot and on every bus timeout. If it could clear the
+     * RUN output, a moment of CAN silence would switch the ignition off and stop the
+     * engine -- so the ignition state machine owns that channel outright. */
+    momentary_setup(true);
+    cfg.failsafe_state = 0;                   /* "everything off" */
+    ch_apply_failsafe();
+    tick(TICK_MS * 4);
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(RUNOUT_CH),
+                             "a failsafe switched the ECU's ignition feed off");
+}
+
+static void test_stopping_drops_run_first_and_waits(void)
+{
+    /* Order matters: RUN goes immediately so the ECU sees ignition-off, and the board
+     * stays powered for ign_shutdown_ms afterwards so it can finish. Cutting the rail
+     * straight away would be pulling the battery lead on every switch-off. */
+    momentary_setup(true);
+    tick(100);
+    TEST_ASSERT_TRUE(sim_driver_on(RUNOUT_CH));
+
+    sw = true; tick(HOLD_MS + 100);
+    TEST_ASSERT_TRUE(ign_wants_shutdown());
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(RUNOUT_CH), "RUN was not dropped on stop");
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(0, ign_shutdown_since(), "shutdown time not recorded");
+}
+
 /* --- the starter must never be a resting state ------------------------------ */
 
 static void test_failsafe_can_never_engage_the_starter(void)
@@ -371,6 +413,9 @@ int main(void)
     RUN_TEST(test_a_hold_while_running_stops_the_engine);
     RUN_TEST(test_stopping_is_never_conditional);
     RUN_TEST(test_stopping_works_with_no_run_channel_at_all);
+    RUN_TEST(test_run_output_is_held_while_awake);
+    RUN_TEST(test_run_output_survives_a_failsafe);
+    RUN_TEST(test_stopping_drops_run_first_and_waits);
     RUN_TEST(test_failsafe_can_never_engage_the_starter);
     return UNITY_END();
 }

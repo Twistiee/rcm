@@ -123,10 +123,16 @@ static void read_ignition(void)
  */
 static void shutdown_check(uint32_t now)
 {
-    (void)now;
     /* WHEN to shut down is ignition.cpp's decision now -- a level going away, or a
      * button gesture. This function only knows HOW. */
     if (!ign_wants_shutdown()) return;
+
+    /* The RUN output has already gone; ignition.cpp drops it the moment a stop is
+     * requested. Hold everything ELSE up for a moment so the ECU can see ignition-off
+     * and finish its own shutdown -- park the throttle, run the fan down, write back
+     * whatever it has learned. Yanking the rail instantly would be the equivalent of
+     * pulling the battery lead, every single time you switch the car off. */
+    if ((now - ign_shutdown_since()) < cfg.ign_shutdown_ms) return;
 
     ch_all_off();
     sr_exchange();                     /* make sure the zeros actually reach the pins */

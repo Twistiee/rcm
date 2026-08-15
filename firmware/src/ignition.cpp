@@ -16,6 +16,7 @@ static uint32_t press_ms;       /* when the current press began */
 static bool     hold_fired;     /* the hold action already happened this press */
 static uint32_t low_since;      /* maintained mode: when the level went away */
 static uint32_t crank_ms;       /* when cranking began */
+static uint32_t shutdown_at;    /* when the stop was requested */
 
 static inline bool ch_configured(uint8_t ch) { return ch < RCM_CHANNELS; }
 
@@ -27,6 +28,23 @@ static bool read_ch(uint8_t ch)
 static void set_starter(bool on)
 {
     if (ch_configured(cfg.ign_start_ch)) ch_command(cfg.ign_start_ch, on);
+}
+
+/* The key's RUN position. Held for as long as the board is awake and dropped the
+ * instant a stop is requested, so whatever feeds the ECU's ignition input sees a
+ * clean ignition-off and rusEFI can park itself the way it would after a key. */
+static void set_run_out(bool on)
+{
+    if (ch_configured(cfg.ign_run_out_ch)) ch_command(cfg.ign_run_out_ch, on);
+}
+
+static void request_shutdown(uint32_t now)
+{
+    if (want_shutdown) return;
+    want_shutdown = true;
+    shutdown_at = now ? now : 1;
+    set_starter(false);
+    set_run_out(false);         /* first thing to go, before anything else */
 }
 
 /* Cranking needs BOTH channels configured. Requiring the brake input as well as the
@@ -42,7 +60,7 @@ void ign_begin(bool sw_closed_at_boot)
     state = IGN_ST_IGNITION;
     want_shutdown = false;
     hold_fired = false;
-    press_ms = low_since = crank_ms = 0;
+    press_ms = low_since = crank_ms = shutdown_at = 0;
     sw_prev = sw_closed_at_boot;
     /* In momentary mode the press that woke us through the hardware latch is still
      * happening. Do not let it count as a command -- otherwise a wake with the brake
@@ -56,7 +74,7 @@ static void tick_maintained(uint32_t now, bool sw)
 {
     if (sw) { low_since = 0; return; }
     if (low_since == 0) { low_since = now ? now : 1; return; }
-    if ((now - low_since) >= cfg.ign_off_hold_ms) want_shutdown = true;
+    if ((now - low_since) >= cfg.ign_off_hold_ms) request_shutdown(now);
 }
 
 /* --- momentary: J_IGN is a button ------------------------------------------- */
@@ -81,8 +99,7 @@ static void tick_momentary(uint32_t now, bool sw)
      * broken at the moment you most need the engine to stop. */
     if (sw && !hold_fired && (now - press_ms) >= cfg.ign_hold_stop_ms) {
         hold_fired = true;
-        set_starter(false);
-        want_shutdown = true;
+        request_shutdown(now);
         return;
     }
 
@@ -97,7 +114,7 @@ static void tick_momentary(uint32_t now, bool sw)
                 /* Engine off, brake not held: this press means "turn the car off".
                  * Also the outcome when cranking is not configured, which is the right
                  * way for an unconfigured board to fail. */
-                want_shutdown = true;
+                request_shutdown(now);
             }
         }
         break;
@@ -142,6 +159,12 @@ void ign_tick(uint32_t now, bool sw)
     if (cfg.ign_mode == IGN_MOMENTARY) tick_momentary(now, sw);
     else                               tick_maintained(now, sw);
 
+    /* Reassert RUN every tick rather than setting it once. ch_apply_failsafe() runs at
+     * boot and on every bus timeout, and this is the cheapest way to make sure neither
+     * can leave the ECU's ignition feed in whatever state failsafe_state happened to
+     * ask for. */
+    if (!want_shutdown) set_run_out(true);
+
     /* Track the engine state in maintained mode too, so the CAN status is meaningful
      * whichever way the ignition is wired. */
     if (cfg.ign_mode != IGN_MOMENTARY && ch_configured(cfg.ign_run_ch))
@@ -154,3 +177,4 @@ enum ign_state_t ign_state(void)   { return want_shutdown ? IGN_ST_SHUTDOWN : st
 bool ign_wants_shutdown(void)      { return want_shutdown; }
 bool ign_cranking(void)            { return state == IGN_ST_CRANKING; }
 bool ign_engine_running(void)      { return state == IGN_ST_RUNNING; }
+uint32_t ign_shutdown_since(void)  { return shutdown_at; }

@@ -107,7 +107,14 @@ struct rcm_config_t {
     uint16_t ign_crank_max_ms;  /* give up cranking after this */
     uint16_t ign_off_hold_ms;   /* maintained mode: ignition low this long -> shut down */
 
-    uint8_t  reserved[8];
+    /* The key's RUN position, as an output. Whatever feeds the ECU's ignition input
+     * goes here; it is energised the whole time the board is awake and dropped first
+     * on shutdown, so the ECU sees ignition-off and can park itself properly. */
+    uint8_t  ign_run_out_ch;
+    uint16_t ign_shutdown_ms;   /* how long to stay powered after dropping RUN, so the
+                                 * ECU can finish its own shutdown before the rail goes */
+
+    uint8_t  reserved[5];
     uint16_t crc;                  /* CRC-16/CCITT over every byte before this */
 } __attribute__((packed));
 

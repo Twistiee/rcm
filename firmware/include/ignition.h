@@ -63,4 +63,9 @@ bool ign_wants_shutdown(void);
 bool ign_cranking(void);
 bool ign_engine_running(void);
 
+/* True once a stop has been requested. main() drops the RUN output immediately and then
+ * holds the board up for cfg.ign_shutdown_ms before cutting its own power, so the ECU
+ * gets the same graceful ignition-off it would get from a key. */
+uint32_t ign_shutdown_since(void);
+
 #endif /* RCM_IGNITION_H */

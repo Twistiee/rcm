@@ -1210,3 +1210,32 @@ It stops the engine by dropping `LATCH_HOLD`, which cuts whatever the board is h
 **If fuel and ignition are not on this board's channels, it cannot stop the engine** — and
 nothing electrical stops a diesel runaway. Cranking, likewise, needs the starter solenoid
 on a channel; this replaces the key's OFF/IGN/START, not its steering lock or immobiliser.
+
+### Stopping the engine: a RUN output, not a CAN command (2026-08-15)
+
+Asked whether there is a CAN message that tells rusEFI to stop. **There is no standard
+one.** rusEFI's Lua can do it — `setIgnDisabled()` and fuel cut are exposed, and Lua has
+CAN receive hooks — so a script on the ECU could listen for a frame and kill the engine.
+
+**Do not build the stop function that way.** It would put "turn the engine off" behind the
+bus being alive, the Lua interpreter running, and a script being correct. Three more things
+to fail, in the one function where failure matters most.
+
+**`ign_run_out_ch` is the answer instead** — an output channel that IS the key's RUN
+position. It feeds whatever supplies the ECU's ignition input, is energised the whole time
+the board is awake, and is dropped the instant a stop is requested. Stopping is then a
+physical de-energisation that works with CAN dead, the ECU hung, or the firmware confused.
+Between it and `ign_start_ch` the board covers a key's OFF / RUN / START.
+
+It is low-side like every other channel, so the ECU's ignition input still needs a relay or
+a high-side switch in between — the same interfacing as everything else here.
+
+**`ign_shutdown_ms` (3 s) then holds the board up after RUN goes.** rusEFI wants that time
+to park the throttle, run the fan down and write back what it has learned; cutting the rail
+the instant RUN dropped would be the equivalent of pulling the battery lead on every single
+switch-off.
+
+`ch_apply_failsafe()` leaves this channel alone, exactly as it forces the starter off. A
+failsafe that could clear the RUN output would mean a moment of CAN silence switching the
+ignition off and stopping the engine — the ignition state machine owns that channel and
+nothing else writes it.

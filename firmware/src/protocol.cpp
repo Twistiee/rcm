@@ -237,6 +237,10 @@ static void handle_ctl(const struct can_frame_t *f)
                 cfg.ign_brake_ch = b;
                 cfg.ign_start_ch = s;
                 cfg.ign_run_ch   = r;
+                if (f->len >= 6) {
+                    const uint8_t o = f->data[5];
+                    if (o < RCM_CHANNELS || o == IGN_CH_NONE) cfg.ign_run_out_ch = o;
+                }
                 /* Reconsider the ignition from scratch under the new settings rather
                  * than carrying a state that was reached under the old ones. */
                 ign_begin(app_ignition_on());
@@ -252,6 +256,10 @@ static void handle_ctl(const struct can_frame_t *f)
              * unbounded crank cooks the starter. */
             if (hold >= 200 && hold <= 10000)  cfg.ign_hold_stop_ms = hold;
             if (crank >= 500 && crank <= 30000) cfg.ign_crank_max_ms = crank;
+            if (f->len >= 7) {
+                const uint16_t sd = (uint16_t)(f->data[5] | (f->data[6] << 8));
+                if (sd <= 30000) cfg.ign_shutdown_ms = sd;   /* 0 = cut immediately */
+            }
         }
         break;
 
