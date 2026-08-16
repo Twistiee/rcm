@@ -1483,7 +1483,38 @@ have shut the car down half an hour into a drive **because the bus dropped**.
 input never goes quiet so it counts as live whenever configured; a CAN source has to be
 actually arriving.
 
-This is the third time the same hazard has appeared by a different route — no run source,
-no run channel, dead bus. It is worth stating as a rule: **anything that can switch the car
-off must be gated on positive evidence that the engine is stopped, never on the absence of
-evidence that it is running.**
+### Getting the emphasis right: fail silent, not fail active
+
+Earlier notes in this file lean far too hard on "the bus might drop", as though CAN
+dependency were itself a design flaw. It is not. **Every modern car is entirely
+bus-dependent** — a Golf with a dead CAN bus does not start, does not run, does not do
+anything — and building each function to survive that would be over-engineering against
+universal practice.
+
+The distinction that actually matters is what a function DOES when the bus goes quiet:
+
+| | |
+|---|---|
+| **Fail silent** | the function stops. A keypad button no longer switches a light. Normal, expected, and what every modern car does. |
+| **Fail active** | the board *acts* because the bus went quiet. Not what modern cars do, and the only class worth engineering against. |
+
+The accessory-timeout bug was the second kind. It was not failing to work; it was
+**switching the car off** because it read silence as a stopped engine. Had it simply
+stopped timing out, it would not have been worth a line.
+
+Reframed, most of this design was already right by construction: peer mirroring stops
+updating, commanded channels hold their last state, keypad inputs go dead. All fail
+silent. The timeout was the sole outlier, and it has been brought into line.
+
+The deliberate exception is `failsafe_state`, which **is** fail-active on bus loss — but
+that is configured intent, chosen per channel, not an accident.
+
+So the rule, stated properly: **anything that can switch the car off must be gated on
+positive evidence that the engine is stopped, never on the absence of evidence that it is
+running.** Three separate routes reached that hazard here — no run source, no run channel,
+dead bus — and all three were the same mistake: treating "I do not know" as "no".
+
+Worth keeping the realistic scenario in view as well. The bus going quiet on this car most
+likely means **a connector unplugged in the garage**, or a bitrate set wrong during
+commissioning — not a failure at speed. That makes the consequence annoying rather than
+dangerous, and moves it a long way down the list from where these notes had it.
