@@ -542,6 +542,39 @@ static void test_no_idle_timeout_without_a_run_signal(void)
                               "timed out with no way to know the engine was running");
 }
 
+static void test_no_idle_timeout_when_the_bus_dies(void)
+{
+    /* The same hazard as having no run source at all, reached a different way. CAN RPM
+     * is CONFIGURED, so the old guard was satisfied -- but the bus has stopped, so RPM
+     * reads stale, which is indistinguishable from a stopped engine. Letting the
+     * timeout run there would shut the car down mid-drive because the bus dropped. */
+    momentary_setup(false);
+    cfg.ecu_rpm_can_id     = 0x201;
+    cfg.ign_run_rpm        = 400;
+    cfg.ign_idle_timeout_s = 10;
+
+    ign_note_rpm(2500, SIM.now_ms);        /* engine was running... */
+    tick(60000);                           /* ...and then the bus went quiet */
+    TEST_ASSERT_FALSE_MESSAGE(ign_wants_shutdown(),
+                              "a dead bus shut the car down");
+}
+
+static void test_idle_timeout_still_works_on_a_live_bus(void)
+{
+    /* And the gate must not disable the feature outright: with RPM arriving and reading
+     * stopped, an unattended board should still time out. */
+    momentary_setup(false);
+    cfg.ecu_rpm_can_id     = 0x201;
+    cfg.ign_run_rpm        = 400;
+    cfg.ign_idle_timeout_s = 10;
+
+    for (int i = 0; i < 60; i++) {         /* 12s of "engine stopped" at 5Hz */
+        ign_note_rpm(0, SIM.now_ms);
+        tick(200);
+    }
+    TEST_ASSERT_TRUE_MESSAGE(ign_wants_shutdown(), "never timed out on a live bus");
+}
+
 static void test_idle_timeout_is_momentary_only(void)
 {
     /* In maintained mode the switch is physically closed, so a shutdown could not
@@ -683,6 +716,8 @@ int main(void)
     RUN_TEST(test_a_running_engine_is_never_idle);
     RUN_TEST(test_activity_defers_the_idle_timeout);
     RUN_TEST(test_no_idle_timeout_without_a_run_signal);
+    RUN_TEST(test_no_idle_timeout_when_the_bus_dies);
+    RUN_TEST(test_idle_timeout_still_works_on_a_live_bus);
     RUN_TEST(test_idle_timeout_is_momentary_only);
     RUN_TEST(test_power_cannot_be_cut_while_the_button_is_held);
     RUN_TEST(test_power_is_not_cut_before_the_ecu_window);

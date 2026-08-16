@@ -46,6 +46,20 @@ bool ign_has_run_source(void)
     return ch_configured(cfg.ign_run_ch) || cfg.ecu_rpm_can_id != 0;
 }
 
+/* Not just "is a run source configured" but "is one actually WORKING right now".
+ *
+ * The difference decides whether the accessory timeout is allowed to run. A configured
+ * but silent CAN RPM source reports "not running" exactly as it would if the engine
+ * really were stopped -- so gating the timeout on has_run_source() would let a dead bus
+ * shut the car down half an hour into a drive. A wired input never goes quiet, so it
+ * counts as live whenever it is configured. */
+static bool run_source_live(uint32_t now)
+{
+    if (ch_configured(cfg.ign_run_ch)) return true;
+    if (!cfg.ecu_rpm_can_id || !can_rpm_at) return false;
+    return (now - can_rpm_at) <= RPM_STALE_MS;
+}
+
 void ign_note_rpm(uint16_t rpm, uint32_t now)
 {
     can_rpm = rpm;
@@ -218,13 +232,13 @@ static void tick_momentary(uint32_t now, bool sw)
 
     /* Idle timeout -- and note the FIRST condition, which is the important one.
      *
-     * Without a run channel there is no way to tell "sitting in the driveway with the
-     * ignition on" from "half an hour into a drive". `running` would simply be false
-     * forever, the state would never reach IGN_ST_RUNNING, and this would switch the
-     * car off mid-drive. So the timeout is inert unless the board can actually see
-     * whether the engine is turning. A flat battery is a far better failure than an
-     * engine cut at speed. */
-    if (cfg.ign_idle_timeout_s && ign_has_run_source()
+     * Without a WORKING run source there is no way to tell "sitting in the driveway
+     * with the ignition on" from "half an hour into a drive": `running` reads false
+     * either way, the state never reaches IGN_ST_RUNNING, and this would switch the car
+     * off at speed. Note it asks whether a source is LIVE, not merely configured -- a
+     * CAN RPM source on a dead bus looks exactly like a stopped engine. A flat battery
+     * is a far better failure than an engine cut on a motorway. */
+    if (cfg.ign_idle_timeout_s && run_source_live(now)
         && state != IGN_ST_RUNNING
         && (now - last_activity) >= (uint32_t)cfg.ign_idle_timeout_s * 1000UL) {
         request_shutdown(now);

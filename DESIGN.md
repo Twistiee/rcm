@@ -1443,3 +1443,47 @@ With the ECU cranking, the run signal stops being safety-critical here — nothi
 board turns a starter, so there is no interlock to protect. CAN RPM (`ecu_rpm_can_id`) is
 then perfectly adequate for the remaining uses: reporting engine state on the bus, and the
 accessory timeout if it is ever enabled.
+
+## "CAN is a dependency anyway, so gate on it" — mostly right (2026-08-16)
+
+The observation: with the button on a keypad and the loads on an RCM, the system needs CAN
+to work at all, so a CAN-derived signal is no weaker than the rest of it.
+
+That is correct for everything **except waking up**, and the exception shapes the wiring.
+
+### The ignition switch must be hardwired to every board that sleeps
+
+**You cannot wake an unpowered board over CAN.** A sleeping RCM has no rail, no MCU and no
+transceiver; the only thing that can bring it up is the hardware latch on `J_IGN`. A keypad
+button broadcast over the bus reaches nothing.
+
+So the switch feeds `J_IGN` on **all three boards in parallel**. That costs nothing —
+`J_IGN` draws 0.18 mA, so three boards is 0.55 mA and one small switch drives the lot.
+
+The useful consequence: **wake and hold-to-stop are inherently CAN-independent** on every
+board, because both run off a hardwired input and a local decision. The two functions you
+would least like to lose are the two that cannot be lost to a bus fault. Everything else —
+keypad buttons driving relays, peer mirroring, commanded channels — is CAN-dependent, and
+that is fine, because a dead bus means the driver has bigger problems than a courtesy light.
+
+### Which makes CAN RPM good enough
+
+Since the ECU owns the starter there is no interlock left in this repo to protect, so a
+stale RPM cannot cause anything dangerous. `ecu_rpm_can_id` alone is adequate and **no
+wired alternator-D+ or oil-pressure input is needed after all.**
+
+### But "configured" is not "working"
+
+The gate has to ask whether a run source is **live**, not merely present. `ign_has_run_source()`
+returned true whenever `ecu_rpm_can_id` was set — including on a dead bus, where RPM reads
+stale, which is indistinguishable from a stopped engine. The accessory timeout would then
+have shut the car down half an hour into a drive **because the bus dropped**.
+
+`run_source_live()` now requires a wired input, or CAN RPM heard within 500 ms. A wired
+input never goes quiet so it counts as live whenever configured; a CAN source has to be
+actually arriving.
+
+This is the third time the same hazard has appeared by a different route — no run source,
+no run channel, dead bus. It is worth stating as a rule: **anything that can switch the car
+off must be gated on positive evidence that the engine is stopped, never on the absence of
+evidence that it is running.**
