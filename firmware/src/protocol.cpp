@@ -77,6 +77,8 @@ void proto_begin(void)
     if (cfg.peer_node != PEER_NONE)
         can_filter_id((uint16_t)(cfg.can_base_id + cfg.peer_node * RCM_CAN_NODE_STRIDE
                                  + RCM_F_INPUTS));
+    /* rusEFI's verbose broadcast, for engine speed. */
+    if (cfg.ecu_rpm_can_id) can_filter_id(cfg.ecu_rpm_can_id);
 }
 
 void proto_sanitise_base(void)
@@ -314,6 +316,15 @@ void proto_poll(uint32_t now_ms)
      * commands arrive a tick late for no reason. */
     while (can_recv(&f)) {
         bool ours = true;
+
+        if (cfg.ecu_rpm_can_id && f.id == cfg.ecu_rpm_can_id) {
+            /* rusEFI base+1: RPM is the low 16 bits, little-endian, 1 rpm per count.
+             * Deliberately NOT counted as traffic addressed to us -- the ECU shouting
+             * at the dash says nothing about whether anyone is commanding this board,
+             * so it must not hold off the failsafe. */
+            if (f.len >= 2) ign_note_rpm((uint16_t)(f.data[0] | (f.data[1] << 8)), now_ms);
+            continue;
+        }
 
         if (f.id == peer) {
             handle_peer_inputs(&f);

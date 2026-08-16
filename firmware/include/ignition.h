@@ -83,4 +83,15 @@ bool ign_may_cut_power(uint32_t now_ms);
  * addressed to us, typically. Restarts the idle timeout. */
 void ign_note_activity(uint32_t now_ms);
 
+/* Feed engine speed in from the bus. rusEFI broadcasts it at base+1 (0x201 stock), and
+ * ign_run_rpm decides what counts as running.
+ *
+ * WEAKER THAN A WIRED SIGNAL, and only for the crank interlock does that matter. If CAN
+ * stops while the engine is turning, this goes stale and the board would believe the
+ * engine had stopped -- so a press with the brake down could crank against a spinning
+ * ring gear. A wired alternator-D+ or oil-pressure input keeps working when the bus does
+ * not. Use CAN RPM for convenience; wire a run signal if this board turns the starter. */
+void ign_note_rpm(uint16_t rpm, uint32_t now_ms);
+bool ign_has_run_source(void);
+
 #endif /* RCM_IGNITION_H */

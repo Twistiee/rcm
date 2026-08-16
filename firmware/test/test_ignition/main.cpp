@@ -70,6 +70,8 @@ static void momentary_setup(bool with_run_channel)
     cfg.ign_run_out_ch    = RUNOUT_CH;
     cfg.ign_shutdown_ms   = 3000;
     cfg.ign_idle_timeout_s = 0;          /* off unless a test asks for it */
+    cfg.ecu_rpm_can_id     = 0;
+    cfg.ign_run_rpm        = 400;
     cfg.ign_hold_stop_ms  = HOLD_MS;
     cfg.ign_crank_max_ms  = CRANK_MS;
     cfg.ign_off_hold_ms   = 2000;
@@ -371,6 +373,80 @@ static void test_stopping_works_with_no_run_channel_at_all(void)
     TEST_ASSERT_TRUE(ign_wants_shutdown());
 }
 
+/* --- engine-running from CAN RPM -------------------------------------------- */
+
+static void test_can_rpm_ends_a_crank(void)
+{
+    /* No wired run signal at all -- the engine-running verdict comes from rusEFI's
+     * broadcast. 0x201 low 16 bits, 1 rpm per count. */
+    momentary_setup(false);
+    cfg.ecu_rpm_can_id = 0x201;
+    cfg.ign_run_rpm    = 400;
+
+    set_brake(true);
+    sw = true; tick(TICK_MS * 4); sw = false; tick(TICK_MS * 4);
+    TEST_ASSERT_TRUE(sim_driver_on(START_CH));
+
+    ign_note_rpm(250, SIM.now_ms);          /* cranking speed, not running */
+    tick(TICK_MS * 4);
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(START_CH), "gave up at cranking speed");
+
+    ign_note_rpm(900, SIM.now_ms);          /* caught */
+    tick(TICK_MS * 4);
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(START_CH), "starter held on after it fired");
+    TEST_ASSERT_EQUAL(IGN_ST_RUNNING, ign_state());
+}
+
+static void test_can_rpm_blocks_cranking_a_running_engine(void)
+{
+    momentary_setup(false);
+    cfg.ecu_rpm_can_id = 0x201;
+    cfg.ign_run_rpm    = 400;
+
+    ign_note_rpm(2000, SIM.now_ms);
+    tick(TICK_MS * 4);
+    TEST_ASSERT_EQUAL(IGN_ST_RUNNING, ign_state());
+
+    set_brake(true);
+    press(TICK_MS * 4);
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(START_CH), "cranked against a running engine");
+}
+
+static void test_stale_can_rpm_is_not_running(void)
+{
+    /* The weakness worth knowing about. If the bus stops while the engine turns, this
+     * goes stale and the board believes the engine has stopped -- which is exactly why
+     * a wired run signal is the one to use if this board turns the starter. The test
+     * pins the behaviour so nobody is surprised by it. */
+    momentary_setup(false);
+    cfg.ecu_rpm_can_id = 0x201;
+    cfg.ign_run_rpm    = 400;
+
+    ign_note_rpm(2000, SIM.now_ms);
+    tick(TICK_MS * 4);
+    TEST_ASSERT_EQUAL(IGN_ST_RUNNING, ign_state());
+
+    tick(1000);                              /* bus goes quiet */
+    TEST_ASSERT_EQUAL_MESSAGE(IGN_ST_IGNITION, ign_state(),
+                              "stale RPM should not still read as running");
+}
+
+static void test_a_wired_run_signal_still_wins(void)
+{
+    /* Wired and CAN are ORed, so a wired signal keeps saying "running" through a bus
+     * outage -- which is the whole reason to fit one. */
+    momentary_setup(true);
+    cfg.ecu_rpm_can_id = 0x201;
+    cfg.ign_run_rpm    = 400;
+    set_running(true);
+    tick(TICK_MS * 4);
+    TEST_ASSERT_EQUAL(IGN_ST_RUNNING, ign_state());
+
+    tick(2000);                              /* no RPM frames ever arrive */
+    TEST_ASSERT_EQUAL_MESSAGE(IGN_ST_RUNNING, ign_state(),
+                              "a wired run signal was lost to CAN staleness");
+}
+
 /* --- idle timeout ----------------------------------------------------------- */
 
 static void test_idle_timeout_shuts_an_unattended_board_down(void)
@@ -561,6 +637,10 @@ int main(void)
     RUN_TEST(test_a_hold_while_running_stops_the_engine);
     RUN_TEST(test_stopping_is_never_conditional);
     RUN_TEST(test_stopping_works_with_no_run_channel_at_all);
+    RUN_TEST(test_can_rpm_ends_a_crank);
+    RUN_TEST(test_can_rpm_blocks_cranking_a_running_engine);
+    RUN_TEST(test_stale_can_rpm_is_not_running);
+    RUN_TEST(test_a_wired_run_signal_still_wins);
     RUN_TEST(test_idle_timeout_shuts_an_unattended_board_down);
     RUN_TEST(test_a_running_engine_is_never_idle);
     RUN_TEST(test_activity_defers_the_idle_timeout);

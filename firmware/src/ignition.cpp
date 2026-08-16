@@ -18,12 +18,38 @@ static uint32_t low_since;      /* maintained mode: when the level went away */
 static uint32_t crank_ms;       /* when cranking began */
 static uint32_t shutdown_at;    /* when the stop was requested */
 static uint32_t last_activity;  /* for the idle timeout */
+static uint16_t can_rpm;
+static uint32_t can_rpm_at;     /* 0 = never heard */
+
+/* RPM older than this is no information at all. Two broadcast periods of slack. */
+#define RPM_STALE_MS 500
 
 static inline bool ch_configured(uint8_t ch) { return ch < RCM_CHANNELS; }
 
 static bool read_ch(uint8_t ch)
 {
     return ch_configured(ch) && ((ch_inputs() >> ch) & 1u);
+}
+
+/* Is the engine turning? A wired input and CAN RPM are ORed, so either can say yes and
+ * neither is required. See the warning in ignition.h about which one to trust. */
+static bool engine_running(uint32_t now)
+{
+    if (read_ch(cfg.ign_run_ch)) return true;
+    if (!cfg.ecu_rpm_can_id || !can_rpm_at) return false;
+    if ((now - can_rpm_at) > RPM_STALE_MS) return false;   /* stale is not running */
+    return can_rpm >= cfg.ign_run_rpm;
+}
+
+bool ign_has_run_source(void)
+{
+    return ch_configured(cfg.ign_run_ch) || cfg.ecu_rpm_can_id != 0;
+}
+
+void ign_note_rpm(uint16_t rpm, uint32_t now)
+{
+    can_rpm = rpm;
+    can_rpm_at = now ? now : 1;
 }
 
 static void set_starter(bool on)
@@ -62,6 +88,8 @@ void ign_begin(bool sw_closed_at_boot)
     want_shutdown = false;
     hold_fired = false;
     press_ms = low_since = crank_ms = shutdown_at = last_activity = 0;
+    can_rpm = 0;
+    can_rpm_at = 0;
     sw_prev = sw_closed_at_boot;
     /* In momentary mode the press that woke us through the hardware latch is still
      * happening. Do not let it count as a command -- otherwise a wake with the brake
@@ -88,9 +116,9 @@ static void tick_maintained(uint32_t now, bool sw)
 
 static void tick_momentary(uint32_t now, bool sw)
 {
-    /* With no run channel configured there is no running signal, so "running" is simply
-     * never true and cranking falls back to following the button. */
-    const bool running = read_ch(cfg.ign_run_ch);
+    /* With no run source at all this is simply never true, and cranking falls back to
+     * following the button. */
+    const bool running = engine_running(now);
     const bool rising  = sw && !sw_prev;
     const bool falling = !sw && sw_prev;
 
@@ -159,7 +187,7 @@ static void tick_momentary(uint32_t now, bool sw)
         } else if ((now - crank_ms) >= cfg.ign_crank_max_ms) {
             set_starter(false);              /* give up rather than cook the starter */
             state = IGN_ST_IGNITION;
-        } else if (falling && !ch_configured(cfg.ign_run_ch)) {
+        } else if (falling && !ign_has_run_source()) {
             /* With no running signal there is nothing to tell us when it caught, so the
              * button behaves like a key's spring-return START position: crank while
              * held, release to stop. */
@@ -171,7 +199,7 @@ static void tick_momentary(uint32_t now, bool sw)
     case IGN_ST_RUNNING:
         /* A short press does nothing on purpose. Brushing the button at speed must not
          * cut the engine; stopping takes a deliberate hold, handled above. */
-        if (ch_configured(cfg.ign_run_ch) && !running) state = IGN_ST_IGNITION;
+        if (ign_has_run_source() && !running) state = IGN_ST_IGNITION;
         break;
 
     case IGN_ST_SHUTDOWN:
@@ -187,7 +215,7 @@ static void tick_momentary(uint32_t now, bool sw)
      * car off mid-drive. So the timeout is inert unless the board can actually see
      * whether the engine is turning. A flat battery is a far better failure than an
      * engine cut at speed. */
-    if (cfg.ign_idle_timeout_s && ch_configured(cfg.ign_run_ch)
+    if (cfg.ign_idle_timeout_s && ign_has_run_source()
         && state != IGN_ST_RUNNING
         && (now - last_activity) >= (uint32_t)cfg.ign_idle_timeout_s * 1000UL) {
         request_shutdown(now);
@@ -220,8 +248,8 @@ void ign_tick(uint32_t now, bool sw)
 
     /* Track the engine state in maintained mode too, so the CAN status is meaningful
      * whichever way the ignition is wired. */
-    if (cfg.ign_mode != IGN_MOMENTARY && ch_configured(cfg.ign_run_ch))
-        state = read_ch(cfg.ign_run_ch) ? IGN_ST_RUNNING : IGN_ST_IGNITION;
+    if (cfg.ign_mode != IGN_MOMENTARY && ign_has_run_source())
+        state = engine_running(now) ? IGN_ST_RUNNING : IGN_ST_IGNITION;
 
     sw_prev = sw;
 }

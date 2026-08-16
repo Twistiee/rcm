@@ -1347,3 +1347,56 @@ engine running.
 **Momentary mode only.** In maintained mode the switch is physically closed, so the
 shutdown could not complete — dropping `LATCH_HOLD` would only power-cycle — and the board
 would sit awake with every channel off, which is worse than leaving it alone.
+
+## What rusEFI already broadcasts, and what that saves (2026-08-16)
+
+Read out of `rusEFI_CAN_verbose.dbc`. Every one of these is on the **stock broadcast** —
+no Lua, no ECU-side configuration, nothing to set up beyond pointing at the right ID.
+
+### `base+1` (0x201 stock) — engine speed
+
+| Signal | Bits | Scale |
+|---|---|---|
+| **RPM** | 0–15, LE unsigned | 1 rpm |
+| IgnitionTiming | 16–31 signed | 0.02 deg |
+| InjDuty / IgnDuty | 32–39 / 40–47 | 0.5 % |
+| VehicleSpeed | 48–55 | 1 kph |
+
+`ecu_rpm_can_id` + `ign_run_rpm` (default 400) now give the ignition machine an
+engine-running verdict with **no wired sensor at all**.
+
+**But read the caveat.** A wired run signal and CAN RPM are ORed, and only one of them
+keeps working when the bus does not. If CAN stops while the engine turns, RPM goes stale
+after 500 ms and the board believes the engine has stopped — so a press with the brake down
+could crank against a spinning ring gear. **If this board turns the starter, fit a wired
+alternator-D+ or oil-pressure input.** CAN RPM is for convenience; the wired signal is the
+interlock. `test_stale_can_rpm_is_not_running` pins that behaviour down rather than hiding
+it.
+
+### `base+0` (0x200 stock) — the ECU's own relay demands
+
+This is the find worth acting on. rusEFI already broadcasts **what it wants its relays
+doing**:
+
+| Signal | Bit |
+|---|---|
+| `MainRelayAct` | 33 |
+| `FuelPumpAct` | 34 |
+| `Fan` | 38 |
+| `Fan2` | 39 |
+| RevLimAct / CELAct / EGOHeatAct | 32 / 35 / 36 |
+
+So the front board can drive the main relay, fuel pump and both fans **by mirroring bits
+the ECU is already sending**. No Lua script, no custom protocol, no ECU configuration —
+and the fuel pump keeps rusEFI's own prime and RPM-cutoff logic, which is exactly where
+that logic belongs (see "Choosing `failsafe_state` per channel").
+
+Not implemented yet. It is a small feature — a handful of (bit → channel) pairs — and it
+is the obvious next thing for the front RCM.
+
+### The uaDASH start button
+
+`ECU_CAN_BUS_USER_CONTROL`, **extended** id `0x77000C`, part of rusEFI's bench-test
+protocol. Dash to ECU, so it is the dash asking rusEFI to do something rather than
+anything this board needs: we drive the starter ourselves. Worth knowing it exists if the
+board ever wants to ask the ECU for something instead.

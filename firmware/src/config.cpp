@@ -102,7 +102,11 @@ void cfg_defaults(struct rcm_config_t *c)
     c->ign_off_hold_ms  = 2000;
     c->ign_run_out_ch   = IGN_CH_NONE;
     c->ign_shutdown_ms  = 3000;
-    c->ign_idle_timeout_s = 1800;   /* 30 min */
+    /* Off by default. A project car spends real time with the ignition on and the
+     * engine off, and a board that switches itself off mid-job is worse than a charger. */
+    c->ign_idle_timeout_s = 0;
+    c->ecu_rpm_can_id     = 0;      /* 0x201 for a stock rusEFI base */
+    c->ign_run_rpm        = 400;
 
     /* Leave the record self-consistent. Nothing depends on it -- cfg_save() always
      * recomputes -- but it means cfg_valid(&cfg) is a usable invariant on the live

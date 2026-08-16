@@ -47,7 +47,7 @@ struct ch_cfg_t {
 /* v2 added the ignition block. A stored v1 record is rejected by cfg_valid() and the
  * board falls back to defaults rather than misreading it -- which is the whole reason
  * `version` and `size` are in there. */
-#define RCM_CFG_VERSION  2
+#define RCM_CFG_VERSION  3
 
 struct rcm_config_t {
     uint32_t magic;
@@ -125,7 +125,17 @@ struct rcm_config_t {
      * off, which is worse than leaving it alone. */
     uint16_t ign_idle_timeout_s;
 
-    uint8_t  reserved[3];
+    /* Engine-running from the bus instead of (or as well as) a wired signal.
+     * rusEFI's verbose broadcast puts RPM in the low 16 bits of base+1, so 0x201 with
+     * the stock base. 0 disables.
+     *
+     * Read the note in ignition.h before relying on this for the crank interlock: a
+     * wired signal keeps working when CAN does not, and the interlock is the one place
+     * that matters. */
+    uint16_t ecu_rpm_can_id;
+    uint16_t ign_run_rpm;       /* at or above this, the engine is running */
+
+    uint8_t  reserved[4];
     uint16_t crc;                  /* CRC-16/CCITT over every byte before this */
 } __attribute__((packed));
 
