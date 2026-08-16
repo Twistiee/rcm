@@ -77,9 +77,13 @@ void cfg_defaults(struct rcm_config_t *c)
     c->imu_rate_ms       = 20;    /* 50Hz -- what a Bosch MM5.10 runs at */
 
     for (uint8_t i = 0; i < RCM_CHANNELS; i++) {
-        c->ch[i].mode  = straps.keypad ? CH_INPUT : CH_OUTPUT;
-        c->ch[i].flags = 0;
+        c->ch[i].mode      = straps.keypad ? CH_INPUT : CH_OUTPUT;
+        c->ch[i].flags     = 0;
+        c->ch[i].func      = FN_NONE;
+        c->ch[i].behaviour = OUT_STEADY;
+        c->ch[i].param     = 0;
     }
+    c->flash_period_ms = 800;
     c->failsafe_state = 0;        /* bus goes quiet -> everything off */
 
     c->peer_node        = PEER_NONE;

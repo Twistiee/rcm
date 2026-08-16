@@ -37,9 +37,91 @@ enum ch_mode_t {
 
 #define PEER_NONE     0xFFu
 
+/* HOW a channel behaves when commanded on. Orthogonal to what it is FOR -- an indicator
+ * and a rain light are different functions with the same behaviour, and a horn and a
+ * washer are different functions that both want a pulse. */
+enum ch_behaviour_t {
+    OUT_STEADY    = 0,  /* on means on. The default, and what most loads want.       */
+    OUT_FLASH     = 1,  /* on means flash, at the shared cfg.flash_period_ms so that
+                         * every flashing channel stays in phase -- which is what
+                         * makes hazards look right rather than like two indicators
+                         * that happen to be on.                                     */
+    OUT_PULSE     = 2,  /* on fires a single pulse of `param` ms and then stops, until
+                         * released and pressed again. Horn chirp, washer, prime.    */
+    OUT_DELAY_OFF = 3,  /* on immediately; off is deferred by `param` ms. Courtesy
+                         * lights, fan run-on, anything that should linger.          */
+};
+
+/* WHAT a channel is for. Mostly a label -- it names the channel for the bench tool and
+ * the self-test console, and it is what a dash would show instead of "CH07".
+ *
+ * Four of them mean something to the firmware as well, because it has to be able to
+ * FIND those channels: FN_IGNITION, FN_STARTER, FN_IN_BRAKE and FN_IN_ENGINE_RUN. The
+ * rest are purely descriptive and can be extended freely. */
+enum ch_func_t {
+    FN_NONE = 0,
+    /* --- engine and drivetrain, outputs --- */
+    FN_IGNITION,        /* the key's RUN position, feeding the ECU ignition input */
+    FN_STARTER,
+    FN_MAIN_RELAY,
+    FN_FUEL_PUMP,
+    FN_FUEL_PUMP_2,
+    FN_FAN_1,
+    FN_FAN_2,
+    FN_WATER_PUMP,
+    FN_INTERCOOLER_PUMP,
+    FN_BOOST_SOLENOID,
+    FN_NITROUS,
+    /* --- lighting, outputs --- */
+    FN_HEADLIGHT_LOW = 32,
+    FN_HEADLIGHT_HIGH,
+    FN_TAIL,
+    FN_BRAKE_LIGHT,
+    FN_REVERSE_LIGHT,
+    FN_INDICATOR_L,
+    FN_INDICATOR_R,
+    FN_FOG_FRONT,
+    FN_FOG_REAR,
+    FN_RAIN_LIGHT,
+    FN_INTERIOR_LIGHT,
+    FN_WORK_LIGHT,
+    /* --- body, outputs --- */
+    FN_HORN = 64,
+    FN_WIPER,
+    FN_WIPER_FAST,
+    FN_WASHER,
+    FN_HEATED_SCREEN,
+    FN_HEATED_SEAT,
+    FN_AC_CLUTCH,
+    FN_LINE_LOCK,
+    /* --- inputs --- */
+    FN_IN_BRAKE = 128,  /* brake pedal -- the crank interlock reads this */
+    FN_IN_ENGINE_RUN,   /* alternator D+, oil pressure, anything that says "turning" */
+    FN_IN_CLUTCH,
+    FN_IN_HANDBRAKE,
+    FN_IN_REVERSE,
+    FN_IN_DOOR,
+    FN_IN_BONNET,
+    FN_IN_TRACTION_CTL,
+    FN_IN_LAUNCH_ARM,
+    FN_IN_PIT_LIMITER,
+    FN_IN_MAP_SELECT,
+    FN_IN_HORN,
+    FN_IN_HEADLIGHT,
+    FN_IN_INDICATOR_L,
+    FN_IN_INDICATOR_R,
+    FN_IN_HAZARD,
+    FN_IN_WIPER,
+    FN_IN_WASHER,
+    FN_IN_USER = 250,   /* unlabelled button */
+};
+
 struct ch_cfg_t {
-    uint8_t mode;
-    uint8_t flags;
+    uint8_t  mode;       /* ch_mode_t   */
+    uint8_t  flags;      /* CH_F_*      */
+    uint8_t  func;       /* ch_func_t -- a label, plus four the firmware looks up */
+    uint8_t  behaviour;  /* ch_behaviour_t, outputs only */
+    uint16_t param;      /* ms, for OUT_PULSE and OUT_DELAY_OFF */
 } __attribute__((packed));
 
 /* ---- persisted configuration ---------------------------------------------- */
@@ -47,7 +129,7 @@ struct ch_cfg_t {
 /* v2 added the ignition block. A stored v1 record is rejected by cfg_valid() and the
  * board falls back to defaults rather than misreading it -- which is the whole reason
  * `version` and `size` are in there. */
-#define RCM_CFG_VERSION  3
+#define RCM_CFG_VERSION  4
 
 struct rcm_config_t {
     uint32_t magic;
@@ -135,7 +217,11 @@ struct rcm_config_t {
     uint16_t ecu_rpm_can_id;
     uint16_t ign_run_rpm;       /* at or above this, the engine is running */
 
-    uint8_t  reserved[4];
+    /* Shared so every flashing channel is in phase. 800ms is 75 flashes/minute, inside
+     * the 60-120 that indicator regulations ask for. */
+    uint16_t flash_period_ms;
+
+    uint8_t  reserved[2];
     uint16_t crc;                  /* CRC-16/CCITT over every byte before this */
 } __attribute__((packed));
 

@@ -27,7 +27,11 @@ void ch_command_mask(uint32_t mask, uint32_t values);
 void ch_all_off(void);
 void ch_apply_failsafe(void);
 
-uint32_t ch_commanded(void);     /* what we are asking the drivers to do */
+uint32_t ch_commanded(void);     /* what the drivers are actually doing RIGHT NOW --
+                                  * a flashing channel toggles in here */
+uint32_t ch_requested(void);     /* what was asked for, ignoring flash/pulse/delay.
+                                  * Anything that TOGGLES a channel must read this, or
+                                  * it will sample a flashing output mid-blink */
 uint32_t ch_inputs(void);        /* debounced, invert applied, input channels only */
 uint32_t ch_sense_raw(void);     /* what the sense pins actually read, all channels */
 uint8_t  ch_aux(void);           /* debounced J_AUX bits */

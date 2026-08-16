@@ -1518,3 +1518,71 @@ Worth keeping the realistic scenario in view as well. The bus going quiet on thi
 likely means **a connector unplugged in the garage**, or a bitrate set wrong during
 commissioning — not a failure at speed. That makes the consequence annoying rather than
 dangerous, and moves it a long way down the list from where these notes had it.
+
+## Channel functions and behaviours (2026-08-16)
+
+Asked for "modes and functions to assign to channels". Two different things were tangled
+in that, and separating them is most of the design.
+
+| | |
+|---|---|
+| **Function** | what the channel is FOR. Fuel pump, indicator, brake pedal. Mostly a label. |
+| **Behaviour** | how it ACTS when commanded on. Steady, flash, pulse, delay-off. |
+
+They are orthogonal, and that is the point. An indicator and a rain light are different
+functions with the same behaviour; a horn and a washer are different functions that both
+want a pulse. Fold them together and you get an enum that has to grow every time somebody
+wires up a load slightly differently.
+
+### Behaviours — the part that adds capability
+
+| | |
+|---|---|
+| `OUT_STEADY` | on means on. Default, and what almost everything wants. |
+| `OUT_FLASH` | flashes at the shared `flash_period_ms` (800 ms = 75/min, inside the 60–120 that indicator regulations ask for) |
+| `OUT_PULSE` | one shot of `param` ms per press. Horn chirp, washer, prime. Holding does not re-trigger. |
+| `OUT_DELAY_OFF` | on immediately, off deferred by `param` ms. Courtesy light, fan run-on. |
+
+**Indicators were impossible before this**, which is reason enough on its own. The flash
+phase is shared config rather than a per-channel timer specifically so hazards blink
+*together* — two indicators each running their own timer from whenever they were switched
+on look wrong in a way everyone notices.
+
+### Functions — 51 labels, four of which mean something
+
+Grouped in blocks with gaps, so the list can grow without renumbering anybody's saved
+config: engine/drivetrain, lighting, body, then **all inputs at `FN_IN_BRAKE` (128) and
+above**. That last part is not tidiness — it makes "labelled Fuel pump but configured as
+an input" a *detectable* mistake, and the self-test console flags it rather than leaving
+you to spot it in a table of 21 rows.
+
+Only `FN_IGNITION`, `FN_STARTER`, `FN_IN_BRAKE` and `FN_IN_ENGINE_RUN` mean anything to
+the firmware, because those are the four it has to be able to find. The other 47 are
+descriptive: they turn "CH07" into "Fuel pump" in the console.
+
+### Two bugs the behaviours introduced, and one they exposed
+
+Giving a channel a physical state that moves **on its own** broke everything that had
+quietly assumed "what was asked for" and "what the driver is doing" were the same number:
+
+- **Toggle logic** sampled the output. On a flashing channel the answer depended on when
+  you asked. `ch_requested()` and `ch_commanded()` are now separate, and anything that
+  toggles reads the former.
+- **`ch_all_off()` only cleared `commanded`.** The request stood, so the very next tick
+  re-applied it — a flashing indicator would have blinked straight through a bus timeout
+  and through the board powering itself down. Found because a test for the delayed-off
+  case failed for a completely different reason than the one it was written for.
+
+### Deliberately not built
+
+- **Input behaviours** (toggle, hold-to-arm). Toggle already exists for peer mirroring via
+  `peer_toggle_mask`; generalising it per channel is the obvious next step. A hold-to-arm
+  would suit launch control, where a knock should not arm anything.
+- **Reading configuration back over CAN.** Every `RCM_OP_*` is a setter — a tool can
+  configure a board but cannot ask what it is configured as, so the bench tool cannot show
+  these names. That gap is worth closing before the labels earn their keep anywhere but
+  the USB console.
+- **Function-driven wiring.** `ign_start_ch` and friends are still explicit channel
+  numbers alongside the function labels — two places that say which channel is the brake.
+  Folding them into a lookup by function would remove that, at the cost of refactoring the
+  most safety-critical code in the repo. Worth doing, but not casually.

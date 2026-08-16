@@ -27,6 +27,7 @@
 #include "board.h"
 #include "canbus.h"
 #include "channels.h"
+#include "chnames.h"
 #include "config.h"
 #include "imu.h"
 #include "protocol.h"
@@ -168,7 +169,7 @@ static void show_channels(void)
     const uint32_t cmd = ch_commanded(), raw = ch_sense_raw();
     const uint32_t fo = ch_fault_open(), fs = ch_fault_short();
 
-    Serial.println(F("\n ch  drive  sense  verdict"));
+    Serial.println(F("\n ch  function            mode   how        drive sense  verdict"));
     for (uint8_t i = 0; i < RCM_CHANNELS; i++) {
         const bool on = cmd >> i & 1, hi = raw >> i & 1;
         const char *v = "";
@@ -177,8 +178,23 @@ static void show_channels(void)
         else if (!on && hi)   v = "coil circuit intact";
         else if (on && !hi)   v = "driving";
         else if (!on && !hi)  v = "nothing connected, or still settling";
-        Serial.printf(" %2u   %-5s  %-5s  %s\n", i + 1u,
+
+        const uint8_t md = cfg.ch[i].mode, fn = cfg.ch[i].func;
+        Serial.printf(" %2u  %-19s %-6s %-10s %-5s %-5s  %s\n", i + 1u,
+                      ch_func_name(fn),
+                      md == CH_OUTPUT ? "out" : (md == CH_INPUT ? "in" : "unused"),
+                      md == CH_OUTPUT ? ch_behaviour_name(cfg.ch[i].behaviour) : "-",
                       on ? "ON" : "off", hi ? "HIGH" : "low", v);
+
+        /* A label that disagrees with the mode is a configuration mistake worth
+         * shouting about. "Fuel pump" on an input channel will never do anything, and
+         * it is very easy to stare past in a table of 21 rows. */
+        if (!ch_func_matches_mode(fn, md))
+            Serial.printf("     ^^ MISMATCH: %s is %s but the channel is %s\n",
+                          ch_func_name(fn),
+                          ch_func_is_input(fn) ? "an input" : "an output",
+                          md == CH_OUTPUT ? "an output"
+                                          : (md == CH_INPUT ? "an input" : "unused"));
     }
     Serial.printf("  aux %u%u%u   ignition %.1f V\n",
                   ch_aux() & 1, ch_aux() >> 1 & 1, ch_aux() >> 2 & 1,

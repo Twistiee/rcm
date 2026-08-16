@@ -295,7 +295,7 @@ static void handle_peer_inputs(const struct can_frame_t *f)
         const uint32_t bit = 1ul << ch;
         if (!(cfg.peer_mask & bit)) continue;
         if (cfg.peer_toggle_mask & bit) {
-            if (rising & bit) ch_command(ch, !((ch_commanded() >> ch) & 1u));
+            if (rising & bit) ch_command(ch, !((ch_requested() >> ch) & 1u));
         } else {
             ch_command(ch, (in & bit) != 0);
         }

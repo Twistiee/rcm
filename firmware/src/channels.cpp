@@ -35,7 +35,13 @@
 
 #define TICK_MS 5   /* must match the rate main() calls ch_tick() at */
 
-static uint32_t commanded;         /* what we want the drivers doing        */
+/* `requested` is what somebody ASKED for; `commanded` is what the driver is actually
+ * doing. For OUT_STEADY -- the default and almost every channel -- they are identical.
+ * They diverge for flash, pulse and delay-off, and keeping them apart is what stops a
+ * flashing indicator confusing the toggle logic or the failsafe. */
+static uint32_t requested;
+static uint32_t commanded;         /* what the drivers are actually doing   */
+static uint32_t beh_timer[RCM_CHANNELS];  /* pulse start / delayed-off start */
 static uint32_t stable_sense;      /* debounced raw sense, all 21 channels  */
 static uint32_t last_raw;
 static uint8_t  debounce_ct[RCM_CHANNELS];
@@ -54,9 +60,47 @@ static bool     diag_inhibited;
 void ch_inhibit_diag(bool inhibit) { diag_inhibited = inhibit; }
 bool ch_diag_inhibited(void)       { return diag_inhibited; }
 
+/* Shared phase, so every flashing channel blinks together rather than each running its
+ * own timer from whenever it happened to be switched on. Hazards look wrong otherwise. */
+static bool flash_on(uint32_t now)
+{
+    const uint16_t p = cfg.flash_period_ms ? cfg.flash_period_ms : 800;
+    return (now % p) < (uint32_t)(p / 2);
+}
+
+/* Turn a request into what the driver should actually do this instant. */
+static void apply_behaviour(uint8_t ch, uint32_t now)
+{
+    bool on = (requested >> ch) & 1u;
+
+    if (on || cfg.ch[ch].behaviour == OUT_DELAY_OFF) {
+        switch (cfg.ch[ch].behaviour) {
+        case OUT_FLASH:
+            on = on && flash_on(now);
+            break;
+        case OUT_PULSE:
+            /* One shot per press. Holding the button does not re-trigger; releasing
+             * and pressing again does. */
+            on = on && (now - beh_timer[ch]) < cfg.ch[ch].param;
+            break;
+        case OUT_DELAY_OFF:
+            if (!on && beh_timer[ch] && (now - beh_timer[ch]) < cfg.ch[ch].param) on = true;
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (on) commanded |=  (1ul << ch);
+    else    commanded &= ~(1ul << ch);
+    sr_set(ch, on);
+}
+
 void ch_begin(void)
 {
+    requested = 0;
     commanded = 0;
+    memset(beh_timer, 0, sizeof(beh_timer));
     stable_sense = last_raw = 0;
     fault_open = fault_short = 0;
     memset(debounce_ct, 0, sizeof(debounce_ct));
@@ -79,17 +123,21 @@ void ch_command(uint8_t ch, bool on)
 
     if (cfg.ch[ch].flags & CH_F_INVERT) on = !on;
 
-    if (((commanded >> ch) & 1u) != (uint32_t)on) {
-        change_ms[ch] = millis();
+    if (((requested >> ch) & 1u) != (uint32_t)on) {
+        const uint32_t now = millis();
+        change_ms[ch] = now;
+        /* Edge into the behaviour timers: a rising edge starts a pulse, a falling edge
+         * starts a delayed-off. */
+        beh_timer[ch] = now ? now : 1;
         /* A channel that has just been switched has no opinion about its own health
          * yet, and any fault it was showing belonged to the previous state. */
         open_ms[ch] = short_ms[ch] = 0;
         fault_open  &= ~(1ul << ch);
         fault_short &= ~(1ul << ch);
     }
-    if (on) commanded |=  (1ul << ch);
-    else    commanded &= ~(1ul << ch);
-    sr_set(ch, on);
+    if (on) requested |=  (1ul << ch);
+    else    requested &= ~(1ul << ch);
+    apply_behaviour(ch, millis());
 }
 
 void ch_command_mask(uint32_t mask, uint32_t values)
@@ -104,9 +152,16 @@ void ch_all_off(void)
      * mean no channel is being driven, whatever anything is configured as -- it is
      * what gets called on a bus timeout and on the way to shutting down. */
     for (uint8_t ch = 0; ch < RCM_CHANNELS; ch++) {
-        if ((commanded >> ch) & 1u) change_ms[ch] = millis();
+        if ((requested >> ch) & 1u) change_ms[ch] = millis();
         open_ms[ch] = short_ms[ch] = 0;
+        /* Clear the behaviour timers too. Leaving them set would let a delayed-off
+         * channel keep lingering through a shutdown. */
+        beh_timer[ch] = 0;
     }
+    /* BOTH have to go. Clearing only `commanded` leaves the request standing, and the
+     * very next tick re-applies it -- so a flashing indicator would carry on blinking
+     * straight through a bus timeout and through the board powering itself down. */
+    requested = 0;
     commanded = 0;
     fault_open = fault_short = 0;
     sr_set_all(0);
@@ -135,6 +190,11 @@ void ch_apply_failsafe(void)
 
 void ch_tick(uint32_t now_ms)
 {
+    /* Re-evaluate anything whose output depends on time before publishing. STEADY
+     * channels are already correct and are left alone. */
+    for (uint8_t ch = 0; ch < RCM_CHANNELS; ch++)
+        if (cfg.ch[ch].behaviour != OUT_STEADY) apply_behaviour(ch, now_ms);
+
     sr_exchange();
 
     const uint32_t raw = sr_sense_all();
@@ -210,6 +270,7 @@ void ch_tick(uint32_t now_ms)
 }
 
 uint32_t ch_commanded(void) { return commanded; }
+uint32_t ch_requested(void) { return requested; }
 uint32_t ch_sense_raw(void) { return stable_sense; }
 uint8_t  ch_aux(void)       { return aux_stable; }
 uint32_t ch_fault_open(void)  { return fault_open; }
