@@ -69,6 +69,7 @@ static void momentary_setup(bool with_run_channel)
     cfg.ign_run_ch        = with_run_channel ? RUN_CH : IGN_CH_NONE;
     cfg.ign_run_out_ch    = RUNOUT_CH;
     cfg.ign_shutdown_ms   = 3000;
+    cfg.ign_idle_timeout_s = 0;          /* off unless a test asks for it */
     cfg.ign_hold_stop_ms  = HOLD_MS;
     cfg.ign_crank_max_ms  = CRANK_MS;
     cfg.ign_off_hold_ms   = 2000;
@@ -232,16 +233,48 @@ static void test_cranking_gives_up_on_timeout(void)
     TEST_ASSERT_EQUAL(IGN_ST_IGNITION, ign_state());
 }
 
-static void test_releasing_the_brake_stops_cranking(void)
+static void test_cranking_survives_the_brake_going_away(void)
 {
+    /* The brake gates the START, not the continuation -- and this is not a preference,
+     * it is forced by the hardware. The brake is a digital channel needing >10.87V at
+     * the terminal, and a starter drags the battery to 9-10V, so the brake input goes
+     * unreadable the instant cranking begins. An abort-on-brake-release would abort
+     * EVERY start the moment the starter loaded the battery, and the car would never
+     * fire. A key does not make you hold the brake through a crank either. */
     momentary_setup(true);
     set_brake(true);
     sw = true; tick(TICK_MS * 4); sw = false; tick(TICK_MS * 4);
     TEST_ASSERT_TRUE(sim_driver_on(START_CH));
 
-    set_brake(false);
+    set_brake(false);                      /* what a sagging battery looks like */
+    tick(500);
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(START_CH),
+                             "cranking aborted when the brake input dropped");
+
+    set_running(true);                     /* and it still ends properly when it fires */
     TEST_ASSERT_FALSE(sim_driver_on(START_CH));
-    TEST_ASSERT_EQUAL(IGN_ST_IGNITION, ign_state());
+    TEST_ASSERT_EQUAL(IGN_ST_RUNNING, ign_state());
+}
+
+static void test_a_stale_state_cannot_crank_a_running_engine(void)
+{
+    /* A watchdog reset with the engine running comes back in IGN_ST_IGNITION, because
+     * ign_begin() cannot know. If the no-crank-while-running guard looked at the STATE
+     * it would be looking at a lie, and the next press with the brake down would throw
+     * a starter pinion at a spinning ring gear. It looks at the run SIGNAL instead. */
+    momentary_setup(true);
+    set_running(true);                     /* engine is running... */
+    ign_begin(false);                      /* ...and the board resets underneath it */
+    tick(TICK_MS * 4);
+
+    set_brake(true);
+    press(TICK_MS * 4);
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(START_CH),
+                              "cranked a running engine after a reset");
+
+    /* It should also have picked the running state back up on its own. */
+    TEST_ASSERT_EQUAL_MESSAGE(IGN_ST_RUNNING, ign_state(),
+                              "never noticed the engine was running");
 }
 
 static void test_without_a_run_signal_cranking_follows_the_button(void)
@@ -336,6 +369,71 @@ static void test_stopping_works_with_no_run_channel_at_all(void)
     momentary_setup(false);
     sw = true; tick(HOLD_MS + 100);
     TEST_ASSERT_TRUE(ign_wants_shutdown());
+}
+
+/* --- idle timeout ----------------------------------------------------------- */
+
+static void test_idle_timeout_shuts_an_unattended_board_down(void)
+{
+    /* Wake the car, wander off without starting it. The board draws ~100mA plus
+     * whatever channels are on -- that is a flat battery by morning. Real keyless cars
+     * drop out of accessory after a few minutes for the same reason. */
+    momentary_setup(true);
+    cfg.ign_idle_timeout_s = 10;
+
+    tick(9000);
+    TEST_ASSERT_FALSE_MESSAGE(ign_wants_shutdown(), "timed out early");
+    tick(2000);
+    TEST_ASSERT_TRUE_MESSAGE(ign_wants_shutdown(), "never timed out");
+}
+
+static void test_a_running_engine_is_never_idle(void)
+{
+    /* The obvious way to get this wrong is to switch the car off in the middle of a
+     * drive because nobody touched the button for half an hour. */
+    momentary_setup(true);
+    cfg.ign_idle_timeout_s = 10;
+    set_brake(true);
+    sw = true; tick(TICK_MS * 4); sw = false; tick(TICK_MS * 4);
+    set_running(true);
+
+    tick(30000);
+    TEST_ASSERT_FALSE_MESSAGE(ign_wants_shutdown(), "shut down a running engine");
+}
+
+static void test_activity_defers_the_idle_timeout(void)
+{
+    momentary_setup(true);
+    cfg.ign_idle_timeout_s = 10;
+
+    for (int i = 0; i < 5; i++) {          /* a CAN frame every 6s */
+        tick(6000);
+        ign_note_activity(SIM.now_ms);
+    }
+    TEST_ASSERT_FALSE_MESSAGE(ign_wants_shutdown(), "timed out while in use");
+
+    tick(11000);
+    TEST_ASSERT_TRUE(ign_wants_shutdown());
+}
+
+static void test_idle_timeout_is_momentary_only(void)
+{
+    /* In maintained mode the switch is physically closed, so a shutdown could not
+     * complete anyway -- dropping LATCH_HOLD just power-cycles. The board would sit
+     * awake with every channel off, which is worse than leaving it alone. */
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.ign_mode = IGN_MAINTAINED;
+    cfg.ign_off_hold_ms = 2000;
+    cfg.ign_idle_timeout_s = 5;
+    cfg.ign_brake_ch = cfg.ign_start_ch = cfg.ign_run_ch = IGN_CH_NONE;
+    cfg.ign_run_out_ch = IGN_CH_NONE;
+    ch_begin();
+    sw = true;
+    ign_begin(true);
+
+    tick(20000);
+    TEST_ASSERT_FALSE_MESSAGE(ign_wants_shutdown(),
+                              "idle timeout fired with the key still on");
 }
 
 /* --- the RUN position output ------------------------------------------------ */
@@ -440,7 +538,8 @@ int main(void)
     RUN_TEST(test_press_with_brake_cranks);
     RUN_TEST(test_press_without_brake_shuts_down);
     RUN_TEST(test_cranking_gives_up_on_timeout);
-    RUN_TEST(test_releasing_the_brake_stops_cranking);
+    RUN_TEST(test_cranking_survives_the_brake_going_away);
+    RUN_TEST(test_a_stale_state_cannot_crank_a_running_engine);
     RUN_TEST(test_without_a_run_signal_cranking_follows_the_button);
     RUN_TEST(test_cranking_is_refused_when_half_configured);
     RUN_TEST(test_no_crank_from_running);
@@ -448,6 +547,10 @@ int main(void)
     RUN_TEST(test_a_hold_while_running_stops_the_engine);
     RUN_TEST(test_stopping_is_never_conditional);
     RUN_TEST(test_stopping_works_with_no_run_channel_at_all);
+    RUN_TEST(test_idle_timeout_shuts_an_unattended_board_down);
+    RUN_TEST(test_a_running_engine_is_never_idle);
+    RUN_TEST(test_activity_defers_the_idle_timeout);
+    RUN_TEST(test_idle_timeout_is_momentary_only);
     RUN_TEST(test_power_cannot_be_cut_while_the_button_is_held);
     RUN_TEST(test_power_is_not_cut_before_the_ecu_window);
     RUN_TEST(test_run_output_is_held_while_awake);

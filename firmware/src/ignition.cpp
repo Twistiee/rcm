@@ -17,6 +17,7 @@ static bool     hold_fired;     /* the hold action already happened this press *
 static uint32_t low_since;      /* maintained mode: when the level went away */
 static uint32_t crank_ms;       /* when cranking began */
 static uint32_t shutdown_at;    /* when the stop was requested */
+static uint32_t last_activity;  /* for the idle timeout */
 
 static inline bool ch_configured(uint8_t ch) { return ch < RCM_CHANNELS; }
 
@@ -60,12 +61,18 @@ void ign_begin(bool sw_closed_at_boot)
     state = IGN_ST_IGNITION;
     want_shutdown = false;
     hold_fired = false;
-    press_ms = low_since = crank_ms = shutdown_at = 0;
+    press_ms = low_since = crank_ms = shutdown_at = last_activity = 0;
     sw_prev = sw_closed_at_boot;
     /* In momentary mode the press that woke us through the hardware latch is still
      * happening. Do not let it count as a command -- otherwise a wake with the brake
      * held would go straight to cranking. Wait for a release first. */
     armed = (cfg.ign_mode != IGN_MOMENTARY) || !sw_closed_at_boot;
+
+    /* Assert RUN here rather than waiting for the first ign_tick, so it is part of the
+     * same shift-register frame that brings the outputs live. Otherwise a watchdog
+     * reset leaves the ECU looking at ignition-off for an extra tick on top of the
+     * reset itself -- a blip it has no reason to see. */
+    set_run_out(true);
 }
 
 /* --- maintained: J_IGN is a level ------------------------------------------- */
@@ -87,6 +94,7 @@ static void tick_momentary(uint32_t now, bool sw)
     const bool rising  = sw && !sw_prev;
     const bool falling = !sw && sw_prev;
 
+    if (rising || falling) last_activity = now;
     if (rising) { press_ms = now; hold_fired = false; }
     if (!armed) {
         /* Still waiting for the wake press to end. */
@@ -103,13 +111,28 @@ static void tick_momentary(uint32_t now, bool sw)
         return;
     }
 
+    /* Adopt the run signal wherever we see it, not only on the way out of CRANKING.
+     *
+     * Without this a watchdog reset with the engine running comes back in IGNITION and
+     * STAYS there, because nothing else moves it. The state would then say "not
+     * running" while the engine turned -- and the no-crank-while-running guard below
+     * would be looking at a lie. */
+    if (running) last_activity = now;
+    if (running && state == IGN_ST_IGNITION) state = IGN_ST_RUNNING;
+
     switch (state) {
     case IGN_ST_IGNITION:
         if (rising) {
-            if (read_ch(cfg.ign_brake_ch) && crank_allowed()) {
+            /* Gated on the run SIGNAL, not on the state. State can be stale after a
+             * reset; the signal is what is true right now. Engaging a starter against
+             * a turning engine wrecks the pinion and the ring gear. */
+            if (read_ch(cfg.ign_brake_ch) && crank_allowed() && !running) {
                 state = IGN_ST_CRANKING;
                 crank_ms = now;
                 set_starter(true);
+            } else if (running) {
+                /* Engine running but the state machine had lost track. Nothing to do
+                 * except stop pretending -- a hold still stops the car. */
             } else {
                 /* Engine off, brake not held: this press means "turn the car off".
                  * Also the outcome when cranking is not configured, which is the right
@@ -120,6 +143,16 @@ static void tick_momentary(uint32_t now, bool sw)
         break;
 
     case IGN_ST_CRANKING:
+        /* NOTE what is NOT here: releasing the brake does not stop cranking.
+         *
+         * The brake gates the START, not the continuation, for two reasons. A key does
+         * the same -- nothing makes you hold the brake through a crank. And more
+         * importantly the brake input CANNOT BE READ while cranking: it is a digital
+         * channel needing >10.87V at the terminal, and a starter drags the battery to
+         * 9-10V. Aborting on "brake released" would therefore abort every single start
+         * the instant the starter loaded the battery, and the car would never fire.
+         * (The button itself survives, because IGN_SENSE is an ADC with a 6V threshold
+         * rather than a logic input.) */
         if (running) {                       /* caught -- let go of the starter */
             set_starter(false);
             state = IGN_ST_RUNNING;
@@ -127,13 +160,10 @@ static void tick_momentary(uint32_t now, bool sw)
             set_starter(false);              /* give up rather than cook the starter */
             state = IGN_ST_IGNITION;
         } else if (falling && !ch_configured(cfg.ign_run_ch)) {
-            /* With no running signal there is nothing to tell us when to stop, so the
+            /* With no running signal there is nothing to tell us when it caught, so the
              * button behaves like a key's spring-return START position: crank while
              * held, release to stop. */
             set_starter(false);
-            state = IGN_ST_IGNITION;
-        } else if (!read_ch(cfg.ign_brake_ch)) {
-            set_starter(false);              /* brake released mid-crank */
             state = IGN_ST_IGNITION;
         }
         break;
@@ -148,7 +178,15 @@ static void tick_momentary(uint32_t now, bool sw)
     default:
         break;
     }
+
+    /* Idle timeout. Only while the engine is NOT running -- a long drive is not idle. */
+    if (cfg.ign_idle_timeout_s && state != IGN_ST_RUNNING
+        && (now - last_activity) >= (uint32_t)cfg.ign_idle_timeout_s * 1000UL) {
+        request_shutdown(now);
+    }
 }
+
+void ign_note_activity(uint32_t now) { last_activity = now; }
 
 /* --- entry point ------------------------------------------------------------ */
 

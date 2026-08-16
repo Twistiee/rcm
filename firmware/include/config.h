@@ -114,7 +114,18 @@ struct rcm_config_t {
     uint16_t ign_shutdown_ms;   /* how long to stay powered after dropping RUN, so the
                                  * ECU can finish its own shutdown before the rail goes */
 
-    uint8_t  reserved[5];
+    /* Momentary mode only: shut down after this long awake with the engine not
+     * running and nothing happening. Real keyless cars drop out of accessory after a
+     * few minutes for exactly this reason -- a board left awake draws ~100mA plus
+     * whatever channels are on, which is a flat battery by morning. 0 disables.
+     *
+     * Deliberately NOT applied in maintained mode: there the switch is physically
+     * closed, so a shutdown could not complete anyway (dropping LATCH_HOLD with the
+     * switch on just power-cycles) and the board would sit awake with every channel
+     * off, which is worse than leaving it alone. */
+    uint16_t ign_idle_timeout_s;
+
+    uint8_t  reserved[3];
     uint16_t crc;                  /* CRC-16/CCITT over every byte before this */
 } __attribute__((packed));
 

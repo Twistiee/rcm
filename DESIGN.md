@@ -1275,3 +1275,75 @@ dropped. Channels and outputs go down on schedule; only the final power cut wait
 The test for this found a second bug in the fix itself: `ign_tick()` returns early once a
 shutdown is latched, so `sw_prev` was never updated and the release could never be
 observed. The board would have shut its channels down and then stayed powered forever.
+
+## Scenario walkthrough against real wiring practice (2026-08-16)
+
+Checked the state machine against how cars are actually wired rather than against my own
+assumptions. Four real bugs, one gap.
+
+### What the conventions actually are
+
+| Relay | Powers | Driven by |
+|---|---|---|
+| **Main / EFI relay** | ECU main power, **injectors, ignition coils** | ignition source triggers it, then **the ECU holds it on itself** |
+| **Fuel pump relay** | pump | **the ECU**, and only once it knows the engine is turning |
+| Fan, accessories | as named | ECU or body electronics |
+
+Two things fall out. The ECU holding its own main relay is exactly why `ign_shutdown_ms`
+exists — the ECU wants that time after ignition-off. And the fuel pump being ECU-controlled,
+specifically so it stops when the engine does, confirms the earlier decision not to default
+it on in `failsafe_state`.
+
+So the right split is unchanged: **the board's RUN output drives the ECU's ignition input,
+and the ECU owns the main relay and the pump.**
+
+Keyless cars, for reference, go ACC → ON → OFF on successive presses without the brake, and
+**drop out of accessory after about five minutes** to protect the battery. This board
+collapses ACC and ON into one state, which suits a car with no accessory bus.
+
+### Bug 1 — a stale state could crank a running engine
+
+`IGN_ST_RUNNING` was only reachable from `IGN_ST_CRANKING`. So a watchdog reset with the
+engine running came back in `IGN_ST_IGNITION` and **stayed there**, and the
+no-crank-while-running guard — which tested the *state* — was reading a lie. The next press
+with the brake down would have thrown a starter pinion at a spinning ring gear.
+
+Fixed twice over: the guard now tests the run **signal**, and the machine adopts
+`IGN_ST_RUNNING` wherever it sees that signal rather than only on the way out of cranking.
+
+### Bug 2 — the car would never have started
+
+Cranking aborted when the brake input went low. But the brake is a digital channel needing
+**>10.87 V** at the terminal, and a starter drags the battery to 9–10 V — so the brake reads
+low the instant cranking begins, and every start would have aborted immediately.
+
+The brake now gates the **start**, not the continuation, which is what a key does anyway.
+The button itself is unaffected: `IGN_SENSE` is an ADC with a 6 V threshold, not a logic
+input, so it survives the sag that kills the channel inputs.
+
+This one is only visible if you connect the input-threshold work to the crank sequence.
+Neither looks dangerous alone.
+
+### Bug 3 — the starter was commandable from the bus
+
+`CMD_SET` and peer mirroring both went through to any channel. A stray, replayed or
+mistaken frame — or a button on a mirrored keypad — was one hop from the starter motor.
+Both paths now mask it out. Only the ignition state machine turns a starter, and it does so
+with the brake held and the engine confirmed stopped, which no remote frame can know.
+
+### Bug 4 — a tick of ignition-off after every reset
+
+`ign_begin()` did not assert RUN, so it was left to the first `ign_tick` and landed a tick
+after the outputs went live. Now asserted in `ign_begin()`, so it rides out in the same
+shift-register frame.
+
+### Gap — nothing ever timed out
+
+Wake the car, walk away without starting it, and the board stayed awake indefinitely at
+~100 mA plus channels. Flat battery by morning. `ign_idle_timeout_s` (30 min default, 0
+disables) now shuts it down, deferred by button activity, addressed CAN traffic, or the
+engine running.
+
+**Momentary mode only.** In maintained mode the switch is physically closed, so the
+shutdown could not complete — dropping `LATCH_HOLD` would only power-cycle — and the board
+would sit awake with every channel off, which is worse than leaving it alone.

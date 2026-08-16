@@ -79,4 +79,8 @@ uint32_t ign_shutdown_since(void);
  * a power off. Waiting for the release is the only thing that works. */
 bool ign_may_cut_power(uint32_t now_ms);
 
+/* Something happened that means somebody is still using the board -- a CAN frame
+ * addressed to us, typically. Restarts the idle timeout. */
+void ign_note_activity(uint32_t now_ms);
+
 #endif /* RCM_IGNITION_H */

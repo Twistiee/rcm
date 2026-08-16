@@ -68,6 +68,7 @@ static void NVIC_SystemReset(void) { RESETS++; }
 /* --- helpers --------------------------------------------------------------- */
 
 #define NODE_BASE (RCM_CAN_BASE_DEFAULT + 0 * RCM_CAN_NODE_STRIDE)
+#define PEER_ID   (RCM_CAN_BASE_DEFAULT + 4 * RCM_CAN_NODE_STRIDE + RCM_F_INPUTS)
 
 static void inject(uint16_t id, std::initializer_list<uint8_t> bytes)
 {
@@ -446,6 +447,40 @@ static void test_only_configured_channels_come_up(void)
     TEST_ASSERT_TRUE(sim_driver_on(10));
 }
 
+static void test_the_starter_cannot_be_commanded_over_can(void)
+{
+    /* Only the ignition state machine turns a starter, and it does so with the brake
+     * held and the engine confirmed stopped -- conditions a remote frame knows nothing
+     * about. A stray, replayed or mistaken CMD_SET must not crank the engine. */
+    cfg.ign_start_ch = 4;
+
+    inject(NODE_BASE + RCM_F_CMD_SET, { 0xFF, 0xFF, 0x1F, 0xFF, 0xFF, 0x1F });
+    run_ms(TICK_MS * 6);
+
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(4), "CAN commanded the starter");
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(3), "other channels should still obey");
+    TEST_ASSERT_TRUE(sim_driver_on(5));
+}
+
+static void test_a_peer_keypad_cannot_command_the_starter(void)
+{
+    /* Same rule by a different route: a button on a mirrored keypad must not be one
+     * press away from the starter motor. */
+    cfg.ign_start_ch     = 4;
+    cfg.peer_node        = 4;
+    cfg.peer_mask        = 0x1FFFFF;
+    cfg.peer_toggle_mask = 0;
+    proto_begin();
+
+    inject(PEER_ID, { 0x00, 0x00, 0x00 });
+    run_ms(TICK_MS * 4);
+    inject(PEER_ID, { 0xFF, 0xFF, 0x1F });
+    run_ms(TICK_MS * 4);
+
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(4), "a peer keypad reached the starter");
+    TEST_ASSERT_TRUE(sim_driver_on(3));
+}
+
 /* --- bus timeout ----------------------------------------------------------- */
 
 static void test_silence_triggers_the_failsafe(void)
@@ -495,8 +530,6 @@ static void test_a_zero_timeout_disables_the_failsafe(void)
 }
 
 /* --- peer mirroring -------------------------------------------------------- */
-
-#define PEER_ID (RCM_CAN_BASE_DEFAULT + 4 * RCM_CAN_NODE_STRIDE + RCM_F_INPUTS)
 
 static void setup_peer(uint32_t mask, uint32_t toggle)
 {
@@ -604,6 +637,8 @@ int main(void)
     RUN_TEST(test_a_default_board_boots_with_nothing_energised);
     RUN_TEST(test_boot_state_honours_an_inverted_channel);
     RUN_TEST(test_only_configured_channels_come_up);
+    RUN_TEST(test_the_starter_cannot_be_commanded_over_can);
+    RUN_TEST(test_a_peer_keypad_cannot_command_the_starter);
     RUN_TEST(test_silence_triggers_the_failsafe);
     RUN_TEST(test_traffic_clears_the_failsafe);
     RUN_TEST(test_traffic_for_someone_else_does_not_count);

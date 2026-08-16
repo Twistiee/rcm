@@ -45,6 +45,12 @@ static inline void pack21(uint8_t *d, uint32_t v)
     d[2] = (uint8_t)(v >> 16) & 0x1F;
 }
 
+/* Bit for the starter channel, or 0 if none is configured. */
+static inline uint32_t starter_mask(void)
+{
+    return cfg.ign_start_ch < RCM_CHANNELS ? (1ul << cfg.ign_start_ch) : 0ul;
+}
+
 static inline uint32_t unpack21(const uint8_t *d)
 {
     return ((uint32_t)d[0]) | ((uint32_t)d[1] << 8) | (((uint32_t)d[2] & 0x1F) << 16);
@@ -271,7 +277,7 @@ static void handle_ctl(const struct can_frame_t *f)
 static void handle_peer_inputs(const struct can_frame_t *f)
 {
     if (f->len < 3) return;
-    const uint32_t in = unpack21(f->data) & cfg.peer_mask;
+    const uint32_t in = unpack21(f->data) & cfg.peer_mask & ~starter_mask();
 
     if (!peer_seen) {
         /* First frame from the peer only establishes a baseline. Acting on it would
@@ -314,7 +320,12 @@ void proto_poll(uint32_t now_ms)
         } else if (f.id == global) {
             handle_ctl(&f);
         } else if (f.id == (uint16_t)(base + RCM_F_CMD_SET)) {
-            if (f.len >= 6) ch_command_mask(unpack21(&f.data[0]), unpack21(&f.data[3]));
+            /* The starter is masked out of anything arriving over the bus. Only the
+             * ignition state machine turns it, and it does so with the brake held and
+             * the engine confirmed stopped -- conditions a remote frame cannot know
+             * about. A stray or replayed CMD_SET must never crank the engine. */
+            if (f.len >= 6) ch_command_mask(unpack21(&f.data[0]) & ~starter_mask(),
+                                            unpack21(&f.data[3]));
         } else if (f.id == (uint16_t)(base + RCM_F_CMD_CTL)) {
             handle_ctl(&f);
         } else {
@@ -327,6 +338,8 @@ void proto_poll(uint32_t now_ms)
         if (ours) {
             last_rx_ms = now_ms;
             failsafe_active = false;
+            /* Somebody is still talking to this board, so it is not idle. */
+            ign_note_activity(now_ms);
         }
     }
 
