@@ -416,6 +416,20 @@ static void test_activity_defers_the_idle_timeout(void)
     TEST_ASSERT_TRUE(ign_wants_shutdown());
 }
 
+static void test_no_idle_timeout_without_a_run_signal(void)
+{
+    /* THE dangerous case. With no run channel the board cannot tell an unattended
+     * driveway from half an hour of driving -- `running` is false either way. Letting
+     * the timeout fire there would switch the car off at speed. It stays inert instead:
+     * a flat battery is a far better failure than an engine cut on a motorway. */
+    momentary_setup(false);                /* no run channel */
+    cfg.ign_idle_timeout_s = 10;
+
+    tick(60000);                           /* six timeouts' worth */
+    TEST_ASSERT_FALSE_MESSAGE(ign_wants_shutdown(),
+                              "timed out with no way to know the engine was running");
+}
+
 static void test_idle_timeout_is_momentary_only(void)
 {
     /* In maintained mode the switch is physically closed, so a shutdown could not
@@ -550,6 +564,7 @@ int main(void)
     RUN_TEST(test_idle_timeout_shuts_an_unattended_board_down);
     RUN_TEST(test_a_running_engine_is_never_idle);
     RUN_TEST(test_activity_defers_the_idle_timeout);
+    RUN_TEST(test_no_idle_timeout_without_a_run_signal);
     RUN_TEST(test_idle_timeout_is_momentary_only);
     RUN_TEST(test_power_cannot_be_cut_while_the_button_is_held);
     RUN_TEST(test_power_is_not_cut_before_the_ecu_window);

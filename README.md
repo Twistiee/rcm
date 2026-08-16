@@ -14,7 +14,7 @@ nothing about it is rusEFI-specific beyond the choice of message IDs.
 ## Status — read this first
 
 **The boards were ordered on 2026-08-08 and have not been powered on.** The firmware is
-written, builds, and passes 134 host unit tests against a simulated board, but **not one
+written, builds, and passes 135 host unit tests against a simulated board, but **not one
 line of it has run on real hardware.** The PCB has never been checked against a
 multimeter.
 
@@ -142,7 +142,7 @@ PlatformIO + STM32duino, in [`firmware/`](firmware/) — see
 ```
 pio run -d firmware                     build
 pio run -d firmware -e selftest -t upload   bring-up console over USB-C
-pio test -d firmware -e native          134 host unit tests
+pio test -d firmware -e native          135 host unit tests
 ```
 
 **Two bring-up paths.** A **USB-C console** needs nothing but the cable — it proves the

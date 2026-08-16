@@ -179,8 +179,16 @@ static void tick_momentary(uint32_t now, bool sw)
         break;
     }
 
-    /* Idle timeout. Only while the engine is NOT running -- a long drive is not idle. */
-    if (cfg.ign_idle_timeout_s && state != IGN_ST_RUNNING
+    /* Idle timeout -- and note the FIRST condition, which is the important one.
+     *
+     * Without a run channel there is no way to tell "sitting in the driveway with the
+     * ignition on" from "half an hour into a drive". `running` would simply be false
+     * forever, the state would never reach IGN_ST_RUNNING, and this would switch the
+     * car off mid-drive. So the timeout is inert unless the board can actually see
+     * whether the engine is turning. A flat battery is a far better failure than an
+     * engine cut at speed. */
+    if (cfg.ign_idle_timeout_s && ch_configured(cfg.ign_run_ch)
+        && state != IGN_ST_RUNNING
         && (now - last_activity) >= (uint32_t)cfg.ign_idle_timeout_s * 1000UL) {
         request_shutdown(now);
     }
