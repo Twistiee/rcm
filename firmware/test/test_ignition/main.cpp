@@ -322,6 +322,42 @@ static void test_no_crank_from_running(void)
                               "engaged the starter with the engine running");
 }
 
+/* --- the ECU owns the starter ----------------------------------------------- */
+
+static void test_brake_held_press_never_shuts_down_when_the_ecu_cranks(void)
+{
+    /* The arrangement this car actually uses: rusEFI drives the starter relay, so
+     * ign_start_ch is unconfigured and the ECU watches the same button.
+     *
+     * A press with the brake down is then somebody ELSE's start command. If this board
+     * treated it as "turn off" it would drop the RUN output and kill the ECU in the
+     * middle of its own crank -- and the car would be unstartable in a way that looked
+     * like an ECU fault. */
+    momentary_setup(true);
+    cfg.ign_start_ch = IGN_CH_NONE;        /* the ECU cranks, not us */
+    set_brake(true);
+
+    press(TICK_MS * 4);
+    TEST_ASSERT_FALSE_MESSAGE(ign_wants_shutdown(),
+                              "a start attempt shut the car down instead");
+
+    /* Brake up, though, still means off. */
+    set_brake(false);
+    press(TICK_MS * 4);
+    TEST_ASSERT_TRUE_MESSAGE(ign_wants_shutdown(), "press without brake should stop it");
+}
+
+static void test_hold_still_stops_it_when_the_ecu_cranks(void)
+{
+    /* Deferring the press must not cost the stop gesture. */
+    momentary_setup(true);
+    cfg.ign_start_ch = IGN_CH_NONE;
+    set_brake(true);
+
+    sw = true; tick(HOLD_MS + 100);
+    TEST_ASSERT_TRUE_MESSAGE(ign_wants_shutdown(), "hold-to-stop stopped working");
+}
+
 /* --- momentary: stopping ---------------------------------------------------- */
 
 static void test_a_short_press_while_running_does_nothing(void)
@@ -633,6 +669,8 @@ int main(void)
     RUN_TEST(test_without_a_run_signal_cranking_follows_the_button);
     RUN_TEST(test_cranking_is_refused_when_half_configured);
     RUN_TEST(test_no_crank_from_running);
+    RUN_TEST(test_brake_held_press_never_shuts_down_when_the_ecu_cranks);
+    RUN_TEST(test_hold_still_stops_it_when_the_ecu_cranks);
     RUN_TEST(test_a_short_press_while_running_does_nothing);
     RUN_TEST(test_a_hold_while_running_stops_the_engine);
     RUN_TEST(test_stopping_is_never_conditional);

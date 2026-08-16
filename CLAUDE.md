@@ -54,7 +54,7 @@ Things worth knowing before touching it:
 - **Clean builds hit an intermittent GCC ICE.** `arm-none-eabi-g++ 12.3.1` segfaults while
   compiling the STM32duino core under parallel jobs. Not our code, not deterministic —
   re-run, or `pio run -j 1`. Do not go looking for a bug in `src/`.
-- **`pio test -e native`** runs 139 host unit tests against a model of the board. Needs a
+- **`pio test -e native`** runs 141 host unit tests against a model of the board. Needs a
   host gcc (MinGW-w64/WinLibs on Windows). They compile the real `src/*.cpp`, so they
   break when the firmware breaks. Model the hardware's *structure*, not the driver's
   arithmetic — every bug these have caught came from two independent derivations

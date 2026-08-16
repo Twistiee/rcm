@@ -151,20 +151,29 @@ static void tick_momentary(uint32_t now, bool sw)
     switch (state) {
     case IGN_ST_IGNITION:
         if (rising) {
-            /* Gated on the run SIGNAL, not on the state. State can be stale after a
-             * reset; the signal is what is true right now. Engaging a starter against
-             * a turning engine wrecks the pinion and the ring gear. */
-            if (read_ch(cfg.ign_brake_ch) && crank_allowed() && !running) {
-                state = IGN_ST_CRANKING;
-                crank_ms = now;
-                set_starter(true);
-            } else if (running) {
-                /* Engine running but the state machine had lost track. Nothing to do
-                 * except stop pretending -- a hold still stops the car. */
+            /* THE BRAKE DECIDES WHAT THIS PRESS MEANS, and it decides that before
+             * anything else. Brake down is always an attempt to START; brake up is
+             * always "turn the car off". Nothing about a press with the brake held may
+             * ever end in a shutdown.
+             *
+             * That matters because the starter is often NOT ours. If the ECU owns the
+             * starter relay -- which is the better arrangement, since it has RPM
+             * directly rather than through a divider or a stale CAN frame -- then
+             * ign_start_ch is unconfigured and the ECU is watching this same button.
+             * Treating a brake-held press as "off" would power the board down, drop the
+             * RUN output and kill the ECU in the middle of its own crank. */
+            if (read_ch(cfg.ign_brake_ch)) {
+                /* Gated on the run SIGNAL, not the state: state can be stale after a
+                 * reset, and engaging a starter against a turning engine wrecks the
+                 * pinion and the ring gear. */
+                if (crank_allowed() && !running) {
+                    state = IGN_ST_CRANKING;
+                    crank_ms = now;
+                    set_starter(true);
+                }
+                /* Otherwise somebody else's job -- the ECU's, or nobody's. Either way
+                 * this press is not a shutdown. */
             } else {
-                /* Engine off, brake not held: this press means "turn the car off".
-                 * Also the outcome when cranking is not configured, which is the right
-                 * way for an unconfigured board to fail. */
                 request_shutdown(now);
             }
         }

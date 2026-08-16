@@ -1400,3 +1400,46 @@ is the obvious next thing for the front RCM.
 protocol. Dash to ECU, so it is the dash asking rusEFI to do something rather than
 anything this board needs: we drive the starter ourselves. Worth knowing it exists if the
 board ever wants to ask the ECU for something instead.
+
+## The ECU owns the starter — the better arrangement (2026-08-16)
+
+Decided that rusEFI drives the starter relay rather than this board. That is the right
+call, and not just a wash:
+
+- **The ECU has RPM directly**, off the crank sensor, not through a 1M/270k divider that
+  goes unreadable during a crank or a CAN frame that can go stale. The one interlock that
+  really matters — do not engage a starter against a turning engine — stops depending on
+  anything in this repo.
+- rusEFI already has start/stop button handling, crank timeouts and its own interlocks.
+- `ign_start_ch` simply stays `IGN_CH_NONE`, which is the default, so cranking here is
+  disabled outright.
+
+The button is then **shared**: the RCM uses it for wake and shutdown, the ECU watches the
+same signal for its start command.
+
+### Which exposed a bug worth having found
+
+With `ign_start_ch` unconfigured, a press with the brake held fell through the crank
+branch and landed on `request_shutdown()`. So the ordinary way to start the car — foot on
+the brake, press the button — would have **powered this board down, dropped the RUN output
+and killed the ECU in the middle of its own crank.** Unstartable, and it would have looked
+like an ECU fault.
+
+**The brake now decides what a press means, before anything else:**
+
+| Press with | Means |
+|---|---|
+| brake **down** | an attempt to START. We crank if `ign_start_ch` is configured; otherwise it is the ECU's business and we do nothing. **Never a shutdown.** |
+| brake **up** | turn the car off |
+| held for `ign_hold_stop_ms` | turn the car off, from any state, gated on nothing |
+
+That reads better than the old shape anyway: the brake is the driver saying "I intend to
+start", and nothing that follows from that intent should ever end with the car switching
+itself off.
+
+### What is still worth wiring
+
+With the ECU cranking, the run signal stops being safety-critical here — nothing in this
+board turns a starter, so there is no interlock to protect. CAN RPM (`ecu_rpm_can_id`) is
+then perfectly adequate for the remaining uses: reporting engine state on the bus, and the
+accessory timeout if it is ever enabled.
