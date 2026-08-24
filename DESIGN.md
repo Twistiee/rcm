@@ -1586,3 +1586,64 @@ quietly assumed "what was asked for" and "what the driver is doing" were the sam
   numbers alongside the function labels — two places that say which channel is the brake.
   Folding them into a lookup by function would remove that, at the cost of refactoring the
   most safety-critical code in the repo. Worth doing, but not casually.
+
+# ============================================================================
+# REVISION B WISHLIST
+# ============================================================================
+# Gathered in one place 2026-08-24, on the day revA powered up for the first
+# time. Everything here is recorded elsewhere in this file in more detail; this
+# is the checklist to work from when a revision is actually drawn.
+
+## New, from first power-up (user, 2026-08-24)
+
+### 1. A power LED that does not depend on firmware
+
+revA has two LEDs and **both are MCU-driven**, so an unprogrammed or hung board looks
+identical to a dead one. The first question anyone asks — *is it even powered?* — cannot
+be answered by looking at it.
+
+Worse, the board is **deliberately dead** with only `J_PWR` connected, because `+12V_SW`
+is the latch's output. That is correct behaviour that looks exactly like a fault.
+
+**Fit two hardwired LEDs, no firmware involved:**
+
+| LED on | Says |
+|---|---|
+| `LATCH_IGN` | the ignition signal is present |
+| `+12V_SW` | the latch is on and the board actually has power |
+
+Together they separate "no ignition" from "ignition present but the latch is not passing
+it", which is precisely the diagnostic split that matters. Two LEDs and two resistors.
+
+Size for ~2 mA: `(12 − 3.2) / 0.002` ≈ 4.4 kΩ, so **4.7 kΩ**. Note this is far brighter
+than the existing indicators, which sit at roughly 0.7 mA because a 3.0–3.2 V green Vf on
+a 3.3 V rail through 1 kΩ has almost no headroom (see "Green LEDs are dim"). Anything fed
+from 12 V does not have that problem.
+
+### 2. Merge `J_PWR` and `J_IGN` into one connector
+
+Two 2-pin `KF2EDG` terminals with **GND duplicated between them**, and two cables to the
+board where one would do. Merge them.
+
+**Make it 4-pin, not 3.** This is the natural moment to fix the other known limit: every
+one of the 21 channels' coil return current comes back through `J_PWR`'s single ground
+pole (see "The constraint most likely to bite"). A merged connector gets a second ground
+pole for free.
+
+**Pin order matters, and it is not arbitrary: `+12V, IGN, GND, GND`.**
+
+A plug fitted one position out then puts +12 V onto the ignition input — which is simply
+the normal wake signal, harmless — and leaves the supply pin unfed, so the board does not
+come up. Order it `+12V, GND, …` instead and the same mistake drops +12 V straight onto
+ground through the supply.
+
+## Already recorded elsewhere in this file
+
+| | Where |
+|---|---|
+| `JB1` respaced from 3.50 mm to 2.54 mm so a standard header fits | "Next revision: one-piece screw terminals" |
+| One-piece screw terminals for the five small connectors, keeping the three 7-way channel blocks pluggable | same |
+| A second ground pole (now folded into item 2 above) | "Channel current ratings" |
+| TVS clamp voltage vs the TPL7407L's 30 V rating — `D2` is an SMAJ33A and the numbers do not stack in the right order | "Open, noticed while working this out" |
+| Sense divider ratio, if more margin is ever wanted at low battery voltage | "Input thresholds" |
+| DIP positions 7 and 8 exist physically but have no copper | "Positions 7 and 8 are unconnected on purpose" |
