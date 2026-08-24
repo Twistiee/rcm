@@ -62,14 +62,49 @@ static void tick_a_while(uint32_t ms)
 
 static void show_straps(void)
 {
-    Serial.println(F("\n-- straps (DIP, closed = on) --"));
-    Serial.printf("  role        : %s\n", straps.keypad ? "KEYPAD" : "relay module");
-    Serial.printf("  address     : %u\n", straps.address);
-    Serial.printf("  node        : %u  (role is the top bit)\n", straps.node);
-    Serial.printf("  force 500k  : %s\n", straps.force_500k ? "YES" : "no");
-    Serial.printf("  publish IMU : %s\n", straps.publish_imu ? "YES" : "no");
-    Serial.println(F("  Flip a switch and press 'd' again -- if nothing changes, the"));
-    Serial.println(F("  DIP is not reaching PC0-PC4."));
+    /* Sample the pins LIVE. This used to print the boot-latched `straps` struct while
+     * inviting you to flip a switch and press 'd' again -- which could never show a
+     * change, so a perfectly good DIP looked like it was not reaching PC0-PC4. Read the
+     * pins into locals and leave the global alone: straps.node picks the CAN identity,
+     * and a diagnostic command has no business moving the board on the bus mid-session. */
+    const uint32_t pins[] = { PIN_CFG_ROLE, PIN_CFG_ADDR0, PIN_CFG_ADDR1,
+                              PIN_CFG_BAUD, PIN_CFG_IMU_EN };
+    for (uint32_t p : pins) pinMode(p, INPUT_PULLUP);
+    delayMicroseconds(50);              /* let the pull-ups settle before sampling */
+
+    const bool    keypad = digitalRead(PIN_CFG_ROLE)   == LOW;
+    const bool    a0     = digitalRead(PIN_CFG_ADDR0)  == LOW;
+    const bool    a1     = digitalRead(PIN_CFG_ADDR1)  == LOW;
+    const bool    b500   = digitalRead(PIN_CFG_BAUD)   == LOW;
+    const bool    imu    = digitalRead(PIN_CFG_IMU_EN) == LOW;
+    const uint8_t addr   = (uint8_t)((a0 ? 1 : 0) | (a1 ? 2 : 0));
+    const uint8_t node   = (uint8_t)((keypad ? 4 : 0) | addr);
+
+    Serial.println(F("\n-- straps (DIP, live read) --"));
+    /* Numbered by PHYSICAL DIP position, which deliberately does not start at 1 here:
+     * DIP 1 is the 120R CAN termination, wired straight across CANH/CANL with no MCU pin
+     * on it. Flipping it changes the bus, not this listing, and no firmware can ever see
+     * it. DIP 7 and 8 exist on the part but have no copper. */
+    Serial.println(F("  1     CAN term    (no MCU pin -- not visible to firmware)"));
+    Serial.printf("  2 PC0 role        %-6s -> %s\n",
+                  keypad ? "CLOSED" : "open", keypad ? "KEYPAD" : "relay module");
+    Serial.printf("  3 PC1 addr0       %-6s\n", a0 ? "CLOSED" : "open");
+    Serial.printf("  4 PC2 addr1       %-6s\n", a1 ? "CLOSED" : "open");
+    Serial.printf("  5 PC3 force 500k  %-6s -> %s\n",
+                  b500 ? "CLOSED" : "open", b500 ? "YES" : "no");
+    Serial.printf("  6 PC4 publish IMU %-6s -> %s\n",
+                  imu ? "CLOSED" : "open", imu ? "YES" : "no");
+    Serial.printf("  address %u, node %u  (role is the top bit)\n", addr, node);
+
+    /* The board only adopts straps at boot, so say so rather than letting a live read
+     * imply the CAN identity has followed it. */
+    if (node != straps.node || b500 != straps.force_500k || imu != straps.publish_imu) {
+        Serial.printf("  NOTE: boot latched node %u -- the values above are NOT in effect\n",
+                      straps.node);
+        Serial.println(F("  yet. Power-cycle to adopt them."));
+    }
+    Serial.println(F("  Flip a switch and press 'd' again. If a position never changes,"));
+    Serial.println(F("  that DIP pole is not reaching its PC pin."));
 }
 
 static void test_eeprom(void)
