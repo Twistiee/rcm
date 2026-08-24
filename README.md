@@ -29,16 +29,20 @@ edge case. But there is one behaviour to design around:
 
 **On any reset, `R_OE` parks all 21 channels high-impedance until firmware re-enables
 them.** Every channel drops. The firmware adopts `failsafe_state` and goes live as its
-first act — the software part of that is well under a millisecond, so the gap is dominated
-by crystal and PLL startup and should land around **10 ms**. That applies equally to a
-cold start and to a watchdog reset, so a main relay behind this board closes with the key
-rather than after a timeout. The self-test build reports its own measured figure; a scope
-on any channel gives the true one including pre-`main()` time.
+first act, and on revA hardware that is **22 ms**, measured by the self-test build's `W`
+command rather than estimated. Add a few ms of pre-`main()` crystal and PLL startup that
+`millis()` cannot see, so call it **~25 ms**. That applies equally to a cold start and to
+a watchdog reset, so a main relay behind this board closes with the key rather than after
+a timeout.
 
-So the question for each load is not "is this engine-critical" but **"what does 10 ms off
+Most of the 22 ms is the EEPROM: the board cannot apply `failsafe_state` before it has
+read `failsafe_state`, so `cfg_load()` is unavoidably inside the dropout. A scope on any
+channel gives the true figure including pre-`main()` time.
+
+So the question for each load is not "is this engine-critical" but **"what does 25 ms off
 do to it?"**
 
-| Load | 10 ms off | Verdict |
+| Load | 25 ms off | Verdict |
 |---|---|---|
 | Fan, fuel pump, lights, horn, accessories | invisible | fine |
 | Injector / coil supply via a main relay | at worst a single missed event | **fine — set `failsafe_state` to hold it on** |
