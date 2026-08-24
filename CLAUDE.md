@@ -63,6 +63,29 @@ Things worth knowing before touching it:
 - **`pio run -e selftest -t upload`** builds a USB-CDC bring-up console instead of the
   normal firmware. Swapped in by `build_src_filter`, so it cannot ship by accident. USB
   CDC is enabled only in that environment.
+- **Flashing does not use PlatformIO's stock stlink support** — `upload_protocol` and
+  `debug_tool` are both `custom`, driving OpenOCD directly. Two independent reasons, both
+  in the `platformio.ini` comments:
+  1. The bench probe enumerates as `0483:3752` running V2 firmware, so OpenOCD binds its
+     DAP driver, which rejects the `hla_swd` transport PlatformIO hardcodes.
+  2. **The probe silently corrupts flash writes at OpenOCD's default 4MHz programming
+     speed.** Erase succeeds and "Programming Finished" prints, but the chip reads back
+     all `0xFF` — only the verify step catches it. Pinned to 480kHz.
+  Paths handed to OpenOCD are wrapped in Tcl braces (`{$BUILD_DIR/firmware.bin}`) or the
+  Windows backslashes get eaten as escapes.
+- **`-Wl,-u_printf_float` is load-bearing, not cosmetic.** newlib-nano omits `%f` from
+  printf unless it is force-linked, and the failure is not a missing number: the
+  conversion emits nothing *and* does not advance the varargs pointer, so everything
+  after it in the format string is parsed against the wrong arguments. On revA this
+  desynced far enough to hand `memcpy` a garbage length, which dumped raw SRAM out the USB
+  console and then bus-faulted off the top of RAM (`BFAR = 0x20020000`) into
+  `Default_Handler`. Symptom at the desk: the board stops draining its USB endpoint, so
+  the *host* blocks forever in `write()` and the serial process becomes unkillable. The
+  host unit tests cannot catch this — they link a full-fat PC printf.
+- **On Windows the probe's debug interface may have no driver** (Device Manager shows
+  "ST-Link Debug", problem code 28). The serial half works regardless, which makes it look
+  healthy. Bind WinUSB to **interface 0 only** with Zadig — never to interface 1, which is
+  the working VCP.
 - **`firmware/tools/rcm_bench.py`** is the PC side, over any python-can interface.
   `--with-sim` fakes a board so it works with no hardware; `test_rcm_bench.py` is its
   gate and also pins its byte packing to the DBC.
