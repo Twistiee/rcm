@@ -335,6 +335,49 @@ a receive FIFO, and filter banks indexed the way the hardware indexes them.
 
 Each step is verifiable with a multimeter before any bus is involved.
 
+### Before you apply power at all
+
+**The board will look completely dead with only `J_PWR` connected.** `+12V_SW` — the
+buck's input, and therefore the whole board's supply — is the BTS7040 latch's *output*,
+and the latch is held on by `J_IGN`. No ignition signal, no rail, no LEDs, nothing. This
+is by design and it is the first thing that will make you think the board is faulty.
+
+**USB cannot power it either.** `USB_VBUS` goes to the connector and stops there; it is
+not connected to any rail. USB is for data only.
+
+Three checks with the power off, meter on diode range:
+
+| Check | Expect |
+|---|---|
+| `J_PWR` pin 1 → pin 2 (12V to GND), both polarities | no short. A few hundred kΩ or open |
+| `J_PWR` pin 1 → `C_BULK` +12V pad, red lead on `J_PWR` | ~0.3–0.4 V forward, open reversed |
+| 3V3 to GND | no short |
+
+The middle one is worth doing properly: it tests `F1` and `D1` together, and confirms
+`D1` is round the right way. That diode was wired backwards in the design once and caught
+before the order — `Diode:SS34` has **pin 1 = cathode**, which is not the convention most
+people assume. Backwards, it blocks the battery feed and the board never powers up.
+
+### First power-up, staged
+
+Use a bench supply with the **current limit set to about 200 mA**. The board draws
+roughly 100 mA. If an assembly short exists, the limit is what stops it becoming a
+replacement board.
+
+1. **Buck NOT fitted.** 12 V to `J_PWR`, then 12 V to `J_IGN`. Measure `JB1` pin 1: it
+   should sit at about **11.5 V** (12 V less the SS34 drop). Remove `J_IGN` and it should
+   collapse. That single test proves the fuse, `D1`, the latch and its divider, with
+   nothing downstream at risk.
+2. **Fit the buck.** Check it is still set to **5 V out** — it ships that way and must
+   stay that way. Confirm 5 V at `C_5V`.
+3. **Confirm 3V3** at `C_3V3O`.
+4. With a blank MCU the board should stay on only while `J_IGN` is held, because nothing
+   is driving `LATCH_HOLD` yet. That is the correct behaviour and a useful signal that
+   the latch is doing its job.
+5. Only then flash the selftest build.
+
+Nothing connected to any channel terminal for any of this — bare board and buck.
+
 Flash the **selftest** build first — steps 1 to 6 need only the USB cable.
 
 | # | Check | How |
