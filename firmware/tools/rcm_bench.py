@@ -248,11 +248,11 @@ def cmd_monitor(bus, args):
 def cmd_set(bus, args):
     rcm = Rcm(bus, args.base, args.node)
     on = args.state in ("on", "1", "true")
-    if args.channel == "all":
+    if args.ch == "all":
         rcm.set_mask((1 << CHANNELS) - 1, (1 << CHANNELS) - 1 if on else 0)
         print("all channels %s" % ("ON" if on else "off"))
     else:
-        ch = int(args.channel)
+        ch = int(args.ch)
         if not 1 <= ch <= CHANNELS:
             sys.exit("channel must be 1..%d" % CHANNELS)
         rcm.set_channel(ch, on)
@@ -441,7 +441,10 @@ def main():
     sub.add_parser("sim", help="pretend to be a board, for testing this tool")
 
     p = sub.add_parser("set", help="drive a channel")
-    p.add_argument("channel", help="1..21, or 'all'")
+    # dest MUST NOT be "channel": that is the global --channel, which names the CAN
+    # adapter's port. argparse lets a positional silently overwrite it, and the failure
+    # lands somewhere unrelated -- "could not open slcan:21" while trying to open the bus.
+    p.add_argument("ch", metavar="channel", help="1..21, or 'all'")
     p.add_argument("state", choices=["on", "off", "1", "0", "true", "false"])
 
     p = sub.add_parser("walk", help="bring-up: drive each channel in turn")

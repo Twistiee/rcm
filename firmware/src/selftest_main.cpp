@@ -385,7 +385,21 @@ void loop(void)
 {
     static uint32_t last_tick;
     if (millis() - last_tick >= 5) { last_tick = millis(); ch_tick(millis()); }
-    if (can_ok) { can_tx_pump(); proto_poll(millis()); }
+    if (can_ok) {
+        can_tx_pump();
+        proto_poll(millis());
+        /* Broadcast too, paced the same way main.cpp paces it. Without this the console
+         * build is a pure responder: it obeys commands but never volunteers a frame, so
+         * `rcm_bench scan` finds nothing and there is no way to watch a command land --
+         * the CAN timeout reverts the channel to failsafe before you can read it back
+         * over USB. A bring-up tool that is invisible on the bus is not much of one. */
+        static uint32_t next_bcast;
+        const uint32_t now = millis();
+        if ((int32_t)(now - next_bcast) >= 0) {
+            next_bcast = now + cfg.broadcast_ms;
+            proto_broadcast(now);
+        }
+    }
 
     digitalWrite(PIN_LED1, (millis() % 1000) < 500);
     digitalWrite(PIN_LED2, (ch_fault_open() || ch_fault_short())
