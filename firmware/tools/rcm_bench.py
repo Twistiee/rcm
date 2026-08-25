@@ -317,16 +317,25 @@ def cmd_faults(bus, args):
 def cmd_ctl(bus, args):
     rcm = Rcm(bus, args.base, args.node)
     op = OP[args.op]
-    extra = [int(a, 0) for a in args.args]
+    # Parse per-opcode, NOT up front. The generic int() pass used to run first and blew
+    # up on `chmode 1 in` -- the one opcode whose arguments are deliberately words --
+    # before the branch that knows how to read them was ever reached.
     if args.op == "reboot":
         extra = [0xA5]
-    if args.op == "enable":
-        extra = [1 if not extra else extra[0]]
-    if args.op == "chmode":
+    elif args.op == "enable":
+        extra = [int(args.args[0], 0)] if args.args else [1]
+    elif args.op == "chmode":
         if len(args.args) < 2:
             sys.exit("chmode <channel> <out|in|unused> [flags]")
-        ch = int(args.args[0])
-        extra = [ch - 1, MODES[args.args[1]], int(args.args[2], 0) if len(args.args) > 2 else 0]
+        if args.args[1] not in MODES:
+            sys.exit("mode must be one of: %s" % ", ".join(MODES))
+        ch = int(args.args[0], 0)
+        if not 1 <= ch <= CHANNELS:
+            sys.exit("channel must be 1..%d" % CHANNELS)
+        extra = [ch - 1, MODES[args.args[1]],
+                 int(args.args[2], 0) if len(args.args) > 2 else 0]
+    else:
+        extra = [int(a, 0) for a in args.args]
     (rcm.global_ctl if args.glob else rcm.ctl)(op, *extra)
     print("%s%s %s" % ("global " if args.glob else "", args.op,
                        " ".join(str(e) for e in extra)))
