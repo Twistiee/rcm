@@ -834,6 +834,19 @@ A typical automotive relay coil is ~85 Ω:
 | 13.8 V | 162 mA | 3.41 A |
 | 14.4 V | 169 mA | 3.56 A |
 
+The relays actually being used on this car are **80 Ω**, slightly stiffer:
+
+| Supply | Per coil | Per tile of 7 | All 21 | Chip dissipation, all 7 on | Junction rise |
+|---|---|---|---|---|---|
+| 12.0 V | 150 mA | 1.05 A | 3.15 A | 0.20 W | +21 °C |
+| 13.8 V | 173 mA | 1.21 A | 3.62 A | 0.26 W | +28 °C |
+| 14.4 V | **180 mA** | 1.26 A | 3.78 A | 0.28 W | **+31 °C** |
+
+Worst case is 14.4 V into cold coils — coil resistance only rises as the winding warms,
+so 180 mA is the ceiling, not a midpoint. That is 72% of the ~250 mA all-on figure and
+about half the available 60 °C rise, so **all 7 channels per tile and all 21 on the board
+can be energised continuously with no derating.** The driver is not the constraint.
+
 Comfortably inside every limit above, with the total sitting at under half the ground
 pole's rating. The design is well matched to relay coils and has no headroom worth
 speaking of for driving actual loads — which is the whole point of the architecture.
