@@ -60,6 +60,51 @@ static void tick_a_while(uint32_t ms)
 
 /* --- individual checks ------------------------------------------------------ */
 
+/* Mirror main.cpp's shutdown_check() tail exactly -- the HOW, not the WHEN. This is the
+ * one path in the shipping firmware that cannot be exercised without hardware, and its
+ * failure mode is the worst one available: a board that cannot switch itself off, sat on
+ * a car battery. The WHEN (ign_wants_shutdown, the shutdown dwell, ign_may_cut_power) is
+ * ignition.cpp's and is covered by the host tests; only the rail collapsing is not.
+ *
+ * For this to prove anything, LATCH_IN must have nothing else holding it up. With J_IGN
+ * connected, 12V through R_LIGN 47k against R_LPD 22k puts ~3.8V on it -- far above the
+ * BTS7040's threshold -- so the latch has nothing to cut and the board stays up. That is
+ * not a failure, and the message below says so rather than letting it read as one. */
+static void power_down_test(void)
+{
+    Serial.println(F("\n-- dropping LATCH_HOLD --"));
+    Serial.println(F("  With J_IGN unplugged the board should go dark and this port"));
+    Serial.println(F("  should vanish. Plug J_IGN back in to wake it."));
+    Serial.flush();
+    delay(50);
+
+    ch_all_off();
+    sr_exchange();                     /* make sure the zeros actually reach the pins */
+    sr_outputs_enable(false);
+    digitalWrite(PIN_LED1, LOW);
+    digitalWrite(PIN_LED2, LOW);
+
+    digitalWrite(PIN_LATCH_HOLD, LOW); /* goodnight */
+
+    /* main.cpp feeds the watchdog through this wait because it has one. This build does
+     * not, so a plain delay is the equivalent. Same 250ms. */
+    delay(250);
+
+    /* Still here: the latch had nothing to cut. Come back up rather than sitting dark. */
+    digitalWrite(PIN_LATCH_HOLD, HIGH);
+    delay(5);
+    app_set_outputs_live(true);
+
+    Serial.println(F("\n  STILL ALIVE. LATCH_HOLD was low for 250ms and the rail did not"));
+    Serial.println(F("  collapse, so something else is holding the board up. Either:"));
+    Serial.println(F("    - J_IGN is still connected (R_LIGN holds LATCH_IN high), or"));
+    Serial.println(F("    - the ST-Link is feeding +3V3 through J_SWD pin 1, or"));
+    Serial.println(F("    - J_PWR is absent, so there was never a latch to cut."));
+    Serial.printf("  ignition sense reads %.1f V (needs to be near 0 for a real test)\n",
+                  app_ignition_mv() / 1000.0f);
+    Serial.println(F("  Outputs re-enabled; the board is back to normal."));
+}
+
 static void show_straps(void)
 {
     /* Sample the pins LIVE. This used to print the boot-latched `straps` struct while
@@ -281,6 +326,7 @@ static void menu(void)
     Serial.println(F("  0  all off"));
     Serial.println(F("  o  toggle the output enable (595 OE)"));
     Serial.println(F("  A  run d/e/c/i in one go"));
+    Serial.println(F("  P  drop LATCH_HOLD -- the real power-down path"));
     Serial.println(F("  W  force a watchdog reset, and time the output dropout"));
     Serial.println(F("  ?  this menu"));
 }
@@ -386,6 +432,9 @@ void loop(void)
     }
     case 'A':
         show_straps(); test_eeprom(); test_can(); test_imu(); show_channels();
+        break;
+    case 'P':
+        power_down_test();
         break;
     case 'W':
         /* Deliberately hang so the watchdog fires. The board comes back and reports how
