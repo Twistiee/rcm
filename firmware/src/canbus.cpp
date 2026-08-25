@@ -210,6 +210,18 @@ static void claim_bank_zero(void)
     if (default_filter) { next_bank = 0; default_filter = false; }
 }
 
+/* Rewind the bank allocator so the whole filter set can be rebuilt from scratch.
+ * Needed because a filter can now change while the board is running: pointing the
+ * ignition at an ECU RPM id installs a filter for it. Without a rewind, reinstalling
+ * appends a second copy of every filter and walks next_bank towards the 28-bank
+ * ceiling, after which new filters are silently dropped and the board goes deaf to
+ * exactly the frame it was just told to listen for. */
+void can_filters_reset(void)
+{
+    next_bank = 0;
+    default_filter = false;
+}
+
 void can_filter_block(uint16_t base, uint16_t mask)
 {
     claim_bank_zero();

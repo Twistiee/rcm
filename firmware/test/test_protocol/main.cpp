@@ -47,6 +47,10 @@ bool can_recv(can_frame_t *f)
     RX.erase(RX.begin());
     return true;
 }
+/* The real allocator hands out one of 28 hardware banks per call and can be rewound;
+ * the model is a list that can be cleared. Modelling the RESET is the point -- it is
+ * what stops a changed RPM id from stacking a second filter on top of the old one. */
+void can_filters_reset(void)                   { FILTERS.clear(); }
 void can_filter_block(uint16_t base, uint16_t) { FILTERS.push_back(base); }
 void can_filter_id(uint16_t id)                { FILTERS.push_back(id); }
 bool     can_bus_off(void)   { return false; }
@@ -354,6 +358,81 @@ static void test_set_ign_times_clamps(void)
     TEST_ASSERT_EQUAL_UINT16(3000, cfg.ign_crank_max_ms);
 }
 
+/* --- the ECU run source ------------------------------------------------------
+ * This opcode is what makes "hold to stop a RUNNING engine" mean anything. Without a
+ * run source engine_running() is permanently false, the state machine never reaches
+ * IGN_ST_RUNNING, and every press -- including an accidental brush -- falls through to
+ * the instant-shutdown branch. The field existed and was read in two places; nothing
+ * could ever write it. */
+
+static void test_set_run_src_takes_id_and_threshold(void)
+{
+    cfg.ecu_rpm_can_id = 0;
+    cfg.ign_run_rpm    = 400;
+    /* 0x201, 500 rpm */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_RUN_SRC, 0x01, 0x02, 0xF4, 0x01 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_HEX16(0x201, cfg.ecu_rpm_can_id);
+    TEST_ASSERT_EQUAL_UINT16(500, cfg.ign_run_rpm);
+}
+
+static void test_set_run_src_installs_a_filter_for_the_id(void)
+{
+    /* An id with no filter behind it is decoration: bxCAN drops the frame before any
+     * of this code sees it, and the board stays blind to a running engine while
+     * claiming to be configured for one. */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_RUN_SRC, 0x01, 0x02, 0x90, 0x01 });
+    run_ms(TICK_MS * 4);
+    bool found = false;
+    for (size_t i = 0; i < FILTERS.size(); i++) if (FILTERS[i] == 0x201) found = true;
+    TEST_ASSERT_TRUE_MESSAGE(found, "no receive filter was installed for the RPM id");
+}
+
+static void test_changing_the_run_src_does_not_grow_the_filter_set(void)
+{
+    /* The banks are a finite resource (28) and they are ORed, so appending rather than
+     * rebuilding would both leave the OLD id still accepted and eventually exhaust the
+     * table -- at which point new filters are dropped silently and the board goes deaf
+     * to the frame it was just told to listen for. */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_RUN_SRC, 0x01, 0x02, 0x90, 0x01 });
+    run_ms(TICK_MS * 4);
+    const size_t after_first = FILTERS.size();
+
+    for (int i = 0; i < 5; i++) {
+        inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_RUN_SRC, 0x11, 0x03, 0x90, 0x01 });
+        run_ms(TICK_MS * 4);
+    }
+    TEST_ASSERT_EQUAL_HEX16(0x311, cfg.ecu_rpm_can_id);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)after_first, (uint32_t)FILTERS.size());
+
+    bool stale = false;
+    for (size_t i = 0; i < FILTERS.size(); i++) if (FILTERS[i] == 0x201) stale = true;
+    TEST_ASSERT_FALSE_MESSAGE(stale, "the old RPM id is still being accepted");
+}
+
+static void test_set_run_src_refuses_a_non_standard_id(void)
+{
+    /* 0x800 and up is not an 11-bit id. Masking it would quietly point the ignition at
+     * somebody else's traffic, so it is refused outright and the old value kept. */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_RUN_SRC, 0x01, 0x02, 0x90, 0x01 });
+    run_ms(TICK_MS * 4);
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_RUN_SRC, 0x00, 0x08, 0x90, 0x01 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_HEX16(0x201, cfg.ecu_rpm_can_id);
+}
+
+static void test_set_run_src_zero_disables_the_can_source(void)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_RUN_SRC, 0x01, 0x02, 0x90, 0x01 });
+    run_ms(TICK_MS * 4);
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_RUN_SRC, 0x00, 0x00, 0x00, 0x00 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_HEX16(0, cfg.ecu_rpm_can_id);
+    /* A zero threshold means "leave it alone" -- 0 rpm would make a stopped engine
+     * read as running the moment any frame arrived. */
+    TEST_ASSERT_EQUAL_UINT16(400, cfg.ign_run_rpm);
+}
+
 static void test_set_failsafe_and_bitrate(void)
 {
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_FAILSAFE, 0x03, 0x00, 0x10 });
@@ -632,6 +711,11 @@ int main(void)
     RUN_TEST(test_set_failsafe_and_bitrate);
     RUN_TEST(test_set_ignition_rejects_bad_channel_numbers);
     RUN_TEST(test_set_ign_times_clamps);
+    RUN_TEST(test_set_run_src_takes_id_and_threshold);
+    RUN_TEST(test_set_run_src_installs_a_filter_for_the_id);
+    RUN_TEST(test_changing_the_run_src_does_not_grow_the_filter_set);
+    RUN_TEST(test_set_run_src_refuses_a_non_standard_id);
+    RUN_TEST(test_set_run_src_zero_disables_the_can_source);
     RUN_TEST(test_reboot_needs_the_magic_byte);
     RUN_TEST(test_config_can_be_saved_and_comes_back);
     RUN_TEST(test_a_default_board_boots_with_nothing_energised);

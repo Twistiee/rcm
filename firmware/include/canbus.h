@@ -42,6 +42,7 @@ bool can_recv(struct can_frame_t *f);          /* false when the FIFO is empty *
 
 /* Accept only these. bxCAN has 28 filter banks and using them is cheaper than
  * waking the CPU for every frame on a busy engine bus. */
+void can_filters_reset(void);
 void can_filter_block(uint16_t base, uint16_t mask);
 void can_filter_id(uint16_t id);
 void can_filter_accept_all(void);

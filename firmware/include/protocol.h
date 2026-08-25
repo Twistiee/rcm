@@ -86,6 +86,13 @@
                                       * 0xFF on any channel means "not configured" */
 #define RCM_OP_SET_IGN_TIMES  0x16   /* b1..b2 hold-to-stop ms, b3..b4 crank max ms,
                                       * b5..b6 shutdown hold ms (optional) */
+#define RCM_OP_SET_RUN_SRC    0x17   /* b1..b2 LE ECU RPM frame id (0 = no CAN source),
+                                      * b3..b4 LE rpm at or above which the engine counts
+                                      * as running. Installs a receive filter for the id,
+                                      * so this is what makes "hold to stop a RUNNING
+                                      * engine" work at all -- without a run source the
+                                      * board cannot tell a running engine from a stopped
+                                      * one, and every press is treated as "switch off". */
 
 /* --- OUTPUTS frame, byte 3 status flags ------------------------------------ */
 #define RCM_ST_OUT_ENABLED  0x01

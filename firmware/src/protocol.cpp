@@ -13,6 +13,11 @@
 #include "app.h"
 
 static uint8_t  seq;
+static void     install_filters(void);
+/* Set when a control frame changes something the hardware filters depend on. Applied
+ * after the receive loop has finished draining, never inside it: reconfiguring filter
+ * banks while walking the FIFO is asking for the frames still in it to be discarded. */
+static bool     filters_dirty;
 static uint32_t last_rx_ms;
 static bool     failsafe_active;
 static bool     reboot_pending;
@@ -62,6 +67,7 @@ void proto_begin(void)
     last_rx_ms = millis();
     failsafe_active = false;
     reboot_pending = false;
+    filters_dirty = false;
     peer_prev = 0;
     peer_seen = false;
 
@@ -72,6 +78,15 @@ void proto_begin(void)
      * The node block is 16 consecutive ids starting at a 16-aligned base, so one
      * mask filter covers the lot -- provided can_base_id really is 16-aligned,
      * which is why proto_sanitise_base() forces it. */
+    install_filters();
+}
+
+/* Separated from proto_begin() because the filter set is no longer fixed for the life
+ * of the board: SET_RUN_SRC changes which ECU frame we listen to. Always rebuilt from
+ * bank 0 rather than appended to -- see can_filters_reset(). */
+static void install_filters(void)
+{
+    can_filters_reset();
     can_filter_block(proto_node_base(), 0x7F0);
     can_filter_id(proto_global_id());
     if (cfg.peer_node != PEER_NONE)
@@ -202,6 +217,22 @@ static void handle_ctl(const struct can_frame_t *f)
             ch_command(ch, false);
             cfg.ch[ch].mode  = f->data[2];
             cfg.ch[ch].flags = f->data[3];
+        }
+        break;
+
+    case RCM_OP_SET_RUN_SRC:
+        /* An id of 0 legitimately means "no CAN run source". Anything at or above
+         * 0x800 is not a standard 11-bit id and would be silently truncated into
+         * somebody else's traffic, so it is refused rather than masked. */
+        if (f->len >= 5) {
+            const uint16_t id  = (uint16_t)(f->data[1] | (f->data[2] << 8));
+            const uint16_t rpm = (uint16_t)(f->data[3] | (f->data[4] << 8));
+            if (id < 0x800) {
+                cfg.ecu_rpm_can_id = id;
+                if (rpm) cfg.ign_run_rpm = rpm;
+                /* The id is useless without a filter to let it through. */
+                filters_dirty = true;
+            }
         }
         break;
 
@@ -352,6 +383,11 @@ void proto_poll(uint32_t now_ms)
             /* Somebody is still talking to this board, so it is not idle. */
             ign_note_activity(now_ms);
         }
+    }
+
+    if (filters_dirty) {
+        filters_dirty = false;
+        install_filters();
     }
 
     /* --- bus timeout ---

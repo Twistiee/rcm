@@ -58,6 +58,16 @@ OP = {
     "baseid":       0x12,
     "timing":       0x13,
     "failsafe":     0x14,
+    # mode(0=maintained 1=momentary), then brake / starter / run-signal input channels
+    # and the RUN-position output, each 0-based or 255 for "not configured".
+    "ignition":     0x15,
+    # hold-to-stop ms, crank max ms, shutdown hold ms -- each a 16-bit LE pair.
+    "igntimes":     0x16,
+    # ECU RPM frame id (0 = none) then the rpm at or above which the engine counts as
+    # running. rusEFI publishes RPM at base+1, so 0x201 for a stock base. This is what
+    # makes hold-to-stop work: with no run source the board cannot tell a running
+    # engine from a stopped one and treats every press as "switch off".
+    "runsrc":       0x17,
 }
 MODES = {"unused": 0, "out": 1, "in": 2}
 
@@ -482,6 +492,11 @@ def main():
     except Exception as e:
         sys.exit("could not open %s:%s -- %s" % (args.interface, args.channel, e))
 
+    # Same reasoning at the other end: an slcan adapter has only just been sent
+    # C / S<rate> / O, and a frame written into that gap can be dropped.
+    if args.interface not in ("virtual",):
+        time.sleep(0.15)
+
     sim_bus, stop, thread = None, None, None
     if args.with_sim:
         sim_bus = can.Bus(**kw)
@@ -499,6 +514,12 @@ def main():
             stop.set()
             thread.join(timeout=1.0)
             sim_bus.shutdown()
+        # Let anything just transmitted actually reach the wire before tearing the bus
+        # down. slcan's shutdown() closes the CAN channel with a `C` command, and a frame still
+        # queued in the adapter dies with it -- so a one-shot `set` or `ctl` would print
+        # a cheerful confirmation and change nothing at all. Cost 150ms on commands that
+        # exit immediately; the streaming ones were never affected.
+        time.sleep(0.15)
         bus.shutdown()
 
 
