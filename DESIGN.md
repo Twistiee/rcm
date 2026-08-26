@@ -1633,6 +1633,20 @@ than the existing indicators, which sit at roughly 0.7 mA because a 3.0–3.2 V 
 a 3.3 V rail through 1 kΩ has almost no headroom (see "Green LEDs are dim"). Anything fed
 from 12 V does not have that problem.
 
+### 1b. Bring `+12V_SW` out to a terminal
+
+`+12V_SW` — the latch's output, and therefore "the board is switched on" as a **rail**
+rather than as a shift-register output — currently only reaches `JB1` pin 1, the buck
+input header.
+
+It is the right feed for an ECU's ignition-on input on a push-button car, and better than
+any channel for it: a channel goes high-impedance for ~22 ms on every reset, which an ECU
+reads as key-off, while `+12V_SW` was measured surviving a reset with the ignition
+released (the rail capacitance bridges the gap before firmware re-asserts `LATCH_HOLD`).
+Tapping a 0.1 inch header pin for something that matters that much is not good enough.
+
+One pole on the merged power connector below, or its own terminal.
+
 ### 2. Merge `J_PWR` and `J_IGN` into one connector
 
 Two 2-pin `KF2EDG` terminals with **GND duplicated between them**, and two cables to the

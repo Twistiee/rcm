@@ -37,6 +37,39 @@ cable in and back out again.
 
 **Eight.** Add a ninth for a rear fog if one is fitted.
 
+### Who drives which coil
+
+**The ECU owns main, starter and fuel pump.** rusEFI has the sensor data those three
+depend on and does not need a bus to act, so they are wired to its outputs directly.
+The relay module drives the remaining five: fan, tail, both headlight circuits and the
+horn.
+
+The consequence is worth stating plainly: **fuelling and ignition do not depend on this
+board's outputs, or on CAN, at all.** The relay module decides whether the car is on. It
+has no say in whether the engine keeps running once it is.
+
+### Telling the ECU the ignition is on
+
+With a momentary start button there is no key-on wire, so something has to give the ECU a
+steady "ignition on". **Feed it from `+12V_SW`, not from a channel.**
+
+A channel is the obvious choice and it is the wrong one. Every channel goes
+high-impedance on any reset and comes back about 22 ms later, and an ECU reading that as
+key-off mid-drive is exactly the failure this architecture exists to avoid. `+12V_SW` is
+the BTS7040's output rather than a shift-register output, and it does not drop: a reset
+was measured on revA with the ignition released and the board came straight back, because
+the rail capacitance bridges the few milliseconds before firmware re-asserts
+`LATCH_HOLD`.
+
+It still does the right thing at the other end — a deliberate power-down drops `+12V_SW`,
+and the ECU shuts down with the board.
+
+`+12V_SW` currently only reaches **`JB1` pin 1**, the buck input header, so tap it there.
+A revision should bring it out to a proper terminal.
+
+Because the ECU owns the fuel pump, there is no reason to set a `failsafe_state` bit for
+priming — the ECU primes on its own ignition input.
+
 Two that look like they need one and do not:
 
 - **Reverse light** — the gearbox switch already switches +12V. Leave it hardwired. The
@@ -84,20 +117,19 @@ Everything with a shared ground is a relay, whatever its current.
 
 | Ch | Function | Notes |
 |---|---|---|
-| 1 | `FN_MAIN_RELAY` | set `failsafe_state` bit |
-| 2 | `FN_FUEL_PUMP` | `failsafe_state` on = primes at wake |
-| 3 | `FN_FAN_1` | |
-| 4 | `FN_TAIL` | |
-| 5 | `FN_HEADLIGHT_LOW` | |
-| 6 | `FN_HEADLIGHT_HIGH` | |
-| 7 | `FN_HORN` | `OUT_PULSE` if you want a chirp |
-| 8 | `FN_RAIN_LIGHT` | direct if separately grounded |
-| 9-10 | spare outputs | |
-| 11 | `FN_IN_BRAKE` (input) | from the hardwired brake switch |
-| 12 | spare input | |
+| 1 | `FN_FAN_1` | relay |
+| 2 | `FN_TAIL` | relay — shared cluster ground |
+| 3 | `FN_HEADLIGHT_LOW` | relay |
+| 4 | `FN_HEADLIGHT_HIGH` | relay |
+| 5 | `FN_HORN` | relay; `OUT_PULSE` if you want a chirp |
+| 6 | `FN_RAIN_LIGHT` | direct, if it is a separate unit with its own earth |
+| 7-9 | spare outputs | |
+| 10 | `FN_IN_BRAKE` (input) | from the hardwired brake switch |
+| 11 | spare input | |
 
-Twelve of twenty-one. The starter is deliberately absent: the ECU owns it, and the
-firmware masks it out of every CAN and peer path so a stray frame cannot crank.
+Eleven of twenty-one, with plenty in hand. Main, starter and fuel pump are absent because
+the ECU drives them. The starter would be absent regardless: the firmware masks it out of
+every CAN and peer path so a stray or replayed frame cannot crank the engine.
 
 **Keypad** (node 4-7, channels default to inputs): headlights, high beam, horn, rain
 light, fan override, pump prime, traction/launch/map-select, plus tell-tale inputs. Ten
