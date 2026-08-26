@@ -66,37 +66,39 @@ already e-fused -- current limit, short-circuit survival and thermal shutdown ar
 part. The budget is the switch's **4.5 A**, less the board's own draw, and today that
 rail feeds nothing but the buck.
 
-### VIGN is a power feed, not a signal
+### VIGN is a power input, and it is diode-isolated
 
-rusEFI's wiring documentation is explicit: *"Key-on power is supplied to the ECU in order
-to power the CPU and logic core of the ECU."* VIGN draws real operating current, so
-tapping `JB1` pin 1 -- a 0.1 inch header pin -- is not an appropriate source. This wants
-the proper `+12V_SW` terminal revision B should add, sized for the ECU.
+Checked against the **super-uaEFI rev b schematic**, power sheet (`Module-power_12and5V`).
 
-On this car the ECU also has **always-hot permanent power**, so most of its supply does
-not come through here at all. `+12V_SW` is telling it to wake, and carrying whatever its
-logic core draws while it does.
+`IN_VIGN` (the vehicle pin) goes through **D417, a B5819W Schottky**, onto the same
+internal rail that `V12_RAW` reaches through **D416**, another B5819W. That rail runs
+into the input filter and then straight into the **LMR14020 buck**. So the two supplies
+are **diode-OR'd into the ECU's main converter**: key-on power really can run the whole
+ECU, which matches rusEFI's general wiring guidance.
 
-Confirm the actual draw from the super-uaEFI schematic before sizing the wire -- the
-pinout page would not load, so the figure here is not established.
+Two consequences, and they point in opposite directions:
 
-### Do not feed the main relay's output back to VIGN
+**Size it as a supply, not a signal.** Worst case is the buck's whole draw -- order of an
+amp, less whenever the permanent feed is also present and sharing. This is not a pin to
+hang off `JB1`'s 0.1 inch header; it wants the `+12V_SW` terminal revision B should add.
 
-rusEFI's guide suggests *"Feed back VIGN with power returning from the main relay"* so an
-ECU-controlled relay keeps the ECU alive through its own shutdown and gives it a stable
-voltage reading. **This install needs neither** -- the ECU has permanent power for the
-first and can read the same voltage from it for the second.
+**Nothing can flow back out of it.** D417's cathode is on the internal rail and its anode
+on the pin, so current enters the ECU and cannot leave. **No blocking diode is needed in
+the feed from `+12V_SW`** -- the ECU already has one, and a second would only cost another
+few hundred millivolts.
 
-Wiring it anyway would be actively harmful here. With VIGN fed from `+12V_SW`, running
-the main relay back into VIGN puts battery voltage onto this board's switched rail, on the
-load side of the BTS7040. The relay module would drop `LATCH_HOLD`, find the rail still
-alive, and never switch off -- the "latch had nothing to cut" path in `main.cpp`, except
-permanent. You would find it as a flat battery, not as an error.
+The voltage the ECU *reads* is a separate path: `IN_VIGN` also feeds an R411 33k / R413
+6.8k divider with a 100n cap and 1N4148 clamps to `VBAT`, and that node -- confusingly
+also called `VIGN` -- is the ADC input on **PA5**. On its own that divider plus the
+indicator LED draws well under a milliamp; the current that matters is the buck's.
 
-There is nothing to guard against as long as that wire does not exist. The one case that
-needs checking is whether the ECU ties its main relay output to the ignition rail
-**internally**, which some hardware does regardless of how it is wired. If the schematic
-shows that, put a blocking diode in the `+12V_SW` feed with its cathode at the ECU.
+Worth noting for anyone reading rusEFI's guide and worrying about the main relay feeding
+back into VIGN: on this board `+12V_FROM_MAIN_RELAY` and `+12V_FROM_KEY` are separate
+nets, bridged only by **R9, which is marked DNP**. They are not joined unless somebody
+fits that resistor.
+
+Schematic revisions differ -- the same repository carries v5 and v9 mechanical files -- so
+re-check against the revision actually in the car before relying on this.
 
 Because the ECU owns the fuel pump, there is no reason to set a `failsafe_state` bit for
 priming — the ECU primes on its own ignition input.
