@@ -1651,8 +1651,15 @@ another module, a supply for a dash or a keypad's backlight. Unlike a channel it
 **source**, not a sink, so it works for things that need feeding rather than earthing --
 which is the one thing 21 low-side channels cannot do.
 
-Size it for real current rather than a sense line, and fuse it: the BTS7040 will happily
-pass more than a small terminal or thin wire wants.
+**No fuse needed.** The BTS7040 is a smart high-side switch, so the rail is already
+e-fused: it current-limits, survives a short, and thermally shuts down. Putting a fuse in
+series with a PROFET adds a failure point and protects nothing it does not already
+protect.
+
+Budget: the part is **40 mΩ / 4.5 A**, and `+12V_SW` presently feeds nothing but the
+buck, so most of that is available. Size the terminal and the wire for the switch's
+limit rather than for the expected load -- the protection threshold is set by the device,
+not by whatever gauge someone taps onto it.
 
 One pole on the merged power connector below, or its own terminal.
 

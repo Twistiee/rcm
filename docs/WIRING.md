@@ -67,6 +67,11 @@ and the ECU shuts down with the board.
 `+12V_SW` currently only reaches **`JB1` pin 1**, the buck input header, so tap it there.
 A revision should bring it out to a proper terminal.
 
+It needs no fuse. The rail comes off the BTS7040, a smart high-side switch, so it is
+already e-fused -- current limit, short-circuit survival and thermal shutdown are in the
+part. The budget is the switch's **4.5 A**, less the board's own draw, and today that
+rail feeds nothing but the buck.
+
 Because the ECU owns the fuel pump, there is no reason to set a `failsafe_state` bit for
 priming — the ECU primes on its own ignition input.
 
