@@ -61,16 +61,41 @@ was measured on revA with the ignition released and the board came straight back
 the rail capacitance bridges the few milliseconds before firmware re-asserts
 `LATCH_HOLD`.
 
-It still does the right thing at the other end — a deliberate power-down drops `+12V_SW`,
-and the ECU shuts down with the board.
-
-`+12V_SW` currently only reaches **`JB1` pin 1**, the buck input header, so tap it there.
-A revision should bring it out to a proper terminal.
-
 It needs no fuse. The rail comes off the BTS7040, a smart high-side switch, so it is
 already e-fused -- current limit, short-circuit survival and thermal shutdown are in the
 part. The budget is the switch's **4.5 A**, less the board's own draw, and today that
 rail feeds nothing but the buck.
+
+### Two things about VIGN that change how this is wired
+
+**It is not a sense line.** rusEFI's wiring documentation is explicit: *"Key-on power is
+supplied to the ECU in order to power the CPU and logic core of the ECU."* VIGN draws real
+operating current, so tapping `JB1` pin 1 -- a 0.1 inch header pin -- is not an
+appropriate source. This wants the proper `+12V_SW` terminal revision B should add, sized
+for the ECU rather than treated as a signal.
+
+**The ECU feeds VIGN back from its own main relay.** From the same guide: *"Feed back
+VIGN with power returning from the main relay."* The ECU latches its own supply, exactly
+as this board does with the BTS7040.
+
+That second point cuts both ways:
+
+- **Good:** once the main relay closes the ECU is holding itself up, so a brief
+  interruption of whatever woke it no longer drops the ECU. The 22 ms reset blip stops
+  being fatal, which was the whole reason for preferring `+12V_SW` over a channel.
+- **Bad:** if VIGN is commoned with `+12V_SW`, the main relay is **backfeeding this
+  board's switched rail**, on the load side of the BTS7040. The relay module would drop
+  `LATCH_HOLD`, find the rail still alive, and never switch off. That is exactly the
+  "the latch had nothing to cut" path in `main.cpp` -- except permanent.
+
+**Fit a blocking diode** in the feed from `+12V_SW` to VIGN, cathode at the ECU. A few
+hundred millivolts, and it removes any possibility of the ECU holding the whole car awake.
+
+**Verify against your own board first.** Those quotes are from rusEFI's general wiring
+guide. The super-uaEFI pinout page would not load, so the actual VIGN current draw and
+whether the main-relay feedback is already diode-isolated on that hardware are both
+unconfirmed. Read them off the schematic: the wrong answer here is a car that will not
+switch off.
 
 Because the ECU owns the fuel pump, there is no reason to set a `failsafe_state` bit for
 priming — the ECU primes on its own ignition input.
