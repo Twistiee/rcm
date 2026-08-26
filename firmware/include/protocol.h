@@ -93,6 +93,12 @@
                                       * engine" work at all -- without a run source the
                                       * board cannot tell a running engine from a stopped
                                       * one, and every press is treated as "switch off". */
+#define RCM_OP_SET_PEER       0x18   /* b1 peer node 0..7 or 0xFF for none,
+                                      * b2..b4 channels that follow the peer at all,
+                                      * b5..b7 of those, the ones where a PRESS TOGGLES
+                                      * rather than follows -- momentary button, latching
+                                      * load. Mirroring is strictly channel-for-channel:
+                                      * peer channel N drives channel N here. */
 
 /* --- OUTPUTS frame, byte 3 status flags ------------------------------------ */
 #define RCM_ST_OUT_ENABLED  0x01

@@ -220,6 +220,23 @@ static void handle_ctl(const struct can_frame_t *f)
         }
         break;
 
+    case RCM_OP_SET_PEER:
+        /* 0xFF disables mirroring; anything else must be a real node. A typo that
+         * pointed this at a node which does not exist would leave the board waiting
+         * for a keypad that never speaks, which looks exactly like a wiring fault. */
+        if (f->len >= 8 && (f->data[1] < 8 || f->data[1] == PEER_NONE)) {
+            cfg.peer_node        = f->data[1];
+            cfg.peer_mask        = unpack21(&f->data[2]);
+            cfg.peer_toggle_mask = unpack21(&f->data[5]);
+            /* Forget the old peer's button state. Carrying it across would compare the
+             * new peer's first frame against whatever the old one last sent, and every
+             * toggle channel whose bit differs would fire on arrival. */
+            peer_prev = 0;
+            peer_seen = false;
+            filters_dirty = true;          /* the peer's INPUTS id needs a filter */
+        }
+        break;
+
     case RCM_OP_SET_RUN_SRC:
         /* An id of 0 legitimately means "no CAN run source". Anything at or above
          * 0x800 is not a standard 11-bit id and would be silently truncated into

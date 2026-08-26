@@ -433,6 +433,85 @@ static void test_set_run_src_zero_disables_the_can_source(void)
     TEST_ASSERT_EQUAL_UINT16(400, cfg.ign_run_rpm);
 }
 
+/* --- configuring the peer over the bus ---------------------------------------
+ * peer_node / peer_mask / peer_toggle_mask were read by the firmware and written by
+ * nothing, so a keypad-to-relay-module pair could not be set up without a recompile.
+ * peer_toggle_mask is the one that matters most: it is what turns a momentary button
+ * into a latching load. */
+
+static void set_peer_over_can(uint8_t node, uint32_t mask, uint32_t toggle)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_PEER, node,
+             (uint8_t)mask,   (uint8_t)(mask >> 8),   (uint8_t)(mask >> 16),
+             (uint8_t)toggle, (uint8_t)(toggle >> 8), (uint8_t)(toggle >> 16) });
+    run_ms(TICK_MS * 4);
+}
+
+static void test_set_peer_takes_node_and_both_masks(void)
+{
+    cfg.peer_node = PEER_NONE;
+    set_peer_over_can(4, 0x000103, 0x000002);
+    TEST_ASSERT_EQUAL_UINT8(4, cfg.peer_node);
+    TEST_ASSERT_EQUAL_HEX32(0x000103, cfg.peer_mask);
+    TEST_ASSERT_EQUAL_HEX32(0x000002, cfg.peer_toggle_mask);
+}
+
+static void test_set_peer_installs_a_filter_for_the_peers_inputs(void)
+{
+    /* Without a filter the keypad's frames are dropped by bxCAN before any of this code
+     * runs, and the board sits there configured and deaf. */
+    set_peer_over_can(4, 0x1FFFFF, 0);
+    bool found = false;
+    for (size_t i = 0; i < FILTERS.size(); i++) if (FILTERS[i] == PEER_ID) found = true;
+    TEST_ASSERT_TRUE_MESSAGE(found, "no receive filter for the peer's INPUTS frame");
+}
+
+static void test_set_peer_none_disables_and_drops_the_filter(void)
+{
+    set_peer_over_can(4, 0x1FFFFF, 0);
+    set_peer_over_can(PEER_NONE, 0, 0);
+    TEST_ASSERT_EQUAL_UINT8(PEER_NONE, cfg.peer_node);
+    for (size_t i = 0; i < FILTERS.size(); i++)
+        TEST_ASSERT_NOT_EQUAL_MESSAGE(PEER_ID, FILTERS[i],
+                                      "still listening to a peer that was switched off");
+}
+
+static void test_set_peer_rejects_a_node_that_cannot_exist(void)
+{
+    set_peer_over_can(4, 0x000001, 0);
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_PEER, 9, 0xFF, 0xFF, 0x1F, 0, 0, 0 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT8(4, cfg.peer_node);
+    TEST_ASSERT_EQUAL_HEX32(0x000001, cfg.peer_mask);
+}
+
+static void test_changing_the_peer_re_baselines_before_acting(void)
+{
+    /* THE ONE THAT BITES. A toggle fires on a rising edge, so the remembered previous
+     * frame has to be thrown away when the peer changes. Keep it, and the new peer's
+     * very first frame is compared against whatever the OLD one last sent -- every
+     * toggle channel whose bit differs fires the moment the keypad is plugged in. */
+    set_peer_over_can(4, 0x000001, 0x000001);
+    inject(PEER_ID, { 0x00, 0, 0 });            /* baseline: button not pressed */
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_FALSE(sim_driver_on(0));
+
+    set_peer_over_can(4, 0x000001, 0x000001);   /* reconfigured */
+
+    inject(PEER_ID, { 0x01, 0, 0 });            /* first frame after: baseline ONLY */
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(0),
+                              "a toggle fired on the first frame from a new peer");
+
+    inject(PEER_ID, { 0x00, 0, 0 });
+    run_ms(TICK_MS * 2);
+    inject(PEER_ID, { 0x01, 0, 0 });            /* a real press now works */
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_TRUE(sim_driver_on(0));
+}
+
 static void test_set_failsafe_and_bitrate(void)
 {
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_FAILSAFE, 0x03, 0x00, 0x10 });
@@ -732,5 +811,10 @@ int main(void)
     RUN_TEST(test_first_peer_frame_only_sets_a_baseline);
     RUN_TEST(test_peer_mask_bounds_what_it_can_touch);
     RUN_TEST(test_peer_adds_a_filter);
+    RUN_TEST(test_set_peer_takes_node_and_both_masks);
+    RUN_TEST(test_set_peer_installs_a_filter_for_the_peers_inputs);
+    RUN_TEST(test_set_peer_none_disables_and_drops_the_filter);
+    RUN_TEST(test_set_peer_rejects_a_node_that_cannot_exist);
+    RUN_TEST(test_changing_the_peer_re_baselines_before_acting);
     return UNITY_END();
 }

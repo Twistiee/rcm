@@ -68,6 +68,10 @@ OP = {
     # makes hold-to-stop work: with no run source the board cannot tell a running
     # engine from a stopped one and treats every press as "switch off".
     "runsrc":       0x17,
+    # peer node (0-7, or 255 for none), then the channels that follow that node, then
+    # of those the ones where a PRESS TOGGLES rather than follows. Mirroring is strictly
+    # channel-for-channel: peer channel N drives channel N here.
+    "peer":         0x18,
 }
 MODES = {"unused": 0, "out": 1, "in": 2}
 
@@ -334,6 +338,37 @@ def cmd_ctl(bus, args):
         extra = [0xA5]
     elif args.op == "enable":
         extra = [int(args.args[0], 0)] if args.args else [1]
+    elif args.op == "peer":
+        # Masks are given as channel lists, not as three little-endian bytes: "peer 4
+        # 1,2,5 5" is a great deal harder to get wrong than six hex numbers, and getting
+        # the toggle mask wrong means a button latches when it should follow.
+        if len(args.args) < 2:
+            sys.exit("peer <node|none> <follow-channels> [toggle-channels] -- "
+                     "channels are comma-separated, 1-21, or 'all'")
+        node = 0xFF if args.args[0] in ("none", "off") else int(args.args[0], 0)
+        if node != 0xFF and not 0 <= node <= 7:
+            sys.exit("peer node must be 0..7, or 'none'")
+
+        def chlist(spec):
+            if spec in ("none", ""):
+                return 0
+            if spec == "all":
+                return (1 << CHANNELS) - 1
+            v = 0
+            for part in spec.split(","):
+                ch = int(part, 0)
+                if not 1 <= ch <= CHANNELS:
+                    sys.exit("channel must be 1..%d" % CHANNELS)
+                v |= 1 << (ch - 1)
+            return v
+
+        follow = chlist(args.args[1])
+        toggle = chlist(args.args[2]) if len(args.args) > 2 else 0
+        if toggle & ~follow:
+            sys.exit("toggle channels must also be follow channels: %s are not"
+                     % ",".join(str(c + 1) for c in range(CHANNELS)
+                                if (toggle & ~follow) >> c & 1))
+        extra = [node, *pack21(follow), *pack21(toggle)]
     elif args.op == "chmode":
         if len(args.args) < 2:
             sys.exit("chmode <channel> <out|in|unused> [flags]")
