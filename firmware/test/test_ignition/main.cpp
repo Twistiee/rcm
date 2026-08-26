@@ -192,6 +192,62 @@ static void test_holding_the_wake_press_does_not_shut_the_board_down(void)
     TEST_ASSERT_TRUE_MESSAGE(ign_wants_shutdown(), "hold-to-stop stopped working");
 }
 
+static void test_a_wake_press_the_boot_sample_missed_is_still_consumed(void)
+{
+    /* ign_begin() samples the ignition ONCE. That sample is not trustworthy: a short
+     * press, or 12V still climbing through the 6V threshold at that instant, reads LOW
+     * while the button is in fact still down.
+     *
+     * Arming on it made the wake press itself look like a fresh rising edge on an armed
+     * button. Brake up means shut down, so the board woke, immediately requested a
+     * shutdown, and died as soon as the button was released. It presents as a board that
+     * will not wake at all -- and you go looking at the latch, the supply and the
+     * BTS7040 before you suspect the state machine. Found on the bench doing exactly
+     * that. */
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.input_debounce_ms = 25;
+    cfg.ign_mode = IGN_MOMENTARY;
+    cfg.ign_brake_ch = IGN_CH_NONE; cfg.ign_start_ch = IGN_CH_NONE;
+    cfg.ign_run_ch = IGN_CH_NONE;
+    cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
+    ch_begin();
+
+    sw = false;                 /* what the boot sample wrongly reads */
+    ign_begin(false);
+    sw = true;                  /* the truth: the button is still down */
+    tick(200);
+    TEST_ASSERT_FALSE_MESSAGE(ign_wants_shutdown(),
+                              "a mis-sampled wake press switched the board off");
+
+    sw = false; tick(100);      /* the release is what arms it */
+    sw = true;  tick(100);      /* and now a real press means something */
+    TEST_ASSERT_TRUE_MESSAGE(ign_wants_shutdown(),
+                             "the button never armed after the wake press ended");
+}
+
+static void test_a_press_that_ended_before_boot_still_arms(void)
+{
+    /* The other half, and the reason arming watches the LEVEL rather than a falling
+     * edge. A press brief enough to latch the board and be over before firmware runs
+     * never produces an edge for anyone to see. Waiting for one would leave the button
+     * dead forever -- the board would come up and then ignore you. */
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.input_debounce_ms = 25;
+    cfg.ign_mode = IGN_MOMENTARY;
+    cfg.ign_brake_ch = IGN_CH_NONE; cfg.ign_start_ch = IGN_CH_NONE;
+    cfg.ign_run_ch = IGN_CH_NONE;
+    cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
+    ch_begin();
+
+    sw = false;                 /* already over by the time we run */
+    ign_begin(false);
+    tick(100);                  /* no falling edge will ever arrive */
+
+    sw = true; tick(100);
+    TEST_ASSERT_TRUE_MESSAGE(ign_wants_shutdown(),
+                             "the button never armed, so the board ignores it forever");
+}
+
 /* --- momentary: starting ---------------------------------------------------- */
 
 static void test_press_with_brake_cranks(void)
@@ -694,6 +750,8 @@ int main(void)
     RUN_TEST(test_maintained_ignores_a_brief_dropout);
     RUN_TEST(test_the_wake_press_is_consumed);
     RUN_TEST(test_holding_the_wake_press_does_not_shut_the_board_down);
+    RUN_TEST(test_a_wake_press_the_boot_sample_missed_is_still_consumed);
+    RUN_TEST(test_a_press_that_ended_before_boot_still_arms);
     RUN_TEST(test_press_with_brake_cranks);
     RUN_TEST(test_press_without_brake_shuts_down);
     RUN_TEST(test_cranking_gives_up_on_timeout);

@@ -105,10 +105,22 @@ void ign_begin(bool sw_closed_at_boot)
     can_rpm = 0;
     can_rpm_at = 0;
     sw_prev = sw_closed_at_boot;
-    /* In momentary mode the press that woke us through the hardware latch is still
+    /* In momentary mode the press that woke us through the hardware latch may still be
      * happening. Do not let it count as a command -- otherwise a wake with the brake
-     * held would go straight to cranking. Wait for a release first. */
-    armed = (cfg.ign_mode != IGN_MOMENTARY) || !sw_closed_at_boot;
+     * held would go straight to cranking. Wait until the button is SEEN released.
+     *
+     * Deliberately NOT `|| !sw_closed_at_boot`. That trusted a single sample taken at
+     * boot, and the sample is not reliable: a short press, or 12V still climbing
+     * through the 6V threshold at that instant, reads LOW while the button is in fact
+     * still down. Arming on it made the wake press itself look like a fresh rising edge
+     * on an armed button -- and with the brake up, that means shut down. The board woke,
+     * immediately asked to switch off, and died the moment you let go. It presents as a
+     * board that will not wake, so you go looking at the latch and the supply.
+     *
+     * Starting unarmed costs nothing when the sample IS right: tick_momentary arms on
+     * the first tick that sees the switch low, which for an already-released button is
+     * the very next one. */
+    armed = (cfg.ign_mode != IGN_MOMENTARY);
 
     /* Assert RUN here rather than waiting for the first ign_tick, so it is part of the
      * same shift-register frame that brings the outputs live. Otherwise a watchdog
@@ -139,8 +151,10 @@ static void tick_momentary(uint32_t now, bool sw)
     if (rising || falling) last_activity = now;
     if (rising) { press_ms = now; hold_fired = false; }
     if (!armed) {
-        /* Still waiting for the wake press to end. */
-        if (falling) armed = true;
+        /* Still waiting for the wake press to end. Gated on the LEVEL, not on a falling
+         * edge: a press brief enough to be over before firmware runs never produces an
+         * edge for us to see, and waiting for one would leave the button dead forever. */
+        if (!sw) armed = true;
         return;
     }
 
