@@ -66,36 +66,37 @@ already e-fused -- current limit, short-circuit survival and thermal shutdown ar
 part. The budget is the switch's **4.5 A**, less the board's own draw, and today that
 rail feeds nothing but the buck.
 
-### Two things about VIGN that change how this is wired
+### VIGN is a power feed, not a signal
 
-**It is not a sense line.** rusEFI's wiring documentation is explicit: *"Key-on power is
-supplied to the ECU in order to power the CPU and logic core of the ECU."* VIGN draws real
-operating current, so tapping `JB1` pin 1 -- a 0.1 inch header pin -- is not an
-appropriate source. This wants the proper `+12V_SW` terminal revision B should add, sized
-for the ECU rather than treated as a signal.
+rusEFI's wiring documentation is explicit: *"Key-on power is supplied to the ECU in order
+to power the CPU and logic core of the ECU."* VIGN draws real operating current, so
+tapping `JB1` pin 1 -- a 0.1 inch header pin -- is not an appropriate source. This wants
+the proper `+12V_SW` terminal revision B should add, sized for the ECU.
 
-**The ECU feeds VIGN back from its own main relay.** From the same guide: *"Feed back
-VIGN with power returning from the main relay."* The ECU latches its own supply, exactly
-as this board does with the BTS7040.
+On this car the ECU also has **always-hot permanent power**, so most of its supply does
+not come through here at all. `+12V_SW` is telling it to wake, and carrying whatever its
+logic core draws while it does.
 
-That second point cuts both ways:
+Confirm the actual draw from the super-uaEFI schematic before sizing the wire -- the
+pinout page would not load, so the figure here is not established.
 
-- **Good:** once the main relay closes the ECU is holding itself up, so a brief
-  interruption of whatever woke it no longer drops the ECU. The 22 ms reset blip stops
-  being fatal, which was the whole reason for preferring `+12V_SW` over a channel.
-- **Bad:** if VIGN is commoned with `+12V_SW`, the main relay is **backfeeding this
-  board's switched rail**, on the load side of the BTS7040. The relay module would drop
-  `LATCH_HOLD`, find the rail still alive, and never switch off. That is exactly the
-  "the latch had nothing to cut" path in `main.cpp` -- except permanent.
+### Do not feed the main relay's output back to VIGN
 
-**Fit a blocking diode** in the feed from `+12V_SW` to VIGN, cathode at the ECU. A few
-hundred millivolts, and it removes any possibility of the ECU holding the whole car awake.
+rusEFI's guide suggests *"Feed back VIGN with power returning from the main relay"* so an
+ECU-controlled relay keeps the ECU alive through its own shutdown and gives it a stable
+voltage reading. **This install needs neither** -- the ECU has permanent power for the
+first and can read the same voltage from it for the second.
 
-**Verify against your own board first.** Those quotes are from rusEFI's general wiring
-guide. The super-uaEFI pinout page would not load, so the actual VIGN current draw and
-whether the main-relay feedback is already diode-isolated on that hardware are both
-unconfirmed. Read them off the schematic: the wrong answer here is a car that will not
-switch off.
+Wiring it anyway would be actively harmful here. With VIGN fed from `+12V_SW`, running
+the main relay back into VIGN puts battery voltage onto this board's switched rail, on the
+load side of the BTS7040. The relay module would drop `LATCH_HOLD`, find the rail still
+alive, and never switch off -- the "latch had nothing to cut" path in `main.cpp`, except
+permanent. You would find it as a flat battery, not as an error.
+
+There is nothing to guard against as long as that wire does not exist. The one case that
+needs checking is whether the ECU ties its main relay output to the ignition rail
+**internally**, which some hardware does regardless of how it is wired. If the schematic
+shows that, put a blocking diode in the `+12V_SW` feed with its cathode at the ECU.
 
 Because the ECU owns the fuel pump, there is no reason to set a `failsafe_state` bit for
 priming — the ECU primes on its own ignition input.
