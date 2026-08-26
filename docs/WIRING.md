@@ -114,7 +114,33 @@ there is plenty of margin here — but it is the first thing to check before add
 directly-driven loads, and it is the known limit a revision should fix with a second
 ground pole.
 
-## Before this works: peer mirroring is not configurable
+## Pairing the two boards
+
+    rcm_bench ctl peer 4 1,2,5 5     # follow node 4 on channels 1,2,5; ch5 latches
+    rcm_bench ctl peer none 0        # disable mirroring
+    rcm_bench ctl save               # keep it across a power cycle
+
+`RCM_OP_SET_PEER` (0x18) sets the node and both masks and installs the receive filter
+for the peer's INPUTS frame. Verified on hardware with a PC impersonating a keypad, so
+**a second board is not needed to test this** -- a keypad is only a node broadcasting an
+INPUTS frame at `base + node * 0x10 + 1`, which anything on the bus can fake.
+
+**Mirroring is strictly channel-for-channel.** Keypad channel N drives relay module
+channel N, so the two channel maps have to be planned together and one button cannot
+drive two outputs. That is the other reason the hazard switch stays conventional:
+`FN_IN_HAZARD` is a label with no logic behind it.
+
+Two things to know when watching this on a bus:
+
+- **The board's transmit queue runs a couple of broadcast cycles deep**, so the first
+  OUTPUTS frame after a command can still predate it. Flushing the host's receive buffer
+  is not enough. Settle for a few hundred ms, or read for a while and take the last
+  frame, before believing what a channel is doing.
+- **Peer frames count as traffic addressed to this board**, so a mirrored channel is not
+  reverted by the CAN timeout. Stop the keypad talking entirely and `failsafe_state`
+  takes over as usual.
+
+## Historical: peer mirroring was not configurable
 
 The keypad-to-relay-module path is `peer_node`, `peer_mask` and `peer_toggle_mask` —
 `peer_toggle_mask` being the one that turns a momentary button into a latching load.
