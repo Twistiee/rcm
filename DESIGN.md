@@ -1680,6 +1680,22 @@ the normal wake signal, harmless — and leaves the supply pin unfed, so the boa
 come up. Order it `+12V, GND, …` instead and the same mistake drops +12 V straight onto
 ground through the supply.
 
+### 2b. Give `J_AUX` the pull-down every channel already has
+
+The three `J_AUX` inputs carry the same 1 M / 270 k sense divider as a channel but **not**
+the 10 k pull-down at the terminal. So an open switch is held low only through 1.27 M.
+
+That is correct at DC -- 165 input leakage through 270 k is a couple hundred millivolts
+against a 10.87 V threshold -- but 1.27 M is a high source impedance for a metre of wire
+routed near ignition coils, and these inputs are meant for exactly the long runs that
+suffer: a brake, clutch or reverse switch out at the pedal box or gearbox.
+
+Three 10 k resistors. The channels already prove the pattern; `J_AUX` was simply not given
+the same treatment.
+
+Note this is about the OPEN state only. The inputs are active-high and a switch feeding
++12 V is the intended source -- these are not pull-to-ground inputs.
+
 ### 3. Wire DIP positions 7 and 8 to spare GPIO
 
 They exist on the part and have no copper. **Pins were never the constraint** -- 28 signal

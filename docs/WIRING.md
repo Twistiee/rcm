@@ -143,6 +143,24 @@ or so of twenty-one.
 Buttons switch **+12V into the channel** — inputs sense high, and need more than 10.87 V
 at the terminal to read as pressed.
 
+## The three `J_AUX` inputs
+
+`J_AUX` gives three more 12 V inputs without spending a channel -- they use the spare
+eighth bit of each tile's 74HC165. Debounced like any input, published as byte 3 of the
+INPUTS frame, shown on the `s` line of the console as `aux`.
+
+**Input only**, and there is no ground pole on the connector: the return is via `J_PWR`.
+
+They suit switches the board should KNOW about but must not control -- the hardwired
+brake feed, a clutch, handbrake or reverse switch. That is what keeps the brake lights on
+a mechanical switch while the ignition state machine still sees the pedal.
+
+Like every input here they are **active-high**: the switch feeds +12 V, and above 10.87 V
+at the terminal reads as pressed. The one thing to add is a **10 k pull-down from each
+used pin to ground**. Channels have one fitted; `J_AUX` does not, so an open switch is
+held down only through the 1.27 M divider. Fine at DC, but a high source impedance for a
+long run near ignition coils.
+
 ## Ground budget
 
 Every channel's return, coil and direct load alike, comes back through **one 3.5 mm pole
