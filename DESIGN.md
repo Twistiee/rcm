@@ -1633,7 +1633,7 @@ than the existing indicators, which sit at roughly 0.7 mA because a 3.0–3.2 V 
 a 3.3 V rail through 1 kΩ has almost no headroom (see "Green LEDs are dim"). Anything fed
 from 12 V does not have that problem.
 
-### 1b. Bring `+12V_SW` out to a terminal
+### 1b. Bring `+12V_SW` out to a terminal -- a general "board is on" feed
 
 `+12V_SW` — the latch's output, and therefore "the board is switched on" as a **rail**
 rather than as a shift-register output — currently only reaches `JB1` pin 1, the buck
@@ -1644,6 +1644,15 @@ any channel for it: a channel goes high-impedance for ~22 ms on every reset, whi
 reads as key-off, while `+12V_SW` was measured surviving a reset with the ignition
 released (the rail capacitance bridges the gap before firmware re-asserts `LATCH_HOLD`).
 Tapping a 0.1 inch header pin for something that matters that much is not good enough.
+
+The ECU is only the first customer. `+12V_SW` is the generic answer to *anything that
+should be powered exactly as long as the board is*: an ignition-on feed, a wake signal to
+another module, a supply for a dash or a keypad's backlight. Unlike a channel it is a
+**source**, not a sink, so it works for things that need feeding rather than earthing --
+which is the one thing 21 low-side channels cannot do.
+
+Size it for real current rather than a sense line, and fuse it: the BTS7040 will happily
+pass more than a small terminal or thin wire wants.
 
 One pole on the merged power connector below, or its own terminal.
 
@@ -1663,6 +1672,49 @@ A plug fitted one position out then puts +12 V onto the ignition input — which
 the normal wake signal, harmless — and leaves the supply pin unfed, so the board does not
 come up. Order it `+12V, GND, …` instead and the same mistake drops +12 V straight onto
 ground through the supply.
+
+### 3. Wire DIP positions 7 and 8 to spare GPIO
+
+They exist on the part and have no copper. **Pins were never the constraint** -- 28 signal
+pins are used on an LQFP-64, leaving roughly twenty GPIO free. The blocker was routing:
+two more nets from the top-right corner across the CAN/IMU corridor to the MCU is what
+tipped this board from routable to not (3 nets failed, then 1).
+
+So the fix is placement, not pin selection. Either move `SW_CFG` closer to the MCU, or
+accept the two nets and give the corridor the room. Worth doing: a strap that firmware
+can read is the only configuration input that works *before* CAN does, and the two most
+useful things to put on one are exactly the things you need when the bus is not helping
+you -- a recovery or safe-mode flag, and a variant/behaviour select that does not need a
+tool to change.
+
+### 4. Silkscreen that identifies pins without opening the PCB file
+
+The board currently cannot be wired from what is printed on it. Reference designators are
+not enough -- which pole of `J_PWR` is ground, which way round CAN H and L are, and what
+any given DIP position does are all invisible.
+
+Label at minimum:
+
+| Item | Wants |
+|---|---|
+| `J_PWR` | `+12V` and `GND` per pole |
+| `J_IGN` | `IGN` and `GND` |
+| `J_CAN1`, `J_CAN2` | `H` `L` `G` |
+| the three channel terminals | the channel number at each pole -- `1`..`7`, `8`..`14`, `15`..`21` |
+| `SW_CFG` | a per-position legend: `TERM ROLE A0 A1 500K IMU - -` |
+| `J_SWD` | `3V3 DIO CLK RST GND`, and mark pin 1 |
+| `J_BOOT` | what jumpering 1-2 actually does |
+| `JB1` / `JB2` | `+12V GND` in, `+5V GND` out, with polarity |
+| `LED1` / `LED2` | which is heartbeat and which is fault |
+
+Channel numbering matters most. Getting a relay on the wrong channel is the single easiest
+mistake to make with this board, it is silent, and bring-up specifically checks channel 1
+and channel 21 because of it.
+
+Note `gen_spec.py` emits no silkscreen text today -- everything printed comes from the
+footprints. Adding text is therefore a change to the generator, not hand-editing the PCB,
+and the generated silk must be regenerated and re-checked for stray pad flashes before
+shipping (see the JLC notes above).
 
 ## Already recorded elsewhere in this file
 
