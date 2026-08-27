@@ -848,7 +848,7 @@ static void test_a_followed_channel_falls_back_when_the_ecu_goes_quiet(void)
     /* Keep OUR OWN traffic alive while the ECU is silent -- a keypad still chatting, say.
      * Without this the general bus-timeout failsafe fires and switches the channel off
      * for an unrelated reason, and the test proves nothing about staleness at all. */
-    for (uint32_t t = 0; t < cfg.can_timeout_ms + 400; t += 100) {
+    for (uint32_t t = 0; t < cfg.ecu_follow_stale_ms + 400; t += 100) {
         inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_CLEAR_FAULTS });
         run_ms(100);
     }
@@ -875,6 +875,44 @@ static void test_the_ecu_broadcast_does_not_hold_off_the_failsafe(void)
 
     TEST_ASSERT_TRUE_MESSAGE(proto_failsafe(),
         "ECU broadcasts held the failsafe off -- a silent keypad would never be noticed");
+}
+
+static void test_follow_staleness_is_independent_of_the_bus_timeout(void)
+{
+    /* The two answer different questions. can_timeout_ms is "has anyone stopped
+     * COMMANDING this board" and wants to be tight. The follow timeout is "has the ECU
+     * stopped talking", and has to tolerate rusEFI's own rate -- which is multiplied by
+     * FIVE the moment TunerStudio connects over CAN. Sharing one value dropped fans and
+     * pumps while tuning, which reads as a fault in this board. */
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_TIMING, 50, 0, 0xC8, 0x00, 0xB8, 0x0B });   /* bus 200ms, follow 3000ms */
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT16(200,  cfg.can_timeout_ms);
+    TEST_ASSERT_EQUAL_UINT16(3000, cfg.ecu_follow_stale_ms);
+
+    /* Channel 5 rests OFF, so "following an ON bit" and "fell back to failsafe" look
+     * different. With the failsafe bit set they would be indistinguishable and the test
+     * would pass whatever the code did. */
+    cfg.failsafe_state = 0;
+    follow(0, 5, 34, 0x200);
+    ecu_flags(1u << (34 - 32));
+    TEST_ASSERT_TRUE(sim_driver_on(5));
+
+    /* Now the ECU talks at 500ms -- SLOWER than the 200ms bus timeout but well inside
+     * the 3000ms follow window. That is the TunerStudio-over-CAN case, where rusEFI's
+     * verbose period is multiplied by five. The bus failsafe may do what it likes; the
+     * followed channel is still the ECU's to command. */
+    for (int i = 0; i < 4; i++) {
+        ecu_flags(1u << (34 - 32));
+        /* Our own traffic keeps flowing, so the GENERAL failsafe never fires and cannot
+         * mask what is being tested -- only the follow window is in play. */
+        for (int j = 0; j < 5; j++) {
+            inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_CLEAR_FAULTS });
+            run_ms(100);
+        }
+        TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(5),
+            "a slow-but-alive ECU lost its channel to the bus timeout");
+    }
 }
 
 static void test_follow_refuses_a_bit_past_the_end_of_a_frame(void)
@@ -1210,6 +1248,7 @@ int main(void)
     RUN_TEST(test_slots_sharing_a_frame_do_not_each_burn_a_filter);
     RUN_TEST(test_a_followed_channel_falls_back_when_the_ecu_goes_quiet);
     RUN_TEST(test_the_ecu_broadcast_does_not_hold_off_the_failsafe);
+    RUN_TEST(test_follow_staleness_is_independent_of_the_bus_timeout);
     RUN_TEST(test_follow_refuses_a_bit_past_the_end_of_a_frame);
     return UNITY_END();
 }

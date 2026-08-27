@@ -71,6 +71,7 @@ void cfg_defaults(struct rcm_config_t *c)
     c->broadcast_ms      = 50;
     c->can_timeout_ms    = 1000;
     c->input_debounce_ms = 25;
+    c->ecu_follow_stale_ms = 2000;   /* 5x a 400ms ECU period, with margin */
     c->output_settle_ms  = 100;   /* a relay coil's flyback needs time to collapse
                                    * before the sense node means anything */
     c->fault_confirm_ms  = 500;

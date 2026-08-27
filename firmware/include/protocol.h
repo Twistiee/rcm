@@ -80,7 +80,8 @@
 #define RCM_OP_SET_CH_MODE    0x10   /* b1 ch(0-based), b2 mode, b3 flags */
 #define RCM_OP_SET_BITRATE    0x11   /* b1..b4 LE Hz; needs SAVE + REBOOT */
 #define RCM_OP_SET_BASE_ID    0x12   /* b1..b2 LE;    needs SAVE + REBOOT */
-#define RCM_OP_SET_TIMING     0x13   /* b1..b2 broadcast_ms, b3..b4 can_timeout_ms */
+#define RCM_OP_SET_TIMING     0x13   /* b1..b2 broadcast_ms, b3..b4 can_timeout_ms,
+                                      * b5..b6 ecu_follow_stale_ms (optional) */
 #define RCM_OP_SET_FAILSAFE   0x14   /* b1..b3 channel bits */
 #define RCM_OP_SET_IGNITION   0x15   /* b1 mode, b2 brake ch, b3 start ch, b4 run ch,
                                       * b5 RUN-position output ch (optional);
@@ -130,7 +131,8 @@
 #define RCM_CFG_SEL_ECUCMD    0x08   /* index = slot: ch, subsystem (2), index (2)    */
 #define RCM_CFG_SEL_CHANNEL   0x09   /* index = channel: mode, flags, func, beh, param*/
 #define RCM_CFG_SEL_FOLLOW    0x0A   /* index = slot: ch, bit, frame id (2)           */
-#define RCM_CFG_SEL_MAX       0x0A
+#define RCM_CFG_SEL_TIMING2   0x0B   /* ECU follow staleness ms (2)                   */
+#define RCM_CFG_SEL_MAX       0x0B
 
 /* --- asking rusEFI to start or stop the engine ------------------------------
  * An EXTENDED frame from rusEFI's bench-test command block. Verified against rusEFI's

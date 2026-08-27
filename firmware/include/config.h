@@ -192,6 +192,22 @@ struct rcm_config_t {
     uint16_t broadcast_ms;         /* how often state/input frames go out          */
     uint16_t can_timeout_ms;       /* silence before failsafe; 0 disables          */
     uint16_t input_debounce_ms;
+
+    /* How long a followed channel may go without hearing its ECU frame before falling
+     * back to its failsafe bit. 0 disables the check, which means holding the last value
+     * forever -- deliberate, and rarely what you want.
+     *
+     * SEPARATE from can_timeout_ms on purpose. That one answers "has anyone stopped
+     * commanding this board", and wants to be tight. This one answers "has the ECU
+     * stopped talking", and must tolerate rusEFI's own broadcast rate -- including the
+     * fact that running TunerStudio over CAN multiplies its verbose period by FIVE:
+     *
+     *     canSleepPeriodMs = (pauseCANdueToSerial ? 5 : 1) * canSleepPeriodMs
+     *
+     * so a 250ms ECU period becomes 1250ms the moment you plug a laptop in. Sharing one
+     * timeout would have dropped fans and pumps while tuning, which reads as a fault in
+     * this board. Allow at least 5x the ECU's configured period. */
+    uint16_t ecu_follow_stale_ms;
     uint16_t output_settle_ms;     /* ignore sense this long after switching       */
     uint16_t fault_confirm_ms;     /* how long a fault must persist to be reported */
     uint16_t imu_rate_ms;

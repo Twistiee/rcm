@@ -278,6 +278,10 @@ static void send_cfg_reply(uint8_t sel, uint8_t idx)
         p[3] = (uint8_t)cfg.ecu_cmd[idx].index;
         p[4] = (uint8_t)(cfg.ecu_cmd[idx].index >> 8);
         break;
+    case RCM_CFG_SEL_TIMING2:
+        p[0] = (uint8_t)cfg.ecu_follow_stale_ms;
+        p[1] = (uint8_t)(cfg.ecu_follow_stale_ms >> 8);
+        break;
     case RCM_CFG_SEL_FOLLOW:
         if (idx >= RCM_ECU_FOLLOWS) return;
         p[0] = cfg.ecu_follow[idx].ch;
@@ -445,6 +449,8 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
             uint16_t t = (uint16_t)(f->data[3] | (f->data[4] << 8));
             if (b >= 10 && b <= 5000) cfg.broadcast_ms = b;
             cfg.can_timeout_ms = t;          /* 0 legitimately means "never" */
+            if (f->len >= 7)
+                cfg.ecu_follow_stale_ms = (uint16_t)(f->data[5] | (f->data[6] << 8));
         }
         break;
 
@@ -602,12 +608,12 @@ void proto_poll(uint32_t now_ms)
     /* A followed channel whose frame has stopped arriving falls back to its failsafe
      * bit. Holding the last value would leave a fuel pump running on the strength of a
      * frame that arrived before the ECU died. */
-    if (cfg.can_timeout_ms) {
+    if (cfg.ecu_follow_stale_ms) {
         for (uint8_t i = 0; i < RCM_ECU_FOLLOWS; i++) {
             const struct ecu_follow_t *fl = &cfg.ecu_follow[i];
             if (!fl->can_id || fl->ch >= RCM_CHANNELS) continue;
             if (cfg.ch[fl->ch].mode != CH_OUTPUT) continue;
-            if ((uint32_t)(now_ms - follow_seen[i]) <= cfg.can_timeout_ms) continue;
+            if ((uint32_t)(now_ms - follow_seen[i]) <= cfg.ecu_follow_stale_ms) continue;
             ch_command(fl->ch, (cfg.failsafe_state >> fl->ch) & 1u);
         }
     }

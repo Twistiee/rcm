@@ -415,6 +415,8 @@ CFG_SEL = {
            % (("0x%03X" % _u16(d, 2)) if _u16(d, 2) else "none", _u16(d, 4))),
     0x08: ("ecucmd", 6, lambda d: "channel %s -> subsystem %d index %d%s"
            % (_ch(d[2]), _u16(d, 3), _u16(d, 5), _cmd_name(_u16(d, 3), _u16(d, 5)))),
+    0x0B: ("timing2", 1, lambda d: "ECU follow goes stale after %dms"
+           % _u16(d, 2)),
     0x0A: ("follow", 6, lambda d: "channel %s <- frame 0x%03X bit %d%s"
            % (_ch(d[2]), _u16(d, 4), d[3], _bit_name(_u16(d, 4), d[3]))),
     0x09: ("channel", CHANNELS, lambda d: "%-6s %-9s flags 0x%02X func %-14s param %d"
@@ -556,6 +558,18 @@ def cmd_ctl(bus, args):
             mode = int(args.args[0], 0)
         flags = int(args.args[1], 0) if len(args.args) > 1 else 0
         extra = [mode, flags]
+    elif args.op == "timing":
+        # Every value here is 16-bit. The generic path packed each argument as ONE byte,
+        # so this silently only worked for values under 256 -- and a 1000ms timeout is
+        # not under 256.
+        if len(args.args) < 2:
+            sys.exit("timing <broadcast-ms> <bus-timeout-ms> [ecu-follow-stale-ms]")
+        vals = [int(a, 0) for a in args.args[:3]]
+        extra = []
+        for v in vals:
+            if not 0 <= v <= 0xFFFF:
+                sys.exit("timing values are 16-bit")
+            extra += [v & 0xFF, v >> 8]
     elif args.op == "runsrc":
         # <can id> <rpm>, not four raw bytes.
         if len(args.args) < 1:
@@ -780,9 +794,12 @@ def main():
         sys.exit("could not open %s:%s -- %s" % (args.interface, args.channel, e))
 
     # Same reasoning at the other end: an slcan adapter has only just been sent
-    # C / S<rate> / O, and a frame written into that gap can be dropped.
+    # C / S<rate> / O, and a frame written into that gap can be dropped. 0.3s rather than
+    # something tighter because TWO one-shot invocations back to back -- `ctl x && get x`
+    # -- put a close and a reopen next to each other, and the first command was observed
+    # being lost three separate times at 0.15s.
     if args.interface not in ("virtual",):
-        time.sleep(0.15)
+        time.sleep(0.3)
 
     sim_bus, stop, thread = None, None, None
     if args.with_sim:
