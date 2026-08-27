@@ -220,6 +220,60 @@ by nature, and a single-pole button cannot drive both. A two-pole momentary butt
 it -- one pole grounds the ECU pin, the other feeds +12 V to a `J_AUX` input or a keypad
 channel.
 
+## Asking the ECU to do things
+
+Any input channel can be bound to a TunerStudio command, sent to the ECU as an extended
+frame. Six slots:
+
+    rcm_bench ctl ecucmd 0 5 startstop     # ch5 press: crank if stopped, stop if running
+    rcm_bench ctl ecucmd 1 7 lua1          # ch7 press: bump rusEFI Lua counter 1
+    rcm_bench ctl ecucmd 2 8 stopengine    # ch8 press: unconditional stop
+    rcm_bench ctl ecucmd 3 9 22 43         # or any raw subsystem and index
+    rcm_bench ctl ecucmd 0 none            # clear a slot
+
+**`lua1`..`lua4` are the interesting ones for a car.** rusEFI has no fixed command for
+traction control, launch control or a map switch -- what it has is four counters that a
+Lua script can watch. Bind a button to one, write the behaviour in Lua, and none of it
+needs a firmware change here.
+
+Stored as a raw (subsystem, index) pair rather than a list of named commands, because
+every TunerStudio command is that shape. Adding one is a config change, not a release.
+
+Verified on revA: a touch of +12 V to a bound channel put
+`T 0077000C 8 6600140009000000` on the wire -- a `T` record, so genuinely extended --
+once per press, with real switch bounce.
+
+### One button or two
+
+`ign_ecu_flags` decides whether the IGNITION button also talks to the ECU. **Both bits
+default off, which is the two-button car** -- the ignition button only powers the board,
+and a separate button in `ecu_cmd[]` starts the engine. That is the simpler thing to
+reason about and the recommended arrangement.
+
+Set both bits for the one-button VW arrangement:
+
+| Gesture | Result |
+|---|---|
+| single press from off | wakes the board, nothing else |
+| wake press **held** with the brake down | wakes the board, then asks the ECU to start |
+| press with the brake down, engine off | asks the ECU to start |
+| press with the brake **up** | shuts the car down |
+| **hold** while running | asks the ECU to stop, then powers down after `ign_shutdown_ms` |
+
+A short press while running does nothing on purpose: stopping takes a deliberate hold, so
+a hand catching the dash cannot cut the engine. `ign_hold_stop_ms` defaults to 1000 ms.
+
+Two details that matter when setting this up:
+
+- **The stop gesture sends `TS_STOP_ENGINE`, not the start/stop toggle.** The toggle is
+  gated on the ECU's own view of engine speed; a stop must not be. The power-down runs on
+  its own timer either way, so a shutdown proceeds identically if the ECU never answers.
+- **Set rusEFI's `startButtonSuppressOnStartUpMs` shorter than `ign_wake_start_ms`**
+  (2000 ms). rusEFI ignores start requests for a period after it gets ignition power, and
+  its own source says that exists for exactly this arrangement -- a start button combined
+  with an ECU power-source button. Leave it long and the wake-and-start gesture lands
+  while the ECU is still ignoring requests.
+
 ## The three `J_AUX` inputs
 
 `J_AUX` gives three more 12 V inputs without spending a channel -- they use the spare
