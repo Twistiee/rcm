@@ -171,6 +171,55 @@ or so of twenty-one.
 Buttons switch **+12V into the channel** — inputs sense high, and need more than 10.87 V
 at the terminal to read as pressed.
 
+## Two buttons: ignition, and start/stop
+
+With buttons to spare, split the two jobs rather than overloading one.
+
+| Button | Goes to | Does |
+|---|---|---|
+| **Ignition** | `J_IGN` on the relay module | press to wake, hold to shut the car down |
+| **Start/stop** | the ECU's `startStopButtonPin`, **directly** | cranks, and stops a running engine |
+
+**Wire start/stop straight to the ECU, not through this board and not over CAN.** rusEFI
+already owns `starterControlPin` and `startCrankingDuration`, has RPM off the crank
+sensor rather than through a divider that goes unreadable during a crank, and applies its
+own interlocks. A wire beats a bus for that, the same way the brake switch does.
+
+uaDASH's on-screen start button sends `ECU_CAN_BUS_USER_CONTROL`, **extended id
+`0x77000C`**, from rusEFI's bench-test protocol. This board could send it too. It should
+not: that would make starting the car depend on this board being alive and the bus being
+up, to replace a wire that does the job unconditionally.
+
+### What splitting them buys
+
+**The brake dependency leaves this board completely.** `ign_brake_ch` stays
+`IGN_CH_NONE`, and the whole "the brake decides what this press means" branch becomes
+dead code for this install -- the ignition button can no longer be mistaken for a start
+attempt, because starting is not its job. The interlock still exists, in the ECU, where
+the RPM signal actually is.
+
+Starting also stops depending on this board at all. Ignition and start become
+independent: killing ignition cannot be misread as a start, and a start press cannot end
+in a shutdown.
+
+The sequence is then exactly a modern car:
+
+1. press **ignition** -- relay module latches, `+12V_SW` comes up, ECU boots
+2. press **start/stop** -- ECU cranks, on its own timeout and interlocks
+3. press **start/stop** again -- ECU stops the engine; the board stays awake
+4. hold **ignition** -- board powers down, `+12V_SW` drops, ECU goes with it
+
+### If the board should also SEE the start button
+
+Only worth wiring for a tell-tale or logging -- nothing in the firmware needs it.
+
+**Check the polarity before assuming one button can feed both.** rusEFI switch inputs are
+generally pulled up and switched to ground, while every input on this board is
+active-high and wants +12 V at the terminal. If that is the case here they are opposite
+by nature, and a single-pole button cannot drive both. A two-pole momentary button solves
+it -- one pole grounds the ECU pin, the other feeds +12 V to a `J_AUX` input or a keypad
+channel.
+
 ## The three `J_AUX` inputs
 
 `J_AUX` gives three more 12 V inputs without spending a channel -- they use the spare
