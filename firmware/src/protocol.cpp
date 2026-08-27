@@ -81,7 +81,8 @@ static inline void pack21(uint8_t *d, uint32_t v)
 /* Bit for the starter channel, or 0 if none is configured. */
 static inline uint32_t starter_mask(void)
 {
-    return cfg.ign_start_ch < RCM_CHANNELS ? (1ul << cfg.ign_start_ch) : 0ul;
+    const uint8_t ch = cfg_ch_for(FN_STARTER);
+    return ch < RCM_CHANNELS ? (1ul << ch) : 0ul;
 }
 
 static inline uint32_t unpack21(const uint8_t *d)
@@ -228,8 +229,12 @@ static void send_cfg_reply(uint8_t sel, uint8_t idx)
         pack21(p, cfg.failsafe_state);
         break;
     case RCM_CFG_SEL_IGN:
-        p[0] = cfg.ign_mode;    p[1] = cfg.ign_brake_ch; p[2] = cfg.ign_start_ch;
-        p[3] = cfg.ign_run_ch;  p[4] = cfg.ign_run_out_ch; p[5] = cfg.ign_ecu_flags;
+        /* The channels here are RESOLVED from the labels, not stored. Reporting them
+         * is what makes "which channel is the brake?" answerable without guessing. */
+        p[0] = cfg.ign_mode;
+        p[1] = cfg_ch_for(FN_IN_BRAKE);      p[2] = cfg_ch_for(FN_STARTER);
+        p[3] = cfg_ch_for(FN_IN_ENGINE_RUN); p[4] = cfg_ch_for(FN_IGNITION);
+        p[5] = cfg.ign_ecu_flags;
         break;
     case RCM_CFG_SEL_IGNTIME:
         p[0] = (uint8_t)cfg.ign_hold_stop_ms;  p[1] = (uint8_t)(cfg.ign_hold_stop_ms >> 8);
@@ -324,12 +329,9 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
             const uint8_t max = (cfg.ch[ch].mode == CH_INPUT) ? IN_HOLD_ARM
                                                               : OUT_DELAY_OFF;
             if (beh <= max) {
-                /* The ignition block owns its channels' labels. Letting one be
-                 * overwritten here would put back exactly the disagreement
-                 * cfg_sync_ign_labels() exists to prevent -- silently, and only
-                 * visible the next time somebody read the config. Behaviour and
-                 * param are still free to change. */
-                if (!cfg_ign_owns_channel(&cfg, ch)) cfg.ch[ch].func = f->data[2];
+                /* The label IS the role now, so setting it here is how a channel is
+                 * given a job. Nothing to protect it from: there is no second copy. */
+                cfg.ch[ch].func      = f->data[2];
                 cfg.ch[ch].behaviour = beh;
                 if (f->len >= 6)
                     cfg.ch[ch].param = (uint16_t)(f->data[4] | (f->data[5] << 8));
@@ -415,29 +417,15 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
         break;
 
     case RCM_OP_SET_IGNITION:
-        if (f->len >= 5 && f->data[1] <= IGN_MOMENTARY) {
-            /* Channel numbers are only accepted if they are real channels or the
-             * explicit "none" -- a typo must not silently point the starter at
-             * whatever channel happens to share the low bits. */
-            const uint8_t b = f->data[2], s = f->data[3], r = f->data[4];
-            if ((b < RCM_CHANNELS || b == IGN_CH_NONE)
-             && (s < RCM_CHANNELS || s == IGN_CH_NONE)
-             && (r < RCM_CHANNELS || r == IGN_CH_NONE)) {
-                cfg.ign_mode     = f->data[1];
-                cfg.ign_brake_ch = b;
-                cfg.ign_start_ch = s;
-                cfg.ign_run_ch   = r;
-                if (f->len >= 6) {
-                    const uint8_t o = f->data[5];
-                    if (o < RCM_CHANNELS || o == IGN_CH_NONE) cfg.ign_run_out_ch = o;
-                }
-                /* The labels are derived from these numbers, never entered separately,
-                 * so they cannot drift out of agreement with them. */
-                cfg_sync_ign_labels(&cfg);
-                /* Reconsider the ignition from scratch under the new settings rather
-                 * than carrying a state that was reached under the old ones. */
-                ign_begin(app_ignition_on());
-            }
+        /* Mode and flags only. Which channel does which job is said ONCE, by that
+         * channel's function label -- see cfg_ch_for(). There is deliberately no second
+         * copy here to fall out of step with it. */
+        if (f->len >= 2 && f->data[1] <= IGN_MOMENTARY) {
+            cfg.ign_mode = f->data[1];
+            if (f->len >= 3) cfg.ign_ecu_flags = f->data[2];
+            /* Reconsider the ignition from scratch under the new settings rather
+             * than carrying a state that was reached under the old ones. */
+            ign_begin(app_ignition_on());
         }
         break;
 

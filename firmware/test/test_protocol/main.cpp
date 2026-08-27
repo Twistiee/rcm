@@ -335,29 +335,19 @@ static void test_set_ch_mode_rejects_nonsense(void)
     TEST_ASSERT_EQUAL(CH_OUTPUT, cfg.ch[3].mode);
 }
 
-static void test_set_ignition_rejects_bad_channel_numbers(void)
+static void test_set_ignition_rejects_a_mode_that_does_not_exist(void)
 {
-    /* A typo here would point the starter at whatever channel shares the low bits.
-     * Only a real channel or the explicit "none" is accepted, and a rejected frame
-     * must leave every field alone rather than half-applying. */
+    /* SET_IGNITION carries the mode and the ECU flags, and nothing else. Which channel
+     * does which job is said once, by that channel's function label. */
     cfg.ign_mode = IGN_MAINTAINED;
-    cfg.ign_brake_ch = cfg.ign_start_ch = cfg.ign_run_ch = IGN_CH_NONE;
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IGNITION, 7 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(IGN_MAINTAINED, cfg.ign_mode, "a bad mode was applied");
 
-    inject(NODE_BASE + RCM_F_CMD_CTL,
-           { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 10, 99, IGN_CH_NONE });   /* bad start */
-    inject(NODE_BASE + RCM_F_CMD_CTL,
-           { RCM_OP_SET_IGNITION, 7, 10, 4, IGN_CH_NONE });                /* bad mode  */
-    run_ms(TICK_MS * 6);
-    TEST_ASSERT_EQUAL_MESSAGE(IGN_MAINTAINED, cfg.ign_mode, "a bad frame was applied");
-    TEST_ASSERT_EQUAL_UINT8(IGN_CH_NONE, cfg.ign_start_ch);
-
-    inject(NODE_BASE + RCM_F_CMD_CTL,
-           { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 10, 4, 11 });
-    run_ms(TICK_MS * 6);
-    TEST_ASSERT_EQUAL(IGN_MOMENTARY, cfg.ign_mode);
-    TEST_ASSERT_EQUAL_UINT8(10, cfg.ign_brake_ch);
-    TEST_ASSERT_EQUAL_UINT8(4,  cfg.ign_start_ch);
-    TEST_ASSERT_EQUAL_UINT8(11, cfg.ign_run_ch);
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 0x03 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT8(IGN_MOMENTARY, cfg.ign_mode);
+    TEST_ASSERT_EQUAL_UINT8(0x03, cfg.ign_ecu_flags);
 }
 
 static void test_set_ign_times_clamps(void)
@@ -675,7 +665,9 @@ static const can_frame_t *ask(uint8_t sel, uint8_t idx = 0)
 
 static void test_config_read_back_returns_what_was_set(void)
 {
-    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 10, 4, 11, 6 });
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IGNITION, IGN_MOMENTARY });
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_CH_FUNC, 10, FN_IN_BRAKE, 0, 0, 0 });
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_CH_FUNC, 4,  FN_STARTER,  0, 0, 0 });
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_RUN_SRC, 0x01, 0x02, 0xF4, 0x01 });
     run_ms(TICK_MS * 4);
 
@@ -683,9 +675,10 @@ static void test_config_read_back_returns_what_was_set(void)
     TEST_ASSERT_NOT_NULL_MESSAGE(r, "no reply to a config request");
     TEST_ASSERT_EQUAL_HEX8(RCM_CFG_SEL_IGN, r->data[0]);
     TEST_ASSERT_EQUAL_UINT8(IGN_MOMENTARY, r->data[2]);
+    /* The channels come back RESOLVED from the labels -- which is what makes
+     * "so which channel is the brake?" answerable at all. */
     TEST_ASSERT_EQUAL_UINT8(10, r->data[3]);
     TEST_ASSERT_EQUAL_UINT8(4,  r->data[4]);
-    TEST_ASSERT_EQUAL_UINT8(11, r->data[5]);
 
     r = ask(RCM_CFG_SEL_RUNSRC);
     TEST_ASSERT_NOT_NULL(r);
@@ -765,54 +758,27 @@ static void test_set_ch_func_carries_the_param(void)
     TEST_ASSERT_EQUAL_UINT16(1000, cfg.ch[5].param);
 }
 
-static void test_ignition_channels_stamp_their_own_labels(void)
+static void test_a_role_lives_in_exactly_one_place(void)
 {
-    /* Two statements of the same fact used to be settable independently: the ignition
-     * block names channels by number, the labels name them by job. Label channel 12 as
-     * the brake, point the ignition at channel 5, and the board reads the brake from 5
-     * while every display says 12 -- so pressing start with your foot on the brake does
-     * nothing and the configuration looks correct. */
-    inject(NODE_BASE + RCM_F_CMD_CTL,
-           { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 11, 4, 9, 6 });
+    /* The point of the whole arrangement: move the label, and the role moves with it.
+     * There is no second setting left behind pointing at the old channel. */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_CH_FUNC, 11, FN_IN_BRAKE, 0, 0, 0 });
     run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT8(11, cfg_ch_for(FN_IN_BRAKE));
 
-    TEST_ASSERT_EQUAL_UINT8(FN_IN_BRAKE,      cfg.ch[11].func);
-    TEST_ASSERT_EQUAL_UINT8(FN_STARTER,       cfg.ch[4].func);
-    TEST_ASSERT_EQUAL_UINT8(FN_IN_ENGINE_RUN, cfg.ch[9].func);
-    TEST_ASSERT_EQUAL_UINT8(FN_IGNITION,      cfg.ch[6].func);
+    /* relabel the old one away, and label a new one */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_CH_FUNC, 11, FN_NONE,     0, 0, 0 });
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_CH_FUNC, 3,  FN_IN_BRAKE, 0, 0, 0 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT8(3, cfg_ch_for(FN_IN_BRAKE));
 }
 
-static void test_moving_a_role_takes_the_label_with_it(void)
+static void test_an_unlabelled_role_reads_as_unconfigured(void)
 {
-    inject(NODE_BASE + RCM_F_CMD_CTL,
-           { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 11, IGN_CH_NONE, IGN_CH_NONE, IGN_CH_NONE });
-    run_ms(TICK_MS * 4);
-    TEST_ASSERT_EQUAL_UINT8(FN_IN_BRAKE, cfg.ch[11].func);
-
-    /* move the brake to another channel */
-    inject(NODE_BASE + RCM_F_CMD_CTL,
-           { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 3, IGN_CH_NONE, IGN_CH_NONE, IGN_CH_NONE });
-    run_ms(TICK_MS * 4);
-    TEST_ASSERT_EQUAL_UINT8(FN_IN_BRAKE, cfg.ch[3].func);
-    TEST_ASSERT_EQUAL_UINT8_MESSAGE(FN_NONE, cfg.ch[11].func,
-        "the old channel kept the brake label, so two channels now claim to be the brake");
-}
-
-static void test_a_derived_label_cannot_be_overwritten_by_hand(void)
-{
-    inject(NODE_BASE + RCM_F_CMD_CTL,
-           { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 11, IGN_CH_NONE, IGN_CH_NONE, IGN_CH_NONE });
-    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_CH_MODE, 11, CH_INPUT, 0 });
-    run_ms(TICK_MS * 4);
-
-    inject(NODE_BASE + RCM_F_CMD_CTL,
-           { RCM_OP_SET_CH_FUNC, 11, 44, IN_TOGGLE, 0x00, 0x00 });
-    run_ms(TICK_MS * 4);
-
-    TEST_ASSERT_EQUAL_UINT8_MESSAGE(FN_IN_BRAKE, cfg.ch[11].func,
-        "the brake label was overwritten, putting the disagreement straight back");
-    TEST_ASSERT_EQUAL_UINT8_MESSAGE(IN_TOGGLE, cfg.ch[11].behaviour,
-        "behaviour should still be free to change");
+    for (uint8_t ch = 0; ch < RCM_CHANNELS; ch++) cfg.ch[ch].func = FN_NONE;
+    TEST_ASSERT_EQUAL_UINT8(IGN_CH_NONE, cfg_ch_for(FN_IN_BRAKE));
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(IGN_CH_NONE, cfg_ch_for(FN_STARTER),
+        "an unlabelled starter must read as unconfigured, not as channel 0");
 }
 
 static void test_set_failsafe_and_bitrate(void)
@@ -913,7 +879,7 @@ static void test_the_starter_cannot_be_commanded_over_can(void)
     /* Only the ignition state machine turns a starter, and it does so with the brake
      * held and the engine confirmed stopped -- conditions a remote frame knows nothing
      * about. A stray, replayed or mistaken CMD_SET must not crank the engine. */
-    cfg.ign_start_ch = 4;
+    cfg.ch[4].func = FN_STARTER;
 
     inject(NODE_BASE + RCM_F_CMD_SET, { 0xFF, 0xFF, 0x1F, 0xFF, 0xFF, 0x1F });
     run_ms(TICK_MS * 6);
@@ -927,7 +893,7 @@ static void test_a_peer_keypad_cannot_command_the_starter(void)
 {
     /* Same rule by a different route: a button on a mirrored keypad must not be one
      * press away from the starter motor. */
-    cfg.ign_start_ch     = 4;
+    cfg.ch[4].func = FN_STARTER;
     cfg.peer_node        = 4;
     cfg.peer_mask        = 0x1FFFFF;
     cfg.peer_toggle_mask = 0;
@@ -1091,7 +1057,7 @@ int main(void)
     RUN_TEST(test_set_ch_mode_turns_the_channel_off_first);
     RUN_TEST(test_set_ch_mode_rejects_nonsense);
     RUN_TEST(test_set_failsafe_and_bitrate);
-    RUN_TEST(test_set_ignition_rejects_bad_channel_numbers);
+    RUN_TEST(test_set_ignition_rejects_a_mode_that_does_not_exist);
     RUN_TEST(test_set_ign_times_clamps);
     RUN_TEST(test_set_run_src_takes_id_and_threshold);
     RUN_TEST(test_set_run_src_installs_a_filter_for_the_id);
@@ -1130,8 +1096,7 @@ int main(void)
     RUN_TEST(test_out_of_range_requests_say_nothing);
     RUN_TEST(test_set_ch_func_validates_behaviour_against_mode);
     RUN_TEST(test_set_ch_func_carries_the_param);
-    RUN_TEST(test_ignition_channels_stamp_their_own_labels);
-    RUN_TEST(test_moving_a_role_takes_the_label_with_it);
-    RUN_TEST(test_a_derived_label_cannot_be_overwritten_by_hand);
+    RUN_TEST(test_a_role_lives_in_exactly_one_place);
+    RUN_TEST(test_an_unlabelled_role_reads_as_unconfigured);
     return UNITY_END();
 }

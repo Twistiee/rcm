@@ -37,7 +37,7 @@ static bool read_ch(uint8_t ch)
  * neither is required. See the warning in ignition.h about which one to trust. */
 static bool engine_running(uint32_t now)
 {
-    if (read_ch(cfg.ign_run_ch)) return true;
+    if (read_ch(cfg_ch_for(FN_IN_ENGINE_RUN))) return true;
     if (!cfg.ecu_rpm_can_id || !can_rpm_at) return false;
     if ((now - can_rpm_at) > RPM_STALE_MS) return false;   /* stale is not running */
     return can_rpm >= cfg.ign_run_rpm;
@@ -45,7 +45,7 @@ static bool engine_running(uint32_t now)
 
 bool ign_has_run_source(void)
 {
-    return ch_configured(cfg.ign_run_ch) || cfg.ecu_rpm_can_id != 0;
+    return ch_configured(cfg_ch_for(FN_IN_ENGINE_RUN)) || cfg.ecu_rpm_can_id != 0;
 }
 
 /* Not just "is a run source configured" but "is one actually WORKING right now".
@@ -57,7 +57,7 @@ bool ign_has_run_source(void)
  * counts as live whenever it is configured. */
 static bool run_source_live(uint32_t now)
 {
-    if (ch_configured(cfg.ign_run_ch)) return true;
+    if (ch_configured(cfg_ch_for(FN_IN_ENGINE_RUN))) return true;
     if (!cfg.ecu_rpm_can_id || !can_rpm_at) return false;
     return (now - can_rpm_at) <= RPM_STALE_MS;
 }
@@ -70,7 +70,7 @@ void ign_note_rpm(uint16_t rpm, uint32_t now)
 
 static void set_starter(bool on)
 {
-    if (ch_configured(cfg.ign_start_ch)) ch_command(cfg.ign_start_ch, on);
+    if (ch_configured(cfg_ch_for(FN_STARTER))) ch_command(cfg_ch_for(FN_STARTER), on);
 }
 
 /* The key's RUN position. Held for as long as the board is awake and dropped the
@@ -78,7 +78,7 @@ static void set_starter(bool on)
  * clean ignition-off and rusEFI can park itself the way it would after a key. */
 static void set_run_out(bool on)
 {
-    if (ch_configured(cfg.ign_run_out_ch)) ch_command(cfg.ign_run_out_ch, on);
+    if (ch_configured(cfg_ch_for(FN_IGNITION))) ch_command(cfg_ch_for(FN_IGNITION), on);
 }
 
 static void request_shutdown(uint32_t now)
@@ -95,7 +95,7 @@ static void request_shutdown(uint32_t now)
  * half-configured board simply will not turn a starter. */
 static bool crank_allowed(void)
 {
-    return ch_configured(cfg.ign_start_ch) && ch_configured(cfg.ign_brake_ch);
+    return ch_configured(cfg_ch_for(FN_STARTER)) && ch_configured(cfg_ch_for(FN_IN_BRAKE));
 }
 
 void ign_begin(bool sw_closed_at_boot)
@@ -168,7 +168,7 @@ static void tick_momentary(uint32_t now, bool sw)
             && (cfg.ign_ecu_flags & IGN_ECU_START_ON_BRAKE)
             && cfg.ign_wake_start_ms
             && (now - press_ms) >= cfg.ign_wake_start_ms
-            && read_ch(cfg.ign_brake_ch)) {
+            && read_ch(cfg_ch_for(FN_IN_BRAKE))) {
             wake_start_fired = true;
             proto_send_ecu_cmd(RCM_ECU_SUB_X14, RCM_ECU_IDX_STARTSTOP);
         }
@@ -214,7 +214,7 @@ static void tick_momentary(uint32_t now, bool sw)
              * ign_start_ch is unconfigured and the ECU is watching this same button.
              * Treating a brake-held press as "off" would power the board down, drop the
              * RUN output and kill the ECU in the middle of its own crank. */
-            if (read_ch(cfg.ign_brake_ch)) {
+            if (read_ch(cfg_ch_for(FN_IN_BRAKE))) {
                 /* Gated on the run SIGNAL, not the state: state can be stale after a
                  * reset, and engaging a starter against a turning engine wrecks the
                  * pinion and the ring gear. */

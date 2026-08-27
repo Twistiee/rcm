@@ -91,6 +91,9 @@ IN_BEH = {"momentary": 0, "toggle": 1, "holdarm": 2}
 # text that lives in the firmware's chnames.cpp, and duplicating them would just create
 # something to drift. These four are derived from the ignition block, never set by hand.
 IGN_FUNCS = {1: "IGNITION", 2: "STARTER", 128: "IN_BRAKE", 129: "IN_ENGINE_RUN"}
+# The roles the firmware LOOKS UP. Labelling a channel with one is how it is given that
+# job -- there is no separate channel-number setting to keep in step.
+FUNC_NAMES = {"ignition": 1, "starter": 2, "brake": 128, "enginerun": 129, "none": 0}
 
 # Named (subsystem, index) pairs for the ECU command table. EVERY TunerStudio command is
 # that shape -- see the cmd_* lines in rusefi's tunerstudio.template.ini -- so the
@@ -516,16 +519,17 @@ def cmd_ctl(bus, args):
                                 if (toggle & ~follow) >> c & 1))
         extra = [node, *pack21(follow), *pack21(toggle)]
     elif args.op == "ignition":
-        # Channel numbers here are 1-based like everywhere else in this tool, and like
-        # the board's terminals. They were raw 0-based passthrough, which meant `ctl
-        # ignition` and `ctl chmode` disagreed about what "channel 7" meant.
-        if len(args.args) < 4:
-            sys.exit("ignition <maintained|momentary> <brake> <starter> <run> [RUN-out]"
-                     "  -- channels 1-%d or 'none'" % CHANNELS)
+        # Mode and flags only. WHICH channel does which job is said once, by labelling
+        # that channel -- `ctl chfunc <ch> brake ...`. There is no second setting here
+        # to disagree with the label.
+        if not args.args:
+            sys.exit("ignition <maintained|momentary> [ecu-flags]  -- assign roles with "
+                     "`ctl chfunc <channel> <brake|starter|enginerun|ignition> ...`")
         mode = {"maintained": 0, "momentary": 1}.get(args.args[0])
         if mode is None:
             mode = int(args.args[0], 0)
-        extra = [mode] + [_chan_arg(a) for a in args.args[1:]]
+        flags = int(args.args[1], 0) if len(args.args) > 1 else 0
+        extra = [mode, flags]
     elif args.op == "runsrc":
         # <can id> <rpm>, not four raw bytes.
         if len(args.args) < 1:
@@ -537,17 +541,21 @@ def cmd_ctl(bus, args):
         extra = [cid & 0xFF, cid >> 8, rpm & 0xFF, rpm >> 8]
     elif args.op == "chfunc":
         if len(args.args) < 3:
-            sys.exit("chfunc <channel> <func-number> <%s|%s> [param-ms]"
-                     % ("|".join(OUT_BEH), "|".join(IN_BEH)))
+            sys.exit("chfunc <channel> <%s|number> <%s|%s> [param-ms]"
+                     % ("|".join(FUNC_NAMES), "|".join(OUT_BEH), "|".join(IN_BEH)))
         ch = _chan_arg(args.args[0])
         if ch == 0xFF:
             sys.exit("chfunc needs a real channel")
+        fn = args.args[1]
+        func = FUNC_NAMES.get(fn)
+        if func is None:
+            func = int(fn, 0)
         beh = args.args[2]
         if beh in OUT_BEH:   bval = OUT_BEH[beh]
         elif beh in IN_BEH:  bval = IN_BEH[beh]
         else:                bval = int(beh, 0)
         param = int(args.args[3], 0) if len(args.args) > 3 else 0
-        extra = [ch, int(args.args[1], 0), bval, param & 0xFF, param >> 8]
+        extra = [ch, func, bval, param & 0xFF, param >> 8]
     elif args.op == "ecucmd":
         if len(args.args) < 2:
             sys.exit("ecucmd <slot 0-%d> <channel|none> <%s | subsystem index>"

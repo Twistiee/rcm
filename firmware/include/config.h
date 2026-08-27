@@ -202,20 +202,18 @@ struct rcm_config_t {
     uint8_t  imu_map[3];
 
     /* --- ignition (see ignition.h) ---
-     * ign_mode picks between a level (a key, or a maintained switch) and a push
-     * button. The three channel numbers are only consulted in momentary mode and are
-     * IGN_CH_NONE when unused.
+     * ign_mode picks between a level (a key, or a maintained switch) and a push button.
      *
-     * ign_start_ch is the one to think twice about: it drives a starter solenoid, and
-     * an unintended crank is dangerous. Cranking is refused outright unless
-     * ign_brake_ch is also configured, so the dangerous action needs two deliberate
-     * settings rather than one. */
+     * WHICH channel does which job is not stored here. It is the channel's function
+     * label -- FN_IN_BRAKE, FN_STARTER, FN_IN_ENGINE_RUN, FN_IGNITION -- looked up by
+     * cfg_ch_for(). One record of a role, so nothing can disagree with it.
+     *
+     * FN_STARTER is the one to think twice about: it drives a starter solenoid, and an
+     * unintended crank is dangerous. Cranking is refused outright unless a channel is
+     * also labelled FN_IN_BRAKE, so the dangerous action needs two deliberate settings
+     * rather than one. FN_IN_ENGINE_RUN is whatever says the engine is turning --
+     * alternator D+, an oil pressure switch. With none, cranking follows the button. */
     uint8_t  ign_mode;
-    uint8_t  ign_brake_ch;      /* CH_INPUT channel, brake pressed = high */
-    uint8_t  ign_start_ch;      /* CH_OUTPUT channel driving the starter relay */
-    uint8_t  ign_run_ch;        /* CH_INPUT channel, engine running (alternator D+,
-                                 * oil pressure switch...). NONE = no running signal,
-                                 * in which case cranking follows the button. */
     uint16_t ign_hold_stop_ms;  /* how long to hold the button to stop the engine */
     uint16_t ign_crank_max_ms;  /* give up cranking after this */
     uint16_t ign_off_hold_ms;   /* maintained mode: ignition low this long -> shut down */
@@ -223,7 +221,6 @@ struct rcm_config_t {
     /* The key's RUN position, as an output. Whatever feeds the ECU's ignition input
      * goes here; it is energised the whole time the board is awake and dropped first
      * on shutdown, so the ECU sees ignition-off and can park itself properly. */
-    uint8_t  ign_run_out_ch;
     uint16_t ign_shutdown_ms;   /* how long to stay powered after dropping RUN, so the
                                  * ECU can finish its own shutdown before the rail goes */
 
@@ -303,8 +300,28 @@ extern struct rcm_straps_t straps;
 
 void     cfg_read_straps(void);
 void     cfg_defaults(struct rcm_config_t *c);
-void cfg_sync_ign_labels(struct rcm_config_t *c);
-bool cfg_ign_owns_channel(const struct rcm_config_t *c, uint8_t ch);
+/* Which channel does this job?
+ *
+ * The function label is the ONLY record of a channel's role. There used to be a second
+ * copy -- ign_brake_ch and friends -- and nothing tied the two together: label channel
+ * 12 "Brake pedal", point ign_brake_ch at channel 5, and the board reads the brake from
+ * 5 while every display says 12. Pressing start with a foot on the brake then does
+ * nothing, with the configuration looking correct, and you go and suspect the switch.
+ *
+ * Returns IGN_CH_NONE when nothing is labelled for the job. First match wins if two
+ * channels are, which `rcm_bench get channel` makes visible.
+ *
+ * Inline rather than a function in config.cpp so the modules that need it -- and the
+ * host tests, which compile them in isolation -- do not have to drag the EEPROM code in
+ * with it. Scanning 21 entries a few times a tick is nothing on this MCU. */
+static inline uint8_t cfg_ch_for(uint8_t func)
+{
+    extern struct rcm_config_t cfg;
+    if (func == FN_NONE) return IGN_CH_NONE;
+    for (uint8_t ch = 0; ch < RCM_CHANNELS; ch++)
+        if (cfg.ch[ch].func == func) return ch;
+    return IGN_CH_NONE;
+}
 void     cfg_load(void);            /* EEPROM, falling back to defaults */
 bool     cfg_save(void);
 uint16_t cfg_crc16(const void *data, uint32_t len);

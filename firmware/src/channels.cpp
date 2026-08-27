@@ -186,10 +186,10 @@ void ch_apply_failsafe(void)
          * failsafe_state is applied at power-up and whenever the bus goes quiet, so a
          * stray bit here would mean a board that cranks the engine on boot, or every
          * time CAN hiccups. Only the ignition state machine turns a starter. */
-        if (ch == cfg.ign_start_ch) { ch_command(ch, false); continue; }
+        if (ch == cfg_ch_for(FN_STARTER)) { ch_command(ch, false); continue; }
         /* Likewise the RUN output: the ignition state machine owns it, and a failsafe
          * that switched the ECU's ignition feed would be deciding to stop the engine. */
-        if (ch == cfg.ign_run_out_ch) continue;
+        if (ch == cfg_ch_for(FN_IGNITION)) continue;
         bool want = (cfg.failsafe_state >> ch) & 1u;
         /* failsafe_state is the PHYSICAL state wanted, so undo the invert that
          * ch_command would apply -- a failsafe table you have to mentally invert is

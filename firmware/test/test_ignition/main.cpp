@@ -71,10 +71,10 @@ static void momentary_setup(bool with_run_channel)
     cfg.output_settle_ms  = 100;
     cfg.fault_confirm_ms  = 500;
     cfg.ign_mode          = IGN_MOMENTARY;
-    cfg.ign_brake_ch      = BRAKE_CH;
-    cfg.ign_start_ch      = START_CH;
-    cfg.ign_run_ch        = with_run_channel ? RUN_CH : IGN_CH_NONE;
-    cfg.ign_run_out_ch    = RUNOUT_CH;
+    cfg.ch[BRAKE_CH].func = FN_IN_BRAKE;
+    cfg.ch[START_CH].func = FN_STARTER;
+    if (with_run_channel) cfg.ch[RUN_CH].func = FN_IN_ENGINE_RUN;
+    cfg.ch[RUNOUT_CH].func = FN_IGNITION;
     cfg.ign_shutdown_ms   = 3000;
     cfg.ign_idle_timeout_s = 0;          /* off unless a test asks for it */
     cfg.ecu_rpm_can_id     = 0;
@@ -110,7 +110,6 @@ static void test_maintained_shuts_down_after_the_level_goes(void)
     memset(&cfg, 0, sizeof(cfg));
     cfg.ign_mode = IGN_MAINTAINED;
     cfg.ign_off_hold_ms = 2000;
-    cfg.ign_brake_ch = cfg.ign_start_ch = cfg.ign_run_ch = IGN_CH_NONE;
     ch_begin();
     sw = true;
     ign_begin(true);
@@ -130,7 +129,6 @@ static void test_maintained_ignores_a_brief_dropout(void)
     memset(&cfg, 0, sizeof(cfg));
     cfg.ign_mode = IGN_MAINTAINED;
     cfg.ign_off_hold_ms = 2000;
-    cfg.ign_brake_ch = cfg.ign_start_ch = cfg.ign_run_ch = IGN_CH_NONE;
     ch_begin();
     sw = true;
     ign_begin(true);
@@ -150,8 +148,7 @@ static void test_the_wake_press_is_consumed(void)
     memset(&cfg, 0, sizeof(cfg));
     cfg.input_debounce_ms = 25;
     cfg.ign_mode = IGN_MOMENTARY;
-    cfg.ign_brake_ch = BRAKE_CH; cfg.ign_start_ch = START_CH;
-    cfg.ign_run_ch = IGN_CH_NONE;
+    cfg.ch[BRAKE_CH].func = FN_IN_BRAKE; cfg.ch[START_CH].func = FN_STARTER;
     cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
     for (uint8_t i = 0; i < RCM_CHANNELS; i++) cfg.ch[i].mode = CH_OUTPUT;
     cfg.ch[BRAKE_CH].mode = CH_INPUT;
@@ -182,8 +179,6 @@ static void test_holding_the_wake_press_does_not_shut_the_board_down(void)
     memset(&cfg, 0, sizeof(cfg));
     cfg.input_debounce_ms = 25;
     cfg.ign_mode = IGN_MOMENTARY;
-    cfg.ign_brake_ch = IGN_CH_NONE; cfg.ign_start_ch = IGN_CH_NONE;
-    cfg.ign_run_ch = IGN_CH_NONE;
     cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
     ch_begin();
 
@@ -214,8 +209,6 @@ static void test_a_wake_press_the_boot_sample_missed_is_still_consumed(void)
     memset(&cfg, 0, sizeof(cfg));
     cfg.input_debounce_ms = 25;
     cfg.ign_mode = IGN_MOMENTARY;
-    cfg.ign_brake_ch = IGN_CH_NONE; cfg.ign_start_ch = IGN_CH_NONE;
-    cfg.ign_run_ch = IGN_CH_NONE;
     cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
     ch_begin();
 
@@ -241,8 +234,6 @@ static void test_a_press_that_ended_before_boot_still_arms(void)
     memset(&cfg, 0, sizeof(cfg));
     cfg.input_debounce_ms = 25;
     cfg.ign_mode = IGN_MOMENTARY;
-    cfg.ign_brake_ch = IGN_CH_NONE; cfg.ign_start_ch = IGN_CH_NONE;
-    cfg.ign_run_ch = IGN_CH_NONE;
     cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
     ch_begin();
 
@@ -264,7 +255,7 @@ static void test_two_button_mode_never_talks_to_the_ecu(void)
 {
     momentary_setup(false);
     cfg.ign_ecu_flags = 0;                       /* the default */
-    cfg.ign_start_ch  = IGN_CH_NONE;             /* ECU owns the starter */
+    cfg.ch[START_CH].func = FN_NONE;             /* ECU owns the starter */
     ECU_CMDS.clear();
 
     SIM.wiring[BRAKE_CH] = SIM_BUTTON_PRESSED;
@@ -273,6 +264,8 @@ static void test_two_button_mode_never_talks_to_the_ecu(void)
     sw = false; tick(50);
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, (int)ECU_CMDS.size(),
         "the ignition button commanded the ECU with one-button mode off");
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(START_CH),
+        "cranked locally when the ECU is supposed to own the starter");
     TEST_ASSERT_FALSE_MESSAGE(ign_wants_shutdown(),
         "a brake-held press must never be a shutdown");
 }
@@ -280,8 +273,8 @@ static void test_two_button_mode_never_talks_to_the_ecu(void)
 static void test_one_button_press_with_brake_asks_the_ecu_to_start(void)
 {
     momentary_setup(false);
+    cfg.ch[START_CH].func = FN_NONE;          /* the ECU owns the starter */
     cfg.ign_ecu_flags = IGN_ECU_START_ON_BRAKE;
-    cfg.ign_start_ch  = IGN_CH_NONE;
     ECU_CMDS.clear();
 
     SIM.wiring[BRAKE_CH] = SIM_BUTTON_PRESSED;
@@ -316,9 +309,7 @@ static void test_a_wake_hold_with_the_brake_asks_the_ecu_to_start(void)
     memset(&cfg, 0, sizeof(cfg));
     cfg.input_debounce_ms = 25;
     cfg.ign_mode = IGN_MOMENTARY;
-    cfg.ign_brake_ch = BRAKE_CH; cfg.ign_start_ch = IGN_CH_NONE;
-    cfg.ign_run_ch = IGN_CH_NONE;
-    cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
+    cfg.ch[BRAKE_CH].func = FN_IN_BRAKE; cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
     cfg.ign_ecu_flags = IGN_ECU_START_ON_BRAKE;
     cfg.ign_wake_start_ms = 2000;
     cfg.ch[BRAKE_CH].mode = CH_INPUT;
@@ -348,9 +339,7 @@ static void test_two_button_mode_does_not_wake_start_even_with_the_brake(void)
     memset(&cfg, 0, sizeof(cfg));
     cfg.input_debounce_ms = 25;
     cfg.ign_mode = IGN_MOMENTARY;
-    cfg.ign_brake_ch = BRAKE_CH; cfg.ign_start_ch = IGN_CH_NONE;
-    cfg.ign_run_ch = IGN_CH_NONE;
-    cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
+    cfg.ch[BRAKE_CH].func = FN_IN_BRAKE; cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
     cfg.ign_ecu_flags = 0;                       /* two-button: the default */
     cfg.ign_wake_start_ms = 2000;
     cfg.ch[BRAKE_CH].mode = CH_INPUT;
@@ -371,9 +360,7 @@ static void test_a_wake_hold_without_the_brake_only_wakes(void)
     memset(&cfg, 0, sizeof(cfg));
     cfg.input_debounce_ms = 25;
     cfg.ign_mode = IGN_MOMENTARY;
-    cfg.ign_brake_ch = BRAKE_CH; cfg.ign_start_ch = IGN_CH_NONE;
-    cfg.ign_run_ch = IGN_CH_NONE;
-    cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
+    cfg.ch[BRAKE_CH].func = FN_IN_BRAKE; cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
     cfg.ign_ecu_flags = IGN_ECU_START_ON_BRAKE;
     cfg.ign_wake_start_ms = 2000;
     cfg.ch[BRAKE_CH].mode = CH_INPUT;
@@ -514,7 +501,7 @@ static void test_cranking_is_refused_when_half_configured(void)
     /* A starter channel with no brake channel must not crank. The dangerous capability
      * needs two deliberate settings, not one. */
     momentary_setup(true);
-    cfg.ign_brake_ch = IGN_CH_NONE;
+    cfg.ch[BRAKE_CH].func = FN_NONE;          /* no brake configured */
     set_brake(true);
 
     press(TICK_MS * 4);
@@ -548,7 +535,7 @@ static void test_brake_held_press_never_shuts_down_when_the_ecu_cranks(void)
      * middle of its own crank -- and the car would be unstartable in a way that looked
      * like an ECU fault. */
     momentary_setup(true);
-    cfg.ign_start_ch = IGN_CH_NONE;        /* the ECU cranks, not us */
+    cfg.ch[START_CH].func = FN_NONE;          /* the ECU cranks, not us */
     set_brake(true);
 
     press(TICK_MS * 4);
@@ -565,7 +552,6 @@ static void test_hold_still_stops_it_when_the_ecu_cranks(void)
 {
     /* Deferring the press must not cost the stop gesture. */
     momentary_setup(true);
-    cfg.ign_start_ch = IGN_CH_NONE;
     set_brake(true);
 
     sw = true; tick(HOLD_MS + 100);
@@ -798,8 +784,6 @@ static void test_idle_timeout_is_momentary_only(void)
     cfg.ign_mode = IGN_MAINTAINED;
     cfg.ign_off_hold_ms = 2000;
     cfg.ign_idle_timeout_s = 5;
-    cfg.ign_brake_ch = cfg.ign_start_ch = cfg.ign_run_ch = IGN_CH_NONE;
-    cfg.ign_run_out_ch = IGN_CH_NONE;
     ch_begin();
     sw = true;
     ign_begin(true);
