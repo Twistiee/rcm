@@ -87,6 +87,11 @@ MODES = {"unused": 0, "out": 1, "in": 2}
 OUT_BEH = {"steady": 0, "flash": 1, "pulse": 2, "delayoff": 3}
 IN_BEH = {"momentary": 0, "toggle": 1, "holdarm": 2}
 
+# Only the four the FIRMWARE acts on are named here. The other ~47 labels are display
+# text that lives in the firmware's chnames.cpp, and duplicating them would just create
+# something to drift. These four are derived from the ignition block, never set by hand.
+IGN_FUNCS = {1: "IGNITION", 2: "STARTER", 128: "IN_BRAKE", 129: "IN_ENGINE_RUN"}
+
 # Named (subsystem, index) pairs for the ECU command table. EVERY TunerStudio command is
 # that shape -- see the cmd_* lines in rusefi's tunerstudio.template.ini -- so the
 # firmware stores the pair and the names live here, where adding one costs nothing.
@@ -390,10 +395,16 @@ CFG_SEL = {
            % (("0x%03X" % _u16(d, 2)) if _u16(d, 2) else "none", _u16(d, 4))),
     0x08: ("ecucmd", 6, lambda d: "channel %s -> subsystem %d index %d%s"
            % (_ch(d[2]), _u16(d, 3), _u16(d, 5), _cmd_name(_u16(d, 3), _u16(d, 5)))),
-    0x09: ("channel", CHANNELS, lambda d: "%-6s %-9s flags 0x%02X func %d param %d"
+    0x09: ("channel", CHANNELS, lambda d: "%-6s %-9s flags 0x%02X func %-14s param %d"
            % (["unused", "out", "in"][d[2]] if d[2] < 3 else "?",
-              _beh_name(d[2], d[5]), d[3], d[4], _u16(d, 6))),
+              _beh_name(d[2], d[5]), d[3], _func_name(d[4]), _u16(d, 6))),
 }
+
+
+def _func_name(f):
+    if f == 0:
+        return "-"
+    return IGN_FUNCS.get(f, str(f))
 
 
 def _beh_name(mode, beh):

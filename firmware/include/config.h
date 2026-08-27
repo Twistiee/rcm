@@ -303,6 +303,8 @@ extern struct rcm_straps_t straps;
 
 void     cfg_read_straps(void);
 void     cfg_defaults(struct rcm_config_t *c);
+void cfg_sync_ign_labels(struct rcm_config_t *c);
+bool cfg_ign_owns_channel(const struct rcm_config_t *c, uint8_t ch);
 void     cfg_load(void);            /* EEPROM, falling back to defaults */
 bool     cfg_save(void);
 uint16_t cfg_crc16(const void *data, uint32_t len);

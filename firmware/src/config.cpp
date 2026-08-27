@@ -48,6 +48,39 @@ uint16_t cfg_crc16(const void *data, uint32_t len)
 
 #define CRC_LEN (sizeof(struct rcm_config_t) - sizeof(uint16_t))
 
+/* The ignition block names channels by number; the function labels name them by job.
+ * Those are two statements of the same real-world fact, and nothing stopped them
+ * disagreeing -- label channel 12 "Brake pedal", point ign_brake_ch at channel 5, and
+ * the board reads the brake from 5 while every display says 12. Pressing start with your
+ * foot on the brake would then do nothing, with the configuration looking correct.
+ *
+ * So the channel number is the ONE thing anybody sets, and the label is derived from it
+ * here. Called after any change to the ignition block, and after loading a stored config
+ * so an older record is brought into line rather than trusted. */
+void cfg_sync_ign_labels(struct rcm_config_t *c)
+{
+    const uint8_t owned[4] = { FN_IN_BRAKE, FN_STARTER, FN_IN_ENGINE_RUN, FN_IGNITION };
+    const uint8_t chans[4] = { c->ign_brake_ch, c->ign_start_ch,
+                               c->ign_run_ch,  c->ign_run_out_ch };
+
+    for (uint8_t i = 0; i < 4; i++) {
+        /* Take the label off whatever used to wear it... */
+        for (uint8_t ch = 0; ch < RCM_CHANNELS; ch++)
+            if (c->ch[ch].func == owned[i] && ch != chans[i]) c->ch[ch].func = FN_NONE;
+        /* ...and put it on the channel that now does the job. */
+        if (chans[i] < RCM_CHANNELS) c->ch[chans[i]].func = owned[i];
+    }
+}
+
+/* True if the ignition block currently claims this channel, so its label is derived and
+ * must not be overwritten by hand. */
+bool cfg_ign_owns_channel(const struct rcm_config_t *c, uint8_t ch)
+{
+    return ch < RCM_CHANNELS
+        && (ch == c->ign_brake_ch || ch == c->ign_start_ch
+         || ch == c->ign_run_ch   || ch == c->ign_run_out_ch);
+}
+
 bool cfg_valid(const struct rcm_config_t *c)
 {
     return c->magic == RCM_CFG_MAGIC
@@ -131,6 +164,7 @@ void cfg_load(void)
 
     if (store_read(EEP_ADDR_CFG_A, &tmp, sizeof(tmp)) && cfg_valid(&tmp)) {
         cfg = tmp;
+        cfg_sync_ign_labels(&cfg);
         return;
     }
     if (store_read(EEP_ADDR_CFG_B, &tmp, sizeof(tmp)) && cfg_valid(&tmp)) {

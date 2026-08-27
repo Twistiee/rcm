@@ -765,6 +765,56 @@ static void test_set_ch_func_carries_the_param(void)
     TEST_ASSERT_EQUAL_UINT16(1000, cfg.ch[5].param);
 }
 
+static void test_ignition_channels_stamp_their_own_labels(void)
+{
+    /* Two statements of the same fact used to be settable independently: the ignition
+     * block names channels by number, the labels name them by job. Label channel 12 as
+     * the brake, point the ignition at channel 5, and the board reads the brake from 5
+     * while every display says 12 -- so pressing start with your foot on the brake does
+     * nothing and the configuration looks correct. */
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 11, 4, 9, 6 });
+    run_ms(TICK_MS * 4);
+
+    TEST_ASSERT_EQUAL_UINT8(FN_IN_BRAKE,      cfg.ch[11].func);
+    TEST_ASSERT_EQUAL_UINT8(FN_STARTER,       cfg.ch[4].func);
+    TEST_ASSERT_EQUAL_UINT8(FN_IN_ENGINE_RUN, cfg.ch[9].func);
+    TEST_ASSERT_EQUAL_UINT8(FN_IGNITION,      cfg.ch[6].func);
+}
+
+static void test_moving_a_role_takes_the_label_with_it(void)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 11, IGN_CH_NONE, IGN_CH_NONE, IGN_CH_NONE });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT8(FN_IN_BRAKE, cfg.ch[11].func);
+
+    /* move the brake to another channel */
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 3, IGN_CH_NONE, IGN_CH_NONE, IGN_CH_NONE });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT8(FN_IN_BRAKE, cfg.ch[3].func);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(FN_NONE, cfg.ch[11].func,
+        "the old channel kept the brake label, so two channels now claim to be the brake");
+}
+
+static void test_a_derived_label_cannot_be_overwritten_by_hand(void)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 11, IGN_CH_NONE, IGN_CH_NONE, IGN_CH_NONE });
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_CH_MODE, 11, CH_INPUT, 0 });
+    run_ms(TICK_MS * 4);
+
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_CH_FUNC, 11, 44, IN_TOGGLE, 0x00, 0x00 });
+    run_ms(TICK_MS * 4);
+
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(FN_IN_BRAKE, cfg.ch[11].func,
+        "the brake label was overwritten, putting the disagreement straight back");
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(IN_TOGGLE, cfg.ch[11].behaviour,
+        "behaviour should still be free to change");
+}
+
 static void test_set_failsafe_and_bitrate(void)
 {
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_FAILSAFE, 0x03, 0x00, 0x10 });
@@ -1080,5 +1130,8 @@ int main(void)
     RUN_TEST(test_out_of_range_requests_say_nothing);
     RUN_TEST(test_set_ch_func_validates_behaviour_against_mode);
     RUN_TEST(test_set_ch_func_carries_the_param);
+    RUN_TEST(test_ignition_channels_stamp_their_own_labels);
+    RUN_TEST(test_moving_a_role_takes_the_label_with_it);
+    RUN_TEST(test_a_derived_label_cannot_be_overwritten_by_hand);
     return UNITY_END();
 }

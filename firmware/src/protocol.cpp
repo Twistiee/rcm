@@ -324,7 +324,12 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
             const uint8_t max = (cfg.ch[ch].mode == CH_INPUT) ? IN_HOLD_ARM
                                                               : OUT_DELAY_OFF;
             if (beh <= max) {
-                cfg.ch[ch].func      = f->data[2];
+                /* The ignition block owns its channels' labels. Letting one be
+                 * overwritten here would put back exactly the disagreement
+                 * cfg_sync_ign_labels() exists to prevent -- silently, and only
+                 * visible the next time somebody read the config. Behaviour and
+                 * param are still free to change. */
+                if (!cfg_ign_owns_channel(&cfg, ch)) cfg.ch[ch].func = f->data[2];
                 cfg.ch[ch].behaviour = beh;
                 if (f->len >= 6)
                     cfg.ch[ch].param = (uint16_t)(f->data[4] | (f->data[5] << 8));
@@ -426,6 +431,9 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
                     const uint8_t o = f->data[5];
                     if (o < RCM_CHANNELS || o == IGN_CH_NONE) cfg.ign_run_out_ch = o;
                 }
+                /* The labels are derived from these numbers, never entered separately,
+                 * so they cannot drift out of agreement with them. */
+                cfg_sync_ign_labels(&cfg);
                 /* Reconsider the ignition from scratch under the new settings rather
                  * than carrying a state that was reached under the old ones. */
                 ign_begin(app_ignition_on());
