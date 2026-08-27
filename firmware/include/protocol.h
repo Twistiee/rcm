@@ -108,6 +108,11 @@
                                       * without this a tool can configure a board but
                                       * never ask what it is configured as, which means
                                       * every check has to be behavioural. */
+#define RCM_OP_SET_CH_FUNC    0x1B   /* b1 ch(0-based), b2 function label, b3 behaviour,
+                                      * b4..b5 LE param ms. SET_CH_MODE carries only the
+                                      * mode and flags, so without this the behaviour
+                                      * byte -- flash, pulse, delay-off, toggle,
+                                      * hold-to-arm -- could only be set by recompiling. */
 
 /* --- RCM_OP_GET_CFG selectors ----------------------------------------------
  * Reply layout is always: d0 selector, d1 index, d2..d7 payload. */

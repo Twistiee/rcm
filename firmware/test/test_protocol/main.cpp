@@ -732,6 +732,39 @@ static void test_out_of_range_requests_say_nothing(void)
     TEST_ASSERT_NULL_MESSAGE(ask(RCM_CFG_SEL_CHANNEL, RCM_CHANNELS), "answered a bad channel");
 }
 
+static void test_set_ch_func_validates_behaviour_against_mode(void)
+{
+    /* The behaviour byte means different things for an input and an output. Letting an
+     * output behaviour onto an input would leave a channel claiming to flash while
+     * reporting a latch, which nothing downstream could make sense of. */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_CH_MODE, 4, CH_INPUT, 0 });
+    run_ms(TICK_MS * 4);
+
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_CH_FUNC, 4, 40, IN_TOGGLE, 0x00, 0x00 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT8(IN_TOGGLE, cfg.ch[4].behaviour);
+    TEST_ASSERT_EQUAL_UINT8(40, cfg.ch[4].func);
+
+    /* OUT_DELAY_OFF is 3, past IN_HOLD_ARM -- refused, old value kept */
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_CH_FUNC, 4, 41, OUT_DELAY_OFF, 0x00, 0x00 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(IN_TOGGLE, cfg.ch[4].behaviour,
+        "an output behaviour was accepted on an input channel");
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(40, cfg.ch[4].func, "the label changed anyway");
+}
+
+static void test_set_ch_func_carries_the_param(void)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_CH_MODE, 5, CH_INPUT, 0 });
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_CH_FUNC, 5, 40, IN_HOLD_ARM, 0xE8, 0x03 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT8(IN_HOLD_ARM, cfg.ch[5].behaviour);
+    TEST_ASSERT_EQUAL_UINT16(1000, cfg.ch[5].param);
+}
+
 static void test_set_failsafe_and_bitrate(void)
 {
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_FAILSAFE, 0x03, 0x00, 0x10 });
@@ -1045,5 +1078,7 @@ int main(void)
     RUN_TEST(test_config_read_back_is_indexed_for_tables);
     RUN_TEST(test_a_global_config_request_is_never_answered);
     RUN_TEST(test_out_of_range_requests_say_nothing);
+    RUN_TEST(test_set_ch_func_validates_behaviour_against_mode);
+    RUN_TEST(test_set_ch_func_carries_the_param);
     return UNITY_END();
 }

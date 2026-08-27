@@ -313,6 +313,25 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
         }
         break;
 
+    case RCM_OP_SET_CH_FUNC:
+        if (f->len >= 4 && f->data[1] < RCM_CHANNELS) {
+            const uint8_t ch  = f->data[1];
+            const uint8_t beh = f->data[3];
+            /* The behaviour byte means different things for an input and an output, so
+             * it is validated against the channel's MODE. Accepting an output behaviour
+             * on an input would leave a channel claiming to flash while reporting a
+             * latch, which nothing downstream could make sense of. */
+            const uint8_t max = (cfg.ch[ch].mode == CH_INPUT) ? IN_HOLD_ARM
+                                                              : OUT_DELAY_OFF;
+            if (beh <= max) {
+                cfg.ch[ch].func      = f->data[2];
+                cfg.ch[ch].behaviour = beh;
+                if (f->len >= 6)
+                    cfg.ch[ch].param = (uint16_t)(f->data[4] | (f->data[5] << 8));
+            }
+        }
+        break;
+
     case RCM_OP_GET_CFG:
         /* Never answer a GLOBAL request. Eight nodes replying at once would collide,
          * and the asker cannot tell whose answer it got anyway. */

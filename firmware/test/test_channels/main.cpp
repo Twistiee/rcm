@@ -355,6 +355,124 @@ static void test_failsafe_applies_physical_states(void)
     TEST_ASSERT_FALSE(sim_driver_on(0));
 }
 
+/* --- input behaviours ---------------------------------------------------------
+ * Applied where the input is READ, not where it is consumed. A latched keypad button
+ * then carries its latched state in the INPUTS frame, so everything downstream --
+ * mirroring, the ignition machine, ECU bindings, a dash -- agrees without each
+ * re-deriving it. */
+
+static void in_setup(uint8_t ch, uint8_t behaviour, uint16_t param)
+{
+    cfg_for_test(CH_INPUT);
+    cfg.ch[ch].behaviour = behaviour;
+    cfg.ch[ch].param     = param;
+    ch_begin();
+    run_ms(cfg.input_debounce_ms + TICK_MS * 4);   /* let the baseline settle */
+}
+
+static void press(uint8_t ch, bool down)
+{
+    SIM.wiring[ch] = down ? SIM_BUTTON_PRESSED : SIM_BUTTON_OPEN;
+    run_ms(cfg.input_debounce_ms + TICK_MS * 4);
+}
+
+static bool reported(uint8_t ch) { return (ch_inputs() >> ch) & 1u; }
+
+static void test_momentary_is_still_the_default(void)
+{
+    in_setup(3, IN_MOMENTARY, 0);
+    TEST_ASSERT_FALSE(reported(3));
+    press(3, true);  TEST_ASSERT_TRUE(reported(3));
+    press(3, false); TEST_ASSERT_FALSE(reported(3));
+}
+
+static void test_toggle_latches_and_stays_through_the_release(void)
+{
+    in_setup(3, IN_TOGGLE, 0);
+    TEST_ASSERT_FALSE(reported(3));
+
+    press(3, true);
+    TEST_ASSERT_TRUE_MESSAGE(reported(3), "the press did not latch");
+    press(3, false);
+    TEST_ASSERT_TRUE_MESSAGE(reported(3), "releasing cleared a latched input");
+    press(3, true);
+    TEST_ASSERT_FALSE_MESSAGE(reported(3), "the second press did not clear it");
+    press(3, false);
+    TEST_ASSERT_FALSE(reported(3));
+}
+
+static void test_toggle_does_not_chatter_while_held(void)
+{
+    in_setup(3, IN_TOGGLE, 0);
+    press(3, true);
+    TEST_ASSERT_TRUE(reported(3));
+    run_ms(2000);                       /* still held, a long time */
+    TEST_ASSERT_TRUE_MESSAGE(reported(3), "a held toggle flipped itself");
+}
+
+static void test_a_toggle_button_held_at_boot_does_not_latch(void)
+{
+    /* Same trap as everywhere else: the first settled reading is a BASELINE, not an
+     * edge. Without that, a board waking with a latching button held -- or shorted --
+     * comes up with that load switched on. */
+    cfg_for_test(CH_INPUT);
+    cfg.ch[3].behaviour = IN_TOGGLE;
+    SIM.wiring[3] = SIM_BUTTON_PRESSED;      /* already down when we start */
+    ch_begin();
+    run_ms(cfg.input_debounce_ms + TICK_MS * 8);
+
+    TEST_ASSERT_FALSE_MESSAGE(reported(3), "a button held at boot latched its load on");
+    press(3, false);
+    TEST_ASSERT_FALSE_MESSAGE(reported(3), "releasing should not latch either");
+    press(3, true);
+    TEST_ASSERT_TRUE_MESSAGE(reported(3), "and the first real press should latch");
+}
+
+static void test_hold_to_arm_ignores_a_short_press(void)
+{
+    in_setup(3, IN_HOLD_ARM, 1000);
+
+    SIM.wiring[3] = SIM_BUTTON_PRESSED;
+    run_ms(cfg.input_debounce_ms + 200);
+    TEST_ASSERT_FALSE_MESSAGE(reported(3), "armed on a short press");
+
+    run_ms(1000);
+    TEST_ASSERT_TRUE_MESSAGE(reported(3), "never armed despite being held");
+
+    SIM.wiring[3] = SIM_BUTTON_OPEN;
+    run_ms(cfg.input_debounce_ms + TICK_MS * 4);
+    TEST_ASSERT_FALSE_MESSAGE(reported(3), "stayed armed after release");
+}
+
+static void test_hold_to_arm_restarts_its_timer_each_press(void)
+{
+    /* Two taps that add up to the hold time must not arm it. */
+    in_setup(3, IN_HOLD_ARM, 1000);
+    for (int i = 0; i < 3; i++) {
+        SIM.wiring[3] = SIM_BUTTON_PRESSED;
+        run_ms(cfg.input_debounce_ms + 400);
+        TEST_ASSERT_FALSE(reported(3));
+        SIM.wiring[3] = SIM_BUTTON_OPEN;
+        run_ms(cfg.input_debounce_ms + TICK_MS * 4);
+    }
+    TEST_ASSERT_FALSE_MESSAGE(reported(3), "repeated taps armed it");
+}
+
+static void test_invert_is_applied_before_the_behaviour(void)
+{
+    /* An inverted toggle input is a button wired to ground rather than to +12V. The
+     * latch has to flip on the electrical event the user calls a press. */
+    in_setup(3, IN_TOGGLE, 0);
+    cfg.ch[3].flags = CH_F_INVERT;
+    ch_begin();
+    run_ms(cfg.input_debounce_ms + TICK_MS * 8);   /* open reads as PRESSED now */
+
+    press(3, true);                                 /* electrically low = released */
+    TEST_ASSERT_FALSE_MESSAGE(reported(3), "adopted baseline then released");
+    press(3, false);                                /* back to 'pressed' */
+    TEST_ASSERT_TRUE_MESSAGE(reported(3), "an inverted press did not latch");
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -382,5 +500,12 @@ int main(void)
     RUN_TEST(test_a_real_fault_is_still_found_once_the_supply_recovers);
     RUN_TEST(test_switching_a_channel_drops_its_stale_fault);
     RUN_TEST(test_failsafe_applies_physical_states);
+    RUN_TEST(test_momentary_is_still_the_default);
+    RUN_TEST(test_toggle_latches_and_stays_through_the_release);
+    RUN_TEST(test_toggle_does_not_chatter_while_held);
+    RUN_TEST(test_a_toggle_button_held_at_boot_does_not_latch);
+    RUN_TEST(test_hold_to_arm_ignores_a_short_press);
+    RUN_TEST(test_hold_to_arm_restarts_its_timer_each_press);
+    RUN_TEST(test_invert_is_applied_before_the_behaviour);
     return UNITY_END();
 }

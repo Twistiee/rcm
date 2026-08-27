@@ -52,6 +52,26 @@ enum ch_behaviour_t {
                          * lights, fan run-on, anything that should linger.          */
 };
 
+/* HOW an INPUT behaves. Shares the `behaviour` byte with ch_behaviour_t, which is
+ * outputs-only, so a channel's one behaviour byte means whichever applies to its mode.
+ * IN_MOMENTARY is 0, the same as OUT_STEADY, so the default is right for both.
+ *
+ * These change what the channel REPORTS, not what some output does. That is the useful
+ * place for it: a latched keypad button then carries its latched state in the INPUTS
+ * frame, so a relay module mirroring that keypad just follows it, the ECU-command
+ * binding sees one edge per intent, and a dash shows the real state. Doing it at the
+ * destination instead -- which is what peer_toggle_mask does -- only works for the one
+ * consumer that implements it. */
+enum ch_in_behaviour_t {
+    IN_MOMENTARY = 0,  /* reports the switch, as it is. The default.               */
+    IN_TOGGLE    = 1,  /* each PRESS flips the reported state and it stays there.
+                        * A momentary button driving a latching load.              */
+    IN_HOLD_ARM  = 2,  /* reports true only once the switch has been held for
+                        * `param` ms, and false the instant it is released. For
+                        * things a knock must not arm -- launch control being the
+                        * case this exists for.                                    */
+};
+
 /* WHAT a channel is for. Mostly a label -- it names the channel for the bench tool and
  * the self-test console, and it is what a dash would show instead of "CH07".
  *

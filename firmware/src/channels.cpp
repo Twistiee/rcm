@@ -47,6 +47,15 @@ static uint32_t last_raw;
 static uint8_t  debounce_ct[RCM_CHANNELS];
 static uint32_t change_ms[RCM_CHANNELS];   /* when this channel last switched */
 
+/* Input behaviour state. `primed` matters: a channel is only allowed to act on an edge
+ * once its debounce has settled at least once, so a board that boots with a toggle
+ * button held does not latch it on the way up. */
+static uint32_t in_reported;
+static uint32_t in_prev;
+static uint32_t in_latched;
+static uint32_t in_primed;
+static uint32_t in_since[RCM_CHANNELS];
+
 static uint8_t  aux_stable;
 static uint8_t  aux_last_raw;
 static uint8_t  aux_ct[RCM_AUX_INPUTS];
@@ -106,6 +115,8 @@ void ch_begin(void)
     memset(debounce_ct, 0, sizeof(debounce_ct));
     memset(open_ms, 0, sizeof(open_ms));
     memset(short_ms, 0, sizeof(short_ms));
+    in_reported = in_prev = in_latched = in_primed = 0;
+    memset(in_since, 0, sizeof(in_since));
     memset(aux_ct, 0, sizeof(aux_ct));
     aux_stable = aux_last_raw = 0;
     diag_inhibited = false;
@@ -214,6 +225,49 @@ void ch_tick(uint32_t now_ms)
     }
     last_raw = raw;
 
+    /* --- input behaviours --------------------------------------------------
+     * Applied AFTER debounce and invert, so everything downstream -- the INPUTS frame,
+     * peer mirroring, the ignition state machine, the ECU command bindings -- sees one
+     * consistent answer rather than each re-deriving its own. */
+    for (uint8_t ch = 0; ch < RCM_CHANNELS; ch++) {
+        const uint32_t bit = 1ul << ch;
+        if (cfg.ch[ch].mode != CH_INPUT) {
+            in_reported &= ~bit; in_prev &= ~bit; in_latched &= ~bit; in_primed &= ~bit;
+            continue;
+        }
+        bool sw = (stable_sense >> ch) & 1u;
+        if (cfg.ch[ch].flags & CH_F_INVERT) sw = !sw;
+
+        if (!(in_primed & bit)) {
+            /* First settled reading. Adopt it as the baseline without acting on it. */
+            if (debounce_ct[ch] < need) continue;
+            in_primed |= bit;
+            if (sw) { in_prev |= bit; in_since[ch] = now_ms; }
+            /* Note what is NOT adopted: the LATCH. A toggle button held at boot -- or
+             * shorted, or wet -- must not bring its load up with the board. The switch
+             * position becomes the baseline so no edge is manufactured, but the latch
+             * starts off, and it takes a real release-then-press to set it. */
+        }
+
+        const bool was = (in_prev >> ch) & 1u;
+        bool out;
+        switch (cfg.ch[ch].behaviour) {
+        case IN_TOGGLE:
+            if (sw && !was) in_latched ^= bit;
+            out = (in_latched >> ch) & 1u;
+            break;
+        case IN_HOLD_ARM:
+            if (sw && !was) in_since[ch] = now_ms;
+            out = sw && (uint32_t)(now_ms - in_since[ch]) >= cfg.ch[ch].param;
+            break;
+        default:
+            out = sw;
+            break;
+        }
+        if (sw) in_prev |= bit; else in_prev &= ~bit;
+        if (out) in_reported |= bit; else in_reported &= ~bit;
+    }
+
     const uint8_t araw = sr_aux_all();
     for (uint8_t a = 0; a < RCM_AUX_INPUTS; a++) {
         const bool r = (araw >> a) & 1u;
@@ -285,12 +339,7 @@ void ch_clear_faults(void)
 
 uint32_t ch_inputs(void)
 {
-    uint32_t v = 0;
-    for (uint8_t ch = 0; ch < RCM_CHANNELS; ch++) {
-        if (cfg.ch[ch].mode != CH_INPUT) continue;
-        bool on = (stable_sense >> ch) & 1u;
-        if (cfg.ch[ch].flags & CH_F_INVERT) on = !on;
-        if (on) v |= 1ul << ch;
-    }
-    return v;
+    /* Computed in ch_tick rather than here: a toggle has to see every edge exactly once,
+     * and deriving it in a getter would flip the state again for every caller. */
+    return in_reported;
 }

@@ -76,8 +76,16 @@ OP = {
     # bind an input channel to a TunerStudio command sent to the ECU over CAN.
     #   ecucmd <slot 0-5> <channel|none> <preset | subsystem index>
     "ecucmd":       0x19,
+    # channel function label + behaviour + param.
+    #   chfunc <channel> <func> <behaviour> [param-ms]
+    # behaviour names depend on the channel's mode: outputs take
+    # steady/flash/pulse/delayoff, inputs take momentary/toggle/holdarm.
+    "chfunc":       0x1B,
 }
 MODES = {"unused": 0, "out": 1, "in": 2}
+# The behaviour byte means whichever list applies to the channel's mode.
+OUT_BEH = {"steady": 0, "flash": 1, "pulse": 2, "delayoff": 3}
+IN_BEH = {"momentary": 0, "toggle": 1, "holdarm": 2}
 
 # Named (subsystem, index) pairs for the ECU command table. EVERY TunerStudio command is
 # that shape -- see the cmd_* lines in rusefi's tunerstudio.template.ini -- so the
@@ -372,17 +380,28 @@ CFG_SEL = {
            % (_u16(d, 2), _u16(d, 4), _u16(d, 6))),
     0x05: ("igntimes2", 1, lambda d: "ign-off hold %dms, idle timeout %ds, wake-start %dms"
            % (_u16(d, 2), _u16(d, 4), _u16(d, 6))),
-    0x06: ("peer", 2, lambda d: ("node %s, follows %s" % (_ch(d[2], "none"),
+    # NOTE the peer NODE is a node number 0-7, not a channel -- do not run it through
+    # _ch(), which is 1-based. Read-back caught this reporting node 4 as "node 5".
+    0x06: ("peer", 2, lambda d: ("node %s, follows %s"
+                                 % ("none" if d[2] == 0xFF else d[2],
                                  _chlist(unpack21(d[3:6])) or "nothing"))
            if d[1] == 0 else "toggles %s" % (_chlist(unpack21(d[2:5])) or "nothing")),
     0x07: ("runsrc", 1, lambda d: "ECU rpm id %s, running at %d rpm"
            % (("0x%03X" % _u16(d, 2)) if _u16(d, 2) else "none", _u16(d, 4))),
     0x08: ("ecucmd", 6, lambda d: "channel %s -> subsystem %d index %d%s"
            % (_ch(d[2]), _u16(d, 3), _u16(d, 5), _cmd_name(_u16(d, 3), _u16(d, 5)))),
-    0x09: ("channel", CHANNELS, lambda d: "%-6s flags 0x%02X func %d behaviour %d param %d"
-           % (["unused", "out", "in"][d[2]] if d[2] < 3 else "?", d[3], d[4], d[5],
-              _u16(d, 6))),
+    0x09: ("channel", CHANNELS, lambda d: "%-6s %-9s flags 0x%02X func %d param %d"
+           % (["unused", "out", "in"][d[2]] if d[2] < 3 else "?",
+              _beh_name(d[2], d[5]), d[3], d[4], _u16(d, 6))),
 }
+
+
+def _beh_name(mode, beh):
+    table = IN_BEH if mode == 2 else OUT_BEH
+    for n, v in table.items():
+        if v == beh:
+            return n
+    return "?%d" % beh
 
 
 def _chan_arg(a):
@@ -458,15 +477,15 @@ def cmd_ctl(bus, args):
         # Masks are given as channel lists, not as three little-endian bytes: "peer 4
         # 1,2,5 5" is a great deal harder to get wrong than six hex numbers, and getting
         # the toggle mask wrong means a button latches when it should follow.
-        if len(args.args) < 2:
-            sys.exit("peer <node|none> <follow-channels> [toggle-channels] -- "
-                     "channels are comma-separated, 1-21, or 'all'")
+        if len(args.args) < 1:
+            sys.exit("peer <node|none> [follow-channels] [toggle-channels] -- "
+                     "channels are comma-separated, 1-21, 'all' or 'none'")
         node = 0xFF if args.args[0] in ("none", "off") else int(args.args[0], 0)
         if node != 0xFF and not 0 <= node <= 7:
             sys.exit("peer node must be 0..7, or 'none'")
 
         def chlist(spec):
-            if spec in ("none", ""):
+            if spec in ("none", "", "0"):
                 return 0
             if spec == "all":
                 return (1 << CHANNELS) - 1
@@ -478,7 +497,7 @@ def cmd_ctl(bus, args):
                 v |= 1 << (ch - 1)
             return v
 
-        follow = chlist(args.args[1])
+        follow = chlist(args.args[1]) if len(args.args) > 1 else 0
         toggle = chlist(args.args[2]) if len(args.args) > 2 else 0
         if toggle & ~follow:
             sys.exit("toggle channels must also be follow channels: %s are not"
@@ -505,6 +524,19 @@ def cmd_ctl(bus, args):
             sys.exit("an 11-bit standard id is 0..0x7FF")
         rpm = int(args.args[1], 0) if len(args.args) > 1 else 0
         extra = [cid & 0xFF, cid >> 8, rpm & 0xFF, rpm >> 8]
+    elif args.op == "chfunc":
+        if len(args.args) < 3:
+            sys.exit("chfunc <channel> <func-number> <%s|%s> [param-ms]"
+                     % ("|".join(OUT_BEH), "|".join(IN_BEH)))
+        ch = _chan_arg(args.args[0])
+        if ch == 0xFF:
+            sys.exit("chfunc needs a real channel")
+        beh = args.args[2]
+        if beh in OUT_BEH:   bval = OUT_BEH[beh]
+        elif beh in IN_BEH:  bval = IN_BEH[beh]
+        else:                bval = int(beh, 0)
+        param = int(args.args[3], 0) if len(args.args) > 3 else 0
+        extra = [ch, int(args.args[1], 0), bval, param & 0xFF, param >> 8]
     elif args.op == "ecucmd":
         if len(args.args) < 2:
             sys.exit("ecucmd <slot 0-%d> <channel|none> <%s | subsystem index>"
@@ -531,8 +563,8 @@ def cmd_ctl(bus, args):
         ch = int(args.args[0], 0)
         if not 1 <= ch <= CHANNELS:
             sys.exit("channel must be 1..%d" % CHANNELS)
-        extra = [ch - 1, MODES[args.args[1]],
-                 int(args.args[2], 0) if len(args.args) > 2 else 0]
+        flags = int(args.args[2], 0) if len(args.args) > 2 else 0
+        extra = [ch - 1, MODES[args.args[1]], flags]
     else:
         extra = [int(a, 0) for a in args.args]
     (rcm.global_ctl if args.glob else rcm.ctl)(op, *extra)
