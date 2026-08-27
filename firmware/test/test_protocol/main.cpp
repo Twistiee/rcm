@@ -33,12 +33,31 @@ static std::vector<uint16_t>    FILTERS;
 static bool   FAKE_OUTPUTS_LIVE = true;
 static int    RESETS = 0;
 
+/* Extended frames are modelled separately because can_frame_t cannot hold a 29-bit id
+ * -- which is the point: forgetting the extended flag has to be a visible failure, not
+ * a silently truncated id that happens to look plausible. */
+struct ext_frame_t { uint32_t id; bool ext; uint8_t len; uint8_t data[8]; };
+static std::vector<ext_frame_t> EXT_TX;
+
+bool can_send_frame(uint32_t id, bool ext, const uint8_t *d, uint8_t len)
+{
+    ext_frame_t e = {}; e.id = id; e.ext = ext; e.len = len;
+    for (uint8_t i = 0; i < len && i < 8; i++) e.data[i] = d[i];
+    EXT_TX.push_back(e);
+    if (!ext) {
+        can_frame_t f = {}; f.id = (uint16_t)id; f.len = len;
+        for (uint8_t i = 0; i < len && i < 8; i++) f.data[i] = d[i];
+        TX.push_back(f);
+    }
+    return true;
+}
 bool can_send(uint16_t id, const uint8_t *d, uint8_t len)
 {
-    can_frame_t f = {}; f.id = id; f.len = len;
-    for (uint8_t i = 0; i < len && i < 8; i++) f.data[i] = d[i];
-    TX.push_back(f);
-    return true;
+    return can_send_frame(id, false, d, len);
+}
+bool can_send_ext(uint32_t id, const uint8_t *d, uint8_t len)
+{
+    return can_send_frame(id, true, d, len);
 }
 bool can_recv(can_frame_t *f)
 {
@@ -512,6 +531,128 @@ static void test_changing_the_peer_re_baselines_before_acting(void)
     TEST_ASSERT_TRUE(sim_driver_on(0));
 }
 
+/* --- asking the ECU to start or stop ----------------------------------------
+ * A press on a configured input sends rusEFI's bench-test user-control frame, which
+ * lands on the same startStopButtonToggle() its own physical button uses. This board
+ * asks; the ECU decides whether that means crank or stop. */
+
+static void arm_ecu_cmd(uint8_t slot, uint8_t ch, uint16_t sub, uint16_t idx)
+{
+    cfg.ch[ch].mode = CH_INPUT;
+    SIM.wiring[ch]  = SIM_BUTTON_OPEN;
+    ch_begin();
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_ECU_CMD, slot, ch,
+             (uint8_t)sub, (uint8_t)(sub >> 8),
+             (uint8_t)idx, (uint8_t)(idx >> 8) });
+    run_ms(TICK_MS * 4);
+}
+
+static void arm_ecu_start(uint8_t ch)
+{
+    arm_ecu_cmd(0, ch, RCM_ECU_SUB_X14, RCM_ECU_IDX_STARTSTOP);
+}
+
+static int count_ecu_cmds(void)
+{
+    int n = 0;
+    for (size_t i = 0; i < EXT_TX.size(); i++)
+        if (EXT_TX[i].id == RCM_ECU_CMD_ID) n++;
+    return n;
+}
+
+static void test_ecu_start_sends_the_documented_frame(void)
+{
+    arm_ecu_start(6);
+    EXT_TX.clear();
+    SIM.wiring[6] = SIM_BUTTON_PRESSED;
+    run_ms(cfg.input_debounce_ms + TICK_MS * 6);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, count_ecu_cmds(), "expected exactly one command");
+    const ext_frame_t &f = EXT_TX[0];
+    TEST_ASSERT_TRUE_MESSAGE(f.ext, "rusEFI's command block is EXTENDED, not standard");
+    TEST_ASSERT_EQUAL_HEX32(0x77000Cu, f.id);
+    TEST_ASSERT_EQUAL_HEX8_MESSAGE(0x66, f.data[0], "BENCH_HEADER magic");
+    TEST_ASSERT_EQUAL_HEX8(0x14, f.data[2]);   /* TS_X14, LE */
+    TEST_ASSERT_EQUAL_HEX8(0x00, f.data[3]);
+    TEST_ASSERT_EQUAL_HEX8(0x09, f.data[4]);   /* TS_START_STOP_ENGINE, LE */
+    TEST_ASSERT_EQUAL_HEX8(0x00, f.data[5]);
+}
+
+static void test_ecu_start_fires_once_per_press_not_while_held(void)
+{
+    /* The ECU treats each command as a toggle. Repeating it while the button is held
+     * would start the engine and then immediately stop it again. */
+    arm_ecu_start(6);
+    EXT_TX.clear();
+    SIM.wiring[6] = SIM_BUTTON_PRESSED;
+    run_ms(cfg.input_debounce_ms + TICK_MS * 20);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, count_ecu_cmds(), "repeated while held");
+
+    SIM.wiring[6] = SIM_BUTTON_OPEN;
+    run_ms(cfg.input_debounce_ms + TICK_MS * 6);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, count_ecu_cmds(), "release should not command");
+
+    SIM.wiring[6] = SIM_BUTTON_PRESSED;
+    run_ms(cfg.input_debounce_ms + TICK_MS * 6);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(2, count_ecu_cmds(), "second press should command");
+}
+
+static void test_no_ecu_command_when_unconfigured(void)
+{
+    for (uint8_t i = 0; i < RCM_ECU_CMDS; i++) cfg.ecu_cmd[i].ch = IGN_CH_NONE;
+    cfg.ch[6].mode = CH_INPUT;
+    ch_begin();
+    EXT_TX.clear();
+    SIM.wiring[6] = SIM_BUTTON_PRESSED;
+    run_ms(cfg.input_debounce_ms + TICK_MS * 8);
+    TEST_ASSERT_EQUAL_INT(0, count_ecu_cmds());
+}
+
+static void test_a_button_already_held_at_boot_does_not_command(void)
+{
+    /* Seeding the edge detector from false would make a board that comes up with the
+     * button held ask the ECU to crank before anyone touched anything -- and on a car
+     * that wakes with a jammed or shorted button, repeatedly. */
+    cfg.ch[6].mode = CH_INPUT;
+    SIM.wiring[6]  = SIM_BUTTON_PRESSED;
+    ch_begin();
+    run_ms(cfg.input_debounce_ms + TICK_MS * 4);
+    cfg.ecu_cmd[0].ch        = 6;
+    cfg.ecu_cmd[0].subsystem = RCM_ECU_SUB_X14;
+    cfg.ecu_cmd[0].index     = RCM_ECU_IDX_STARTSTOP;
+    proto_begin();
+    EXT_TX.clear();
+    run_ms(TICK_MS * 8);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, count_ecu_cmds(), "commanded on a held button");
+}
+
+static void test_a_second_slot_sends_its_own_command(void)
+{
+    /* The whole point of storing a (subsystem, index) pair rather than a list of named
+     * commands: a Lua command is just different numbers, and rusEFI has no fixed command
+     * for traction control or launch control -- you bind a button to LUA_COMMAND_n and
+     * watch the counter from a Lua script. */
+    arm_ecu_cmd(0, 6, RCM_ECU_SUB_X14,   RCM_ECU_IDX_STARTSTOP);
+    arm_ecu_cmd(1, 7, RCM_ECU_SUB_BENCH, RCM_ECU_IDX_LUA1);
+    EXT_TX.clear();
+
+    SIM.wiring[7] = SIM_BUTTON_PRESSED;
+    run_ms(cfg.input_debounce_ms + TICK_MS * 6);
+
+    TEST_ASSERT_EQUAL_INT(1, count_ecu_cmds());
+    TEST_ASSERT_EQUAL_HEX8(0x16, EXT_TX[0].data[2]);   /* TS_BENCH_CATEGORY */
+    TEST_ASSERT_EQUAL_HEX8(0x21, EXT_TX[0].data[4]);   /* LUA_COMMAND_1 = 33 */
+
+    /* and the other slot's button is still its own command */
+    EXT_TX.clear();
+    SIM.wiring[6] = SIM_BUTTON_PRESSED;
+    run_ms(cfg.input_debounce_ms + TICK_MS * 6);
+    TEST_ASSERT_EQUAL_INT(1, count_ecu_cmds());
+    TEST_ASSERT_EQUAL_HEX8(0x14, EXT_TX[0].data[2]);
+    TEST_ASSERT_EQUAL_HEX8(0x09, EXT_TX[0].data[4]);
+}
+
 static void test_set_failsafe_and_bitrate(void)
 {
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_FAILSAFE, 0x03, 0x00, 0x10 });
@@ -816,5 +957,10 @@ int main(void)
     RUN_TEST(test_set_peer_none_disables_and_drops_the_filter);
     RUN_TEST(test_set_peer_rejects_a_node_that_cannot_exist);
     RUN_TEST(test_changing_the_peer_re_baselines_before_acting);
+    RUN_TEST(test_ecu_start_sends_the_documented_frame);
+    RUN_TEST(test_ecu_start_fires_once_per_press_not_while_held);
+    RUN_TEST(test_no_ecu_command_when_unconfigured);
+    RUN_TEST(test_a_button_already_held_at_boot_does_not_command);
+    RUN_TEST(test_a_second_slot_sends_its_own_command);
     return UNITY_END();
 }

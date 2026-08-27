@@ -26,6 +26,13 @@ struct rcm_straps_t straps;
 #define HOLD_MS  1000
 #define CRANK_MS 8000
 
+#include <vector>
+/* protocol.cpp is not linked into this test, so stub the one thing ignition.cpp calls
+ * into it -- and capture the commands, which is exactly what these tests need to see. */
+struct ecu_cmd_rec { uint16_t sub; uint16_t idx; };
+static std::vector<ecu_cmd_rec> ECU_CMDS;
+void proto_send_ecu_cmd(uint16_t sub, uint16_t idx) { ECU_CMDS.push_back({sub, idx}); }
+
 static bool sw;                    /* the ignition input, true = +12V present */
 
 static void tick(uint32_t ms)
@@ -246,6 +253,157 @@ static void test_a_press_that_ended_before_boot_still_arms(void)
     sw = true; tick(100);
     TEST_ASSERT_TRUE_MESSAGE(ign_wants_shutdown(),
                              "the button never armed, so the board ignores it forever");
+}
+
+/* --- one-button mode: the ignition button also talks to the ECU ---------------
+ * Off by default, which is the two-button car: the ignition button only ever powers the
+ * board, and a separate button in ecu_cmd[] does the starting. With both flags set it
+ * becomes the VW arrangement -- one button wakes, starts and stops. */
+
+static void test_two_button_mode_never_talks_to_the_ecu(void)
+{
+    momentary_setup(false);
+    cfg.ign_ecu_flags = 0;                       /* the default */
+    cfg.ign_start_ch  = IGN_CH_NONE;             /* ECU owns the starter */
+    ECU_CMDS.clear();
+
+    SIM.wiring[BRAKE_CH] = SIM_BUTTON_PRESSED;
+    tick(cfg.input_debounce_ms + 50);
+    sw = true;  tick(50);
+    sw = false; tick(50);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, (int)ECU_CMDS.size(),
+        "the ignition button commanded the ECU with one-button mode off");
+    TEST_ASSERT_FALSE_MESSAGE(ign_wants_shutdown(),
+        "a brake-held press must never be a shutdown");
+}
+
+static void test_one_button_press_with_brake_asks_the_ecu_to_start(void)
+{
+    momentary_setup(false);
+    cfg.ign_ecu_flags = IGN_ECU_START_ON_BRAKE;
+    cfg.ign_start_ch  = IGN_CH_NONE;
+    ECU_CMDS.clear();
+
+    SIM.wiring[BRAKE_CH] = SIM_BUTTON_PRESSED;
+    tick(cfg.input_debounce_ms + 50);
+    sw = true; tick(50);
+
+    TEST_ASSERT_EQUAL_INT(1, (int)ECU_CMDS.size());
+    TEST_ASSERT_EQUAL_HEX16(RCM_ECU_SUB_X14, ECU_CMDS[0].sub);
+    TEST_ASSERT_EQUAL_HEX16(RCM_ECU_IDX_STARTSTOP, ECU_CMDS[0].idx);
+    TEST_ASSERT_FALSE(ign_wants_shutdown());
+}
+
+static void test_one_button_press_without_brake_is_still_a_shutdown(void)
+{
+    momentary_setup(false);
+    cfg.ign_ecu_flags = IGN_ECU_START_ON_BRAKE;
+    ECU_CMDS.clear();
+
+    SIM.wiring[BRAKE_CH] = SIM_BUTTON_OPEN;
+    tick(cfg.input_debounce_ms + 50);
+    sw = true; tick(50);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, (int)ECU_CMDS.size(), "asked the ECU to start with the brake up");
+    TEST_ASSERT_TRUE_MESSAGE(ign_wants_shutdown(), "brake up must still mean off");
+}
+
+static void test_a_wake_hold_with_the_brake_asks_the_ecu_to_start(void)
+{
+    /* The VW gesture from cold: hold the button with the brake down and the car starts.
+     * It still needs BOTH a deliberate hold and the brake -- and the wake press is
+     * otherwise consumed exactly as before, so this cannot turn into a shutdown. */
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.input_debounce_ms = 25;
+    cfg.ign_mode = IGN_MOMENTARY;
+    cfg.ign_brake_ch = BRAKE_CH; cfg.ign_start_ch = IGN_CH_NONE;
+    cfg.ign_run_ch = IGN_CH_NONE;
+    cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
+    cfg.ign_ecu_flags = IGN_ECU_START_ON_BRAKE;
+    cfg.ign_wake_start_ms = 2000;
+    cfg.ch[BRAKE_CH].mode = CH_INPUT;
+    SIM.wiring[BRAKE_CH] = SIM_BUTTON_PRESSED;
+    ch_begin();
+    ECU_CMDS.clear();
+
+    sw = true;
+    ign_begin(true);
+    tick(cfg.ign_wake_start_ms + 200);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, (int)ECU_CMDS.size(), "wake hold with brake did not start");
+    TEST_ASSERT_EQUAL_HEX16(RCM_ECU_IDX_STARTSTOP, ECU_CMDS[0].idx);
+    TEST_ASSERT_FALSE_MESSAGE(ign_wants_shutdown(), "the wake press became a shutdown");
+
+    /* and it fires ONCE, not every tick it stays held */
+    tick(2000);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, (int)ECU_CMDS.size(), "repeated while held");
+}
+
+static void test_two_button_mode_does_not_wake_start_even_with_the_brake(void)
+{
+    /* The wake press is the one place a start can happen without the button ever having
+     * been released, so the mode flag has to be honoured THERE too. Miss it and a
+     * two-button car cranks from a brake-held wake, which is the behaviour its owner
+     * deliberately did not ask for. */
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.input_debounce_ms = 25;
+    cfg.ign_mode = IGN_MOMENTARY;
+    cfg.ign_brake_ch = BRAKE_CH; cfg.ign_start_ch = IGN_CH_NONE;
+    cfg.ign_run_ch = IGN_CH_NONE;
+    cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
+    cfg.ign_ecu_flags = 0;                       /* two-button: the default */
+    cfg.ign_wake_start_ms = 2000;
+    cfg.ch[BRAKE_CH].mode = CH_INPUT;
+    SIM.wiring[BRAKE_CH] = SIM_BUTTON_PRESSED;
+    ch_begin();
+    ECU_CMDS.clear();
+
+    sw = true;
+    ign_begin(true);
+    tick(cfg.ign_wake_start_ms + 1000);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, (int)ECU_CMDS.size(),
+        "a two-button car asked the ECU to start from a brake-held wake press");
+}
+
+static void test_a_wake_hold_without_the_brake_only_wakes(void)
+{
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.input_debounce_ms = 25;
+    cfg.ign_mode = IGN_MOMENTARY;
+    cfg.ign_brake_ch = BRAKE_CH; cfg.ign_start_ch = IGN_CH_NONE;
+    cfg.ign_run_ch = IGN_CH_NONE;
+    cfg.ign_hold_stop_ms = HOLD_MS; cfg.ign_crank_max_ms = CRANK_MS;
+    cfg.ign_ecu_flags = IGN_ECU_START_ON_BRAKE;
+    cfg.ign_wake_start_ms = 2000;
+    cfg.ch[BRAKE_CH].mode = CH_INPUT;
+    SIM.wiring[BRAKE_CH] = SIM_BUTTON_OPEN;
+    ch_begin();
+    ECU_CMDS.clear();
+
+    sw = true;
+    ign_begin(true);
+    tick(cfg.ign_wake_start_ms + 1000);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, (int)ECU_CMDS.size(), "started without the brake");
+    TEST_ASSERT_FALSE_MESSAGE(ign_wants_shutdown(), "a long wake press must not shut down");
+}
+
+static void test_hold_while_running_asks_the_ecu_to_stop_first(void)
+{
+    momentary_setup(true);                        /* with a run channel */
+    cfg.ign_ecu_flags = IGN_ECU_STOP_ON_HOLD;
+    SIM.wiring[RUN_CH] = SIM_BUTTON_PRESSED;      /* engine running */
+    tick(cfg.input_debounce_ms + 50);
+    ECU_CMDS.clear();
+
+    sw = true; tick(cfg.ign_hold_stop_ms + 100);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, (int)ECU_CMDS.size(), "no stop command was sent");
+    TEST_ASSERT_EQUAL_HEX16_MESSAGE(RCM_ECU_SUB_STOP, ECU_CMDS[0].sub,
+        "hold-to-stop must use TS_STOP_ENGINE, which is not gated on the ECU's RPM view");
+    TEST_ASSERT_TRUE_MESSAGE(ign_wants_shutdown(),
+        "the power-down must happen regardless of whether the ECU answered");
 }
 
 /* --- momentary: starting ---------------------------------------------------- */
@@ -752,6 +910,13 @@ int main(void)
     RUN_TEST(test_holding_the_wake_press_does_not_shut_the_board_down);
     RUN_TEST(test_a_wake_press_the_boot_sample_missed_is_still_consumed);
     RUN_TEST(test_a_press_that_ended_before_boot_still_arms);
+    RUN_TEST(test_two_button_mode_never_talks_to_the_ecu);
+    RUN_TEST(test_one_button_press_with_brake_asks_the_ecu_to_start);
+    RUN_TEST(test_one_button_press_without_brake_is_still_a_shutdown);
+    RUN_TEST(test_a_wake_hold_with_the_brake_asks_the_ecu_to_start);
+    RUN_TEST(test_a_wake_hold_without_the_brake_only_wakes);
+    RUN_TEST(test_two_button_mode_does_not_wake_start_even_with_the_brake);
+    RUN_TEST(test_hold_while_running_asks_the_ecu_to_stop_first);
     RUN_TEST(test_press_with_brake_cranks);
     RUN_TEST(test_press_without_brake_shuts_down);
     RUN_TEST(test_cranking_gives_up_on_timeout);

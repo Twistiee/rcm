@@ -131,6 +131,15 @@ struct ch_cfg_t {
  * `version` and `size` are in there. */
 #define RCM_CFG_VERSION  4
 
+#define RCM_ECU_CMDS 6
+
+struct ecu_cmd_t {
+    uint8_t  ch;          /* input channel whose PRESS sends it; IGN_CH_NONE = unused */
+    uint8_t  _pad;
+    uint16_t subsystem;   /* ts_command_e   -- e.g. 20 TS_X14, 22 TS_BENCH_CATEGORY */
+    uint16_t index;       /* ts_14_command / bench_mode_e, depending on the subsystem */
+};
+
 struct rcm_config_t {
     uint32_t magic;
     uint16_t version;
@@ -205,6 +214,39 @@ struct rcm_config_t {
      * closed, so a shutdown could not complete anyway (dropping LATCH_HOLD with the
      * switch on just power-cycles) and the board would sit awake with every channel
      * off, which is worse than leaving it alone. */
+    /* Buttons that ask the ECU to do something, over CAN.
+     *
+     * Deliberately a generic (subsystem, index) pair rather than a list of named
+     * commands: EVERY TunerStudio command is that shape -- see the cmd_* lines in
+     * rusefi's tunerstudio.template.ini, all of which are TS_IO_TEST_COMMAND followed
+     * by two 16-bit words. Storing the pair means a new command needs a config change,
+     * not a firmware release, and it reaches things this board has never heard of.
+     * The friendly names live in rcm_bench.py, where they cost nothing.
+     *
+     * LUA_COMMAND_1..4 (subsystem 22, index 33..36) are the interesting ones for a car:
+     * they bump a counter a rusEFI Lua script can watch, which is how you get traction
+     * control, launch control, a map switch or anything else rusEFI has no fixed
+     * command for. */
+    struct ecu_cmd_t ecu_cmd[RCM_ECU_CMDS];
+
+    /* What the IGNITION button itself asks the ECU for, on top of powering the board.
+     *
+     * Set both for a one-button car, the VW arrangement: the same button wakes it,
+     * starts it and stops it. Set NEITHER for a two-button car, where the ignition
+     * button only ever powers the board and a separate button in ecu_cmd[] does the
+     * starting -- which is the simpler thing to reason about, and the default. */
+#define IGN_ECU_START_ON_BRAKE  0x01  /* press with the brake held -> ask ECU to start */
+#define IGN_ECU_STOP_ON_HOLD    0x02  /* hold while running -> ask ECU to stop, then
+                                       * power down after ign_shutdown_ms as usual */
+    uint8_t  ign_ecu_flags;
+    uint8_t  _pad_ign_ecu;
+
+    /* How long the WAKE press must be held, with the brake down, before it also asks the
+     * ECU to start. Only consulted when IGN_ECU_START_ON_BRAKE is set. Note rusEFI has
+     * its own startButtonSuppressOnStartUpMs, which exists for exactly this arrangement
+     * -- a start button combined with an ECU power-source button -- so set that shorter
+     * than this or the request lands while the ECU is still ignoring them. */
+    uint16_t ign_wake_start_ms;
     uint16_t ign_idle_timeout_s;
 
     /* Engine-running from the bus instead of (or as well as) a wired signal.

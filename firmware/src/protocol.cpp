@@ -18,6 +18,34 @@ static void     install_filters(void);
  * after the receive loop has finished draining, never inside it: reconfiguring filter
  * banks while walking the FIFO is asking for the frames still in it to be discarded. */
 static bool     filters_dirty;
+/* Previous debounced state of each ECU-command button, one bit per slot, so the ECU is
+ * asked once per press rather than continuously while a button is held. */
+static uint8_t  ecu_prev;
+
+/* Same test ignition.cpp uses: 0xFF (IGN_CH_NONE) and anything past the channel count
+ * both mean "not configured". Named differently because the host tests compile these
+ * translation units together. */
+static inline bool input_ch_ok(uint8_t ch) { return ch < RCM_CHANNELS; }
+
+/* Every TunerStudio command is this shape: the magic byte, then subsystem and index as
+ * 16-bit little-endian words, in an EXTENDED frame. See processCanUserControl() in
+ * rusEFI's bench_test.cpp. */
+void proto_send_ecu_cmd(uint16_t subsystem, uint16_t index)
+{
+    const uint8_t d[8] = { RCM_ECU_CMD_MAGIC, 0,
+                           (uint8_t)(subsystem & 0xFF), (uint8_t)(subsystem >> 8),
+                           (uint8_t)(index     & 0xFF), (uint8_t)(index     >> 8), 0, 0 };
+    can_send_ext(RCM_ECU_CMD_ID, d, 8);
+}
+
+static void ecu_seed(void)
+{
+    ecu_prev = 0;
+    for (uint8_t i = 0; i < RCM_ECU_CMDS; i++) {
+        const uint8_t ch = cfg.ecu_cmd[i].ch;
+        if (input_ch_ok(ch) && ((ch_inputs() >> ch) & 1u)) ecu_prev |= (uint8_t)(1u << i);
+    }
+}
 static uint32_t last_rx_ms;
 static bool     failsafe_active;
 static bool     reboot_pending;
@@ -68,6 +96,10 @@ void proto_begin(void)
     failsafe_active = false;
     reboot_pending = false;
     filters_dirty = false;
+    /* Seed from the CURRENT button states, not from zero. Otherwise a board that boots
+     * with a start button held -- or shorted -- sees a rising edge on its first tick and
+     * asks the ECU to crank before anyone touched anything. */
+    ecu_seed();
     peer_prev = 0;
     peer_seen = false;
 
@@ -217,6 +249,17 @@ static void handle_ctl(const struct can_frame_t *f)
             ch_command(ch, false);
             cfg.ch[ch].mode  = f->data[2];
             cfg.ch[ch].flags = f->data[3];
+        }
+        break;
+
+    case RCM_OP_SET_ECU_CMD:
+        if (f->len >= 7 && f->data[1] < RCM_ECU_CMDS
+            && (f->data[2] < RCM_CHANNELS || f->data[2] == IGN_CH_NONE)) {
+            struct ecu_cmd_t *c = &cfg.ecu_cmd[f->data[1]];
+            c->ch        = f->data[2];
+            c->subsystem = (uint16_t)(f->data[3] | (f->data[4] << 8));
+            c->index     = (uint16_t)(f->data[5] | (f->data[6] << 8));
+            ecu_seed();          /* re-seed, for the same reason proto_begin() does */
         }
         break;
 
@@ -400,6 +443,22 @@ void proto_poll(uint32_t now_ms)
             /* Somebody is still talking to this board, so it is not idle. */
             ign_note_activity(now_ms);
         }
+    }
+
+    /* Ask the ECU to do things, once per press.
+     *
+     * Deliberately ungated. rusEFI owns these decisions: for start/stop it has RPM
+     * straight off the crank sensor, its own crank timeout and its own interlocks, and
+     * it uses the very same entry point as its physical start/stop button. A second
+     * opinion here -- about whether the engine is running, or whether the brake is down
+     * -- could only ever disagree with the half that can actually see the engine. */
+    for (uint8_t i = 0; i < RCM_ECU_CMDS; i++) {
+        const struct ecu_cmd_t *c = &cfg.ecu_cmd[i];
+        if (!input_ch_ok(c->ch)) { ecu_prev &= (uint8_t)~(1u << i); continue; }
+        const bool pressed = (ch_inputs() >> c->ch) & 1u;
+        if (pressed && !((ecu_prev >> i) & 1u)) proto_send_ecu_cmd(c->subsystem, c->index);
+        if (pressed) ecu_prev |= (uint8_t)(1u << i);
+        else         ecu_prev &= (uint8_t)~(1u << i);
     }
 
     if (filters_dirty) {

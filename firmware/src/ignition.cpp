@@ -5,6 +5,7 @@
  * shaped around. Starting is hedged about with conditions. Stopping is not.
  */
 #include "ignition.h"
+#include "protocol.h"
 #include "channels.h"
 #include "config.h"
 
@@ -13,7 +14,8 @@ static bool     want_shutdown;
 static bool     sw_prev;
 static bool     armed;          /* the wake press has been released */
 static uint32_t press_ms;       /* when the current press began */
-static bool     hold_fired;     /* the hold action already happened this press */
+static bool     hold_fired;
+static bool     wake_start_fired;     /* the hold action already happened this press */
 static uint32_t low_since;      /* maintained mode: when the level went away */
 static uint32_t crank_ms;       /* when cranking began */
 static uint32_t shutdown_at;    /* when the stop was requested */
@@ -101,6 +103,7 @@ void ign_begin(bool sw_closed_at_boot)
     state = IGN_ST_IGNITION;
     want_shutdown = false;
     hold_fired = false;
+    wake_start_fired = false;
     press_ms = low_since = crank_ms = shutdown_at = last_activity = 0;
     can_rpm = 0;
     can_rpm_at = 0;
@@ -153,7 +156,22 @@ static void tick_momentary(uint32_t now, bool sw)
     if (!armed) {
         /* Still waiting for the wake press to end. Gated on the LEVEL, not on a falling
          * edge: a press brief enough to be over before firmware runs never produces an
-         * edge for us to see, and waiting for one would leave the button dead forever. */
+         * edge for us to see, and waiting for one would leave the button dead forever.
+         *
+         * One thing DOES happen during the wake press, and only in one-button mode:
+         * hold it with the brake down and the car starts, the way a VW does. It needs
+         * both the brake and a deliberate hold, and the request still only ASKS -- the
+         * ECU decides, and suppresses starts for startButtonSuppressOnStartUpMs after
+         * it gets power anyway. Without those conditions this stays what it was: a
+         * press that is consumed and means nothing. */
+        if (sw && !wake_start_fired
+            && (cfg.ign_ecu_flags & IGN_ECU_START_ON_BRAKE)
+            && cfg.ign_wake_start_ms
+            && (now - press_ms) >= cfg.ign_wake_start_ms
+            && read_ch(cfg.ign_brake_ch)) {
+            wake_start_fired = true;
+            proto_send_ecu_cmd(RCM_ECU_SUB_X14, RCM_ECU_IDX_STARTSTOP);
+        }
         if (!sw) armed = true;
         return;
     }
@@ -163,6 +181,12 @@ static void tick_momentary(uint32_t now, bool sw)
      * broken at the moment you most need the engine to stop. */
     if (sw && !hold_fired && (now - press_ms) >= cfg.ign_hold_stop_ms) {
         hold_fired = true;
+        /* Ask the ECU to stop the engine BEFORE dropping our own RUN output, so it gets
+         * an orderly stop rather than having ignition pulled from under it. The power-
+         * down still follows on its own timer -- this is an extra courtesy, never a
+         * dependency, and a shutdown proceeds identically if the ECU never answers. */
+        if ((cfg.ign_ecu_flags & IGN_ECU_STOP_ON_HOLD) && running)
+            proto_send_ecu_cmd(RCM_ECU_SUB_STOP, 0);
         request_shutdown(now);
         return;
     }
@@ -198,6 +222,10 @@ static void tick_momentary(uint32_t now, bool sw)
                     state = IGN_ST_CRANKING;
                     crank_ms = now;
                     set_starter(true);
+                }
+                else if (cfg.ign_ecu_flags & IGN_ECU_START_ON_BRAKE) {
+                    /* One-button mode: the ECU owns the starter, so ask it. */
+                    proto_send_ecu_cmd(RCM_ECU_SUB_X14, RCM_ECU_IDX_STARTSTOP);
                 }
                 /* Otherwise somebody else's job -- the ECU's, or nobody's. Either way
                  * this press is not a shutdown. */

@@ -37,7 +37,17 @@ static bool      default_filter;   /* bank 0 still holds can_begin's accept-all 
 /* Software transmit queue -- see the note above can_send(). Declared here so
  * can_begin() can reset it. */
 #define TXQ_LEN 8
-static struct can_frame_t txq[TXQ_LEN];
+/* The queue carries a WIDER id than can_frame_t, because one thing this board sends is
+ * a 29-bit extended frame (rusEFI's bench-test command block at 0x770000). can_frame_t
+ * stays 11-bit: everything RECEIVED here is standard, the filters are standard-only,
+ * and widening the public struct would touch every caller for one transmit path. */
+struct txq_entry_t {
+    uint32_t id;
+    bool     ext;
+    uint8_t  len;
+    uint8_t  data[8];
+};
+static struct txq_entry_t txq[TXQ_LEN];
 static uint8_t txq_head, txq_tail, txq_count;
 
 struct timing_t {
@@ -258,13 +268,13 @@ void can_filter_accept_all(void)
  * and dropping frames is the correct thing to do -- state broadcasts are absolute,
  * not incremental, so the next one supersedes whatever was lost.
  */
-static bool to_mailbox(const struct can_frame_t *f)
+static bool to_mailbox(const struct txq_entry_t *f)
 {
     if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan) == 0) return false;
 
     CAN_TxHeaderTypeDef h = {};
-    h.StdId = f->id;
-    h.IDE   = CAN_ID_STD;
+    if (f->ext) { h.ExtId = f->id; h.IDE = CAN_ID_EXT; }
+    else        { h.StdId = f->id; h.IDE = CAN_ID_STD; }
     h.RTR   = CAN_RTR_DATA;
     h.DLC   = f->len;
     h.TransmitGlobalTime = DISABLE;
@@ -283,10 +293,26 @@ void can_tx_pump(void)
 
 bool can_send(uint16_t id, const uint8_t *data, uint8_t len)
 {
+    return can_send_frame(id, false, data, len);
+}
+
+/* 29-bit id. Nothing here receives extended frames -- the filters are standard-only --
+ * so this is transmit only, and deliberately a separate entry point rather than a flag
+ * on can_send(): every other frame this board sends is 11-bit and should stay that way
+ * by default. */
+bool can_send_ext(uint32_t id, const uint8_t *data, uint8_t len)
+{
+    if (id > 0x1FFFFFFFu) return false;
+    return can_send_frame(id, true, data, len);
+}
+
+bool can_send_frame(uint32_t id, bool ext, const uint8_t *data, uint8_t len)
+{
     if (!up || len > 8) return false;
 
-    struct can_frame_t f;
+    struct txq_entry_t f;
     f.id = id;
+    f.ext = ext;
     f.len = len;
     for (uint8_t i = 0; i < 8; i++) f.data[i] = i < len ? data[i] : 0;
 

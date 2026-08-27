@@ -33,6 +33,11 @@ bool can_begin_ex(uint32_t bitrate, bool loopback);
 /* Queues if all three hardware mailboxes are busy. Returns false only if the software
  * queue is also full, which at our frame rates means the bus is not running. */
 bool can_send(uint16_t id, const uint8_t *data, uint8_t len);
+
+/* Transmit a 29-bit extended frame. Receive is standard-only, so this is one-way.
+ * Used for rusEFI's bench-test command block (0x770000), which is extended. */
+bool can_send_ext(uint32_t id, const uint8_t *data, uint8_t len);
+bool can_send_frame(uint32_t id, bool ext, const uint8_t *data, uint8_t len);
 /* Moves queued frames into mailboxes as they free up. Call it every time round the
  * main loop; without it a queued frame never leaves. */
 void can_tx_pump(void);

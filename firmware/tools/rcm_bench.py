@@ -72,8 +72,33 @@ OP = {
     # of those the ones where a PRESS TOGGLES rather than follows. Mirroring is strictly
     # channel-for-channel: peer channel N drives channel N here.
     "peer":         0x18,
+    # bind an input channel to a TunerStudio command sent to the ECU over CAN.
+    #   ecucmd <slot 0-5> <channel|none> <preset | subsystem index>
+    "ecucmd":       0x19,
 }
 MODES = {"unused": 0, "out": 1, "in": 2}
+
+# Named (subsystem, index) pairs for the ECU command table. EVERY TunerStudio command is
+# that shape -- see the cmd_* lines in rusefi's tunerstudio.template.ini -- so the
+# firmware stores the pair and the names live here, where adding one costs nothing.
+# Values read out of rusEFI's engine_types.h: ts_command_e for the subsystem,
+# ts_14_command / bench_mode_e for the index.
+ECU_CMDS = {
+    # crank if stopped, stop if running. Lands on the same startStopButtonToggle() as
+    # rusEFI's own physical start button, so the ECU applies its own interlocks.
+    "startstop":  (20, 9),
+    # unconditional stop, NOT gated on the ECU's view of engine speed.
+    "stopengine": (36, 0),
+    # bump a counter a rusEFI Lua script can watch. This is how you get traction control,
+    # launch control, a map switch -- anything rusEFI has no fixed command for. Only 1-4
+    # are handled by the firmware, despite the enum going further.
+    "lua1":       (22, 33),
+    "lua2":       (22, 34),
+    "lua3":       (22, 35),
+    "lua4":       (22, 36),
+    # cancel any running bench test
+    "benchcancel": (22, 15),
+}
 
 MM5_IDS = {0x174: "IMU yaw+latG", 0x178: "IMU lonG", 0x17C: "IMU vertG"}
 
@@ -369,6 +394,24 @@ def cmd_ctl(bus, args):
                      % ",".join(str(c + 1) for c in range(CHANNELS)
                                 if (toggle & ~follow) >> c & 1))
         extra = [node, *pack21(follow), *pack21(toggle)]
+    elif args.op == "ecucmd":
+        if len(args.args) < 2:
+            sys.exit("ecucmd <slot 0-%d> <channel|none> <%s | subsystem index>"
+                     % (5, "|".join(sorted(ECU_CMDS))))
+        slot = int(args.args[0], 0)
+        ch = 0xFF if args.args[1] in ("none", "off") else int(args.args[1], 0) - 1
+        if ch != 0xFF and not 0 <= ch < CHANNELS:
+            sys.exit("channel must be 1..%d, or 'none'" % CHANNELS)
+        if len(args.args) >= 3 and args.args[2] in ECU_CMDS:
+            sub, idx = ECU_CMDS[args.args[2]]
+        elif len(args.args) >= 4:
+            sub, idx = int(args.args[2], 0), int(args.args[3], 0)
+        elif ch == 0xFF:
+            sub, idx = 0, 0          # clearing a slot needs no command
+        else:
+            sys.exit("give a preset name (%s) or a raw subsystem and index"
+                     % ", ".join(sorted(ECU_CMDS)))
+        extra = [slot, ch, sub & 0xFF, sub >> 8, idx & 0xFF, idx >> 8]
     elif args.op == "chmode":
         if len(args.args) < 2:
             sys.exit("chmode <channel> <out|in|unused> [flags]")

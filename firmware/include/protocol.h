@@ -99,6 +99,38 @@
                                       * rather than follows -- momentary button, latching
                                       * load. Mirroring is strictly channel-for-channel:
                                       * peer channel N drives channel N here. */
+#define RCM_OP_SET_ECU_CMD    0x19   /* b1 slot 0..RCM_ECU_CMDS-1, b2 input channel or
+                                      * 0xFF for unused, b3..b4 LE subsystem,
+                                      * b5..b6 LE index */
+
+/* --- asking rusEFI to start or stop the engine ------------------------------
+ * An EXTENDED frame from rusEFI's bench-test command block. Verified against rusEFI's
+ * own source (bench_test.cpp processCanUserControl, and the ts_command_e / ts_14_command
+ * enums in engine_types.h), not guessed:
+ *
+ *   id 0x77000C ext, data 66 00 14 00 09 00 00 00
+ *      66     BENCH_HEADER magic, checked first by processCanEcuControl()
+ *      14 00  subsystem, LE = TS_X14 (20)
+ *      09 00  index,     LE = TS_START_STOP_ENGINE (9)
+ *
+ * It lands on startStopButtonToggle() -- the SAME entry point as rusEFI's own physical
+ * start/stop button. So this asks; the ECU decides. Cranking stays subject to rusEFI's
+ * interlocks, its RPM off the crank sensor, and startCrankingDuration. This board does
+ * not know or care whether the result was a start or a stop.
+ */
+#define RCM_ECU_CMD_ID        0x77000Cu   /* extended */
+#define RCM_ECU_CMD_MAGIC     0x66u
+
+/* Subsystems (ts_command_e) and the indices worth naming. Values read out of rusEFI's
+ * engine_types.h, not guessed. */
+#define RCM_ECU_SUB_X14       0x0014u   /* TS_X14 */
+#define RCM_ECU_SUB_BENCH     0x0016u   /* TS_BENCH_CATEGORY */
+#define RCM_ECU_SUB_STOP      0x0024u   /* TS_STOP_ENGINE -- index ignored */
+#define RCM_ECU_IDX_STARTSTOP 0x0009u   /* TS_START_STOP_ENGINE, under TS_X14 */
+#define RCM_ECU_IDX_LUA1      0x0021u   /* LUA_COMMAND_1, under TS_BENCH_CATEGORY */
+
+/* Send one TunerStudio command to the ECU. */
+void proto_send_ecu_cmd(uint16_t subsystem, uint16_t index);
 
 /* --- OUTPUTS frame, byte 3 status flags ------------------------------------ */
 #define RCM_ST_OUT_ENABLED  0x01
