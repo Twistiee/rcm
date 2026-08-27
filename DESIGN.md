@@ -493,9 +493,13 @@ maps to ~0.09V at the logic pin, so chassis-grounding switches is fine.
 
 ## Open decisions
 
-1. **`TPL7407L` input pulldowns** — whether the part defines its inputs internally while the
-   `74HC595` outputs are Hi-Z at power-on. Determines whether 21 pulldowns are needed to stop
-   relays clacking at boot. See `SPEC.md` block 7; verify against the datasheet.
+1. ~~**`TPL7407L` input pulldowns**~~ — **ANSWERED on revA, 2026-08-27. No pulldowns
+   needed.** With a relay on channel 21, neither five MCU resets nor a full cold start
+   (`J_PWR` pulled and reconnected) produced a single click. `SR_OE_N` is held high by
+   `R_OE` while the MCU pin is high-impedance, so the `74HC595` outputs really were
+   tri-stated and the driver's inputs really were floating -- and the part holds them low
+   itself. The cold start additionally covered the rail ramp, where the shift registers
+   come up with undefined contents before `R_OE` can hold `OE_N` high.
 2. **LQFP-64 pinout** — USB/CAN/SDIO coexistence, above.
 
 ### Settled
