@@ -113,6 +113,9 @@
                                       * mode and flags, so without this the behaviour
                                       * byte -- flash, pulse, delay-off, toggle,
                                       * hold-to-arm -- could only be set by recompiling. */
+#define RCM_OP_SET_ECU_FOLLOW 0x1C   /* b1 slot, b2 OUTPUT channel or 0xFF, b3 bit 0..63,
+                                      * b4..b5 LE frame id. Drives that channel from that
+                                      * bit of the ECU's broadcast. */
 
 /* --- RCM_OP_GET_CFG selectors ----------------------------------------------
  * Reply layout is always: d0 selector, d1 index, d2..d7 payload. */
@@ -126,7 +129,8 @@
 #define RCM_CFG_SEL_RUNSRC    0x07   /* ecu rpm can id (2), running rpm (2)           */
 #define RCM_CFG_SEL_ECUCMD    0x08   /* index = slot: ch, subsystem (2), index (2)    */
 #define RCM_CFG_SEL_CHANNEL   0x09   /* index = channel: mode, flags, func, beh, param*/
-#define RCM_CFG_SEL_MAX       0x09
+#define RCM_CFG_SEL_FOLLOW    0x0A   /* index = slot: ch, bit, frame id (2)           */
+#define RCM_CFG_SEL_MAX       0x0A
 
 /* --- asking rusEFI to start or stop the engine ------------------------------
  * An EXTENDED frame from rusEFI's bench-test command block. Verified against rusEFI's

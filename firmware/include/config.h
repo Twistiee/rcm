@@ -154,6 +154,23 @@ struct ch_cfg_t {
 #define RCM_CFG_VERSION  5
 
 #define RCM_ECU_CMDS 6
+#define RCM_ECU_FOLLOWS 6
+
+/* Drive one of our channels from a bit in the ECU's broadcast.
+ *
+ * rusEFI publishes what it thinks its relays should be doing -- MainRelayAct, FuelPumpAct,
+ * Fan, Fan2, EGOHeatAct, RevLimAct -- as single bits, all in frame 0x200. It has limited
+ * outputs, so the useful arrangement is: the ECU decides, this board switches.
+ *
+ * Stored as a raw (frame id, bit) pair for the same reason the command table is: naming
+ * them in firmware would mean a release every time rusEFI adds a signal, and this way any
+ * bit of any frame reaches any channel. The names live in rcm_bench. */
+struct ecu_follow_t {
+    uint8_t  ch;      /* OUTPUT channel to drive; IGN_CH_NONE = slot unused */
+    uint8_t  bit;     /* bit 0..63, DBC numbering: byte bit/8, bit within it bit%8 */
+    uint16_t can_id;  /* frame to watch */
+};
+
 
 struct ecu_cmd_t {
     uint8_t  ch;          /* input channel whose PRESS sends it; IGN_CH_NONE = unused */
@@ -247,6 +264,7 @@ struct rcm_config_t {
      * control, launch control, a map switch or anything else rusEFI has no fixed
      * command for. */
     struct ecu_cmd_t ecu_cmd[RCM_ECU_CMDS];
+    struct ecu_follow_t ecu_follow[RCM_ECU_FOLLOWS];
 
     /* What the IGNITION button itself asks the ECU for, on top of powering the board.
      *

@@ -76,6 +76,9 @@ OP = {
     # bind an input channel to a TunerStudio command sent to the ECU over CAN.
     #   ecucmd <slot 0-5> <channel|none> <preset | subsystem index>
     "ecucmd":       0x19,
+    # drive one of our channels from a bit in the ECU's broadcast.
+    #   ecufollow <slot 0-5> <channel|none> <preset | frame-id bit>
+    "ecufollow":    0x1C,
     # channel function label + behaviour + param.
     #   chfunc <channel> <func> <behaviour> [param-ms]
     # behaviour names depend on the channel's mode: outputs take
@@ -115,6 +118,20 @@ ECU_CMDS = {
     "lua4":       (22, 36),
     # cancel any running bench test
     "benchcancel": (22, 15),
+}
+
+# (frame id, bit) for the ECU broadcast bits worth following. Straight out of rusEFI's
+# rusEFI_CAN_verbose.dbc -- all the relay-shaped ones live in frame 0x200.
+ECU_BITS = {
+    "mainrelay":     (0x200, 33),
+    "fuelpump":      (0x200, 34),
+    "cel":           (0x200, 35),
+    "egoheat":       (0x200, 36),
+    "lambdaprotect": (0x200, 37),
+    "fan":           (0x200, 38),
+    "fan2":          (0x200, 39),
+    "revlimit":      (0x200, 32),   # shift light
+    "brakepedal":    (0x20B, 0),
 }
 
 MM5_IDS = {0x174: "IMU yaw+latG", 0x178: "IMU lonG", 0x17C: "IMU vertG"}
@@ -398,10 +415,19 @@ CFG_SEL = {
            % (("0x%03X" % _u16(d, 2)) if _u16(d, 2) else "none", _u16(d, 4))),
     0x08: ("ecucmd", 6, lambda d: "channel %s -> subsystem %d index %d%s"
            % (_ch(d[2]), _u16(d, 3), _u16(d, 5), _cmd_name(_u16(d, 3), _u16(d, 5)))),
+    0x0A: ("follow", 6, lambda d: "channel %s <- frame 0x%03X bit %d%s"
+           % (_ch(d[2]), _u16(d, 4), d[3], _bit_name(_u16(d, 4), d[3]))),
     0x09: ("channel", CHANNELS, lambda d: "%-6s %-9s flags 0x%02X func %-14s param %d"
            % (["unused", "out", "in"][d[2]] if d[2] < 3 else "?",
               _beh_name(d[2], d[5]), d[3], _func_name(d[4]), _u16(d, 6))),
 }
+
+
+def _bit_name(cid, bit):
+    for n, v in ECU_BITS.items():
+        if v == (cid, bit):
+            return "  (%s)" % n
+    return ""
 
 
 def _func_name(f):
@@ -539,6 +565,22 @@ def cmd_ctl(bus, args):
             sys.exit("an 11-bit standard id is 0..0x7FF")
         rpm = int(args.args[1], 0) if len(args.args) > 1 else 0
         extra = [cid & 0xFF, cid >> 8, rpm & 0xFF, rpm >> 8]
+    elif args.op == "ecufollow":
+        if len(args.args) < 2:
+            sys.exit("ecufollow <slot 0-5> <channel|none> <%s | frame-id bit>"
+                     % "|".join(sorted(ECU_BITS)))
+        slot = int(args.args[0], 0)
+        ch = _chan_arg(args.args[1])
+        if len(args.args) >= 3 and args.args[2] in ECU_BITS:
+            cid, bit = ECU_BITS[args.args[2]]
+        elif len(args.args) >= 4:
+            cid, bit = int(args.args[2], 0), int(args.args[3], 0)
+        elif ch == 0xFF:
+            cid, bit = 0, 0
+        else:
+            sys.exit("give a preset (%s) or a frame id and bit"
+                     % ", ".join(sorted(ECU_BITS)))
+        extra = [slot, ch, bit, cid & 0xFF, cid >> 8]
     elif args.op == "chfunc":
         if len(args.args) < 3:
             sys.exit("chfunc <channel> <%s|number> <%s|%s> [param-ms]"

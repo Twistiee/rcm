@@ -781,6 +781,112 @@ static void test_an_unlabelled_role_reads_as_unconfigured(void)
         "an unlabelled starter must read as unconfigured, not as channel 0");
 }
 
+/* --- following the ECU's relay decisions -------------------------------------
+ * rusEFI has limited outputs, so the useful split is: it decides, this board switches.
+ * MainRelayAct, FuelPumpAct, Fan, Fan2, EGOHeatAct and RevLimAct are all single bits in
+ * frame 0x200. */
+
+static void follow(uint8_t slot, uint8_t ch, uint8_t bit, uint16_t id)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_ECU_FOLLOW, slot, ch, bit, (uint8_t)id, (uint8_t)(id >> 8) });
+    run_ms(TICK_MS * 4);
+}
+
+/* frame 0x200 with one flag byte: byte 4 carries bits 32..39 */
+static void ecu_flags(uint8_t byte4)
+{
+    inject(0x200, { 0, 0, 0, 0, byte4, 0, 0, 0 });
+    run_ms(TICK_MS * 4);
+}
+
+static void test_a_followed_channel_tracks_the_ecu_bit(void)
+{
+    follow(0, 5, 34, 0x200);                    /* FuelPumpAct is bit 34 */
+    ecu_flags(1u << (34 - 32));
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(5), "the fuel pump bit did not switch it on");
+    ecu_flags(0);
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(5), "it stayed on after the ECU dropped it");
+}
+
+static void test_several_slots_read_different_bits_of_one_frame(void)
+{
+    follow(0, 5, 34, 0x200);                    /* fuel pump */
+    follow(1, 6, 38, 0x200);                    /* Fan       */
+    ecu_flags(1u << (38 - 32));                 /* fan only  */
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(5), "fuel pump followed the fan's bit");
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(6), "the fan bit did not switch it on");
+}
+
+static void test_a_followed_frame_gets_a_receive_filter(void)
+{
+    follow(0, 5, 34, 0x200);
+    bool found = false;
+    for (size_t i = 0; i < FILTERS.size(); i++) if (FILTERS[i] == 0x200) found = true;
+    TEST_ASSERT_TRUE_MESSAGE(found, "no filter, so the frame never reaches this code");
+}
+
+static void test_slots_sharing_a_frame_do_not_each_burn_a_filter(void)
+{
+    follow(0, 5, 34, 0x200);
+    const size_t one = FILTERS.size();
+    follow(1, 6, 38, 0x200);
+    follow(2, 7, 39, 0x200);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE((uint32_t)one, (uint32_t)FILTERS.size(),
+        "each slot took its own bank; 28 is not many to spend three times over");
+}
+
+static void test_a_followed_channel_falls_back_when_the_ecu_goes_quiet(void)
+{
+    /* THE one that matters. Holding the last value would leave a fuel pump running on
+     * the strength of a frame that arrived before the ECU died. */
+    cfg.failsafe_state = 0;
+    follow(0, 5, 34, 0x200);
+    ecu_flags(1u << (34 - 32));
+    TEST_ASSERT_TRUE(sim_driver_on(5));
+
+    /* Keep OUR OWN traffic alive while the ECU is silent -- a keypad still chatting, say.
+     * Without this the general bus-timeout failsafe fires and switches the channel off
+     * for an unrelated reason, and the test proves nothing about staleness at all. */
+    for (uint32_t t = 0; t < cfg.can_timeout_ms + 400; t += 100) {
+        inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_CLEAR_FAULTS });
+        run_ms(100);
+    }
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(5),
+        "a followed channel stayed on after the ECU stopped talking, while the bus "
+        "itself was still busy -- so the general failsafe never covered for it");
+}
+
+static void test_the_ecu_broadcast_does_not_hold_off_the_failsafe(void)
+{
+    /* The ECU chattering to the dash says nothing about whether anyone is still
+     * COMMANDING this board. If its broadcast counted as traffic addressed to us, a
+     * running engine would hold the failsafe off indefinitely -- and a keypad that had
+     * stopped talking, or a broken command path, would never be noticed. */
+    follow(0, 5, 34, 0x200);
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_CLEAR_FAULTS });   /* failsafe cleared */
+    run_ms(TICK_MS * 4);
+
+    /* From here ONLY the ECU talks, for longer than the bus timeout. */
+    for (uint32_t t = 0; t < cfg.can_timeout_ms + 400; t += 100) {
+        inject(0x200, { 0, 0, 0, 0, 0, 0, 0, 0 });
+        run_ms(100);
+    }
+
+    TEST_ASSERT_TRUE_MESSAGE(proto_failsafe(),
+        "ECU broadcasts held the failsafe off -- a silent keypad would never be noticed");
+}
+
+static void test_follow_refuses_a_bit_past_the_end_of_a_frame(void)
+{
+    follow(0, 5, 34, 0x200);
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_ECU_FOLLOW, 0, 6, 64, 0x00, 0x02 });   /* bit 64 */
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(5, cfg.ecu_follow[0].ch, "a bad frame was applied");
+    TEST_ASSERT_EQUAL_UINT8(34, cfg.ecu_follow[0].bit);
+}
+
 static void test_set_failsafe_and_bitrate(void)
 {
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_FAILSAFE, 0x03, 0x00, 0x10 });
@@ -1098,5 +1204,12 @@ int main(void)
     RUN_TEST(test_set_ch_func_carries_the_param);
     RUN_TEST(test_a_role_lives_in_exactly_one_place);
     RUN_TEST(test_an_unlabelled_role_reads_as_unconfigured);
+    RUN_TEST(test_a_followed_channel_tracks_the_ecu_bit);
+    RUN_TEST(test_several_slots_read_different_bits_of_one_frame);
+    RUN_TEST(test_a_followed_frame_gets_a_receive_filter);
+    RUN_TEST(test_slots_sharing_a_frame_do_not_each_burn_a_filter);
+    RUN_TEST(test_a_followed_channel_falls_back_when_the_ecu_goes_quiet);
+    RUN_TEST(test_the_ecu_broadcast_does_not_hold_off_the_failsafe);
+    RUN_TEST(test_follow_refuses_a_bit_past_the_end_of_a_frame);
     return UNITY_END();
 }

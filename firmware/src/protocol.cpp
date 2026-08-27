@@ -21,6 +21,10 @@ static bool     filters_dirty;
 /* Previous debounced state of each ECU-command button, one bit per slot, so the ECU is
  * asked once per press rather than continuously while a button is held. */
 static uint8_t  ecu_prev;
+/* When each follow slot last heard its frame. A followed channel must not sit latched on
+ * by the last frame it heard: if the ECU goes quiet, that channel falls back to its
+ * failsafe bit like everything else. */
+static uint32_t follow_seen[RCM_ECU_FOLLOWS];
 
 /* Same test ignition.cpp uses: 0xFF (IGN_CH_NONE) and anything past the channel count
  * both mean "not configured". Named differently because the host tests compile these
@@ -101,6 +105,7 @@ void proto_begin(void)
      * with a start button held -- or shorted -- sees a rising edge on its first tick and
      * asks the ECU to crank before anyone touched anything. */
     ecu_seed();
+    for (uint8_t i = 0; i < RCM_ECU_FOLLOWS; i++) follow_seen[i] = millis();
     peer_prev = 0;
     peer_seen = false;
 
@@ -127,6 +132,17 @@ static void install_filters(void)
                                  + RCM_F_INPUTS));
     /* rusEFI's verbose broadcast, for engine speed. */
     if (cfg.ecu_rpm_can_id) can_filter_id(cfg.ecu_rpm_can_id);
+    /* ...and for any frame a follow slot watches. One filter per DISTINCT id: several
+     * slots normally share 0x200, and 28 banks is not a lot to spend twice. */
+    for (uint8_t i = 0; i < RCM_ECU_FOLLOWS; i++) {
+        const uint16_t id = cfg.ecu_follow[i].can_id;
+        if (!id || cfg.ecu_follow[i].ch >= RCM_CHANNELS) continue;
+        bool dup = (id == cfg.ecu_rpm_can_id);
+        for (uint8_t j = 0; j < i && !dup; j++)
+            if (cfg.ecu_follow[j].can_id == id
+             && cfg.ecu_follow[j].ch < RCM_CHANNELS) dup = true;
+        if (!dup) can_filter_id(id);
+    }
 }
 
 void proto_sanitise_base(void)
@@ -262,6 +278,13 @@ static void send_cfg_reply(uint8_t sel, uint8_t idx)
         p[3] = (uint8_t)cfg.ecu_cmd[idx].index;
         p[4] = (uint8_t)(cfg.ecu_cmd[idx].index >> 8);
         break;
+    case RCM_CFG_SEL_FOLLOW:
+        if (idx >= RCM_ECU_FOLLOWS) return;
+        p[0] = cfg.ecu_follow[idx].ch;
+        p[1] = cfg.ecu_follow[idx].bit;
+        p[2] = (uint8_t)cfg.ecu_follow[idx].can_id;
+        p[3] = (uint8_t)(cfg.ecu_follow[idx].can_id >> 8);
+        break;
     case RCM_CFG_SEL_CHANNEL:
         if (idx >= RCM_CHANNELS) return;
         p[0] = cfg.ch[idx].mode;      p[1] = cfg.ch[idx].flags;
@@ -336,6 +359,19 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
                 if (f->len >= 6)
                     cfg.ch[ch].param = (uint16_t)(f->data[4] | (f->data[5] << 8));
             }
+        }
+        break;
+
+    case RCM_OP_SET_ECU_FOLLOW:
+        if (f->len >= 6 && f->data[1] < RCM_ECU_FOLLOWS
+            && (f->data[2] < RCM_CHANNELS || f->data[2] == IGN_CH_NONE)
+            && f->data[3] < 64) {
+            struct ecu_follow_t *fl = &cfg.ecu_follow[f->data[1]];
+            fl->ch     = f->data[2];
+            fl->bit    = f->data[3];
+            fl->can_id = (uint16_t)(f->data[4] | (f->data[5] << 8));
+            follow_seen[f->data[1]] = millis();   /* do not start out already stale */
+            filters_dirty = true;                 /* the frame needs a filter */
         }
         break;
 
@@ -499,6 +535,26 @@ void proto_poll(uint32_t now_ms)
             continue;
         }
 
+        {
+            /* Bits of the ECU's broadcast driving our channels. Like the RPM frame this
+             * is deliberately NOT counted as traffic addressed to us -- the ECU talking
+             * to the dash says nothing about whether anyone is still commanding this
+             * board, so it must not hold off the failsafe. */
+            bool matched = false;
+            for (uint8_t i = 0; i < RCM_ECU_FOLLOWS; i++) {
+                const struct ecu_follow_t *fl = &cfg.ecu_follow[i];
+                if (!fl->can_id || f.id != fl->can_id) continue;
+                if (fl->ch >= RCM_CHANNELS) continue;
+                matched = true;
+                follow_seen[i] = now_ms;
+                const uint8_t byte = (uint8_t)(fl->bit >> 3);
+                if (byte >= f.len) continue;      /* short frame: say nothing */
+                if (cfg.ch[fl->ch].mode != CH_OUTPUT) continue;
+                ch_command(fl->ch, (f.data[byte] >> (fl->bit & 7)) & 1u);
+            }
+            if (matched) continue;
+        }
+
         if (f.id == peer) {
             handle_peer_inputs(&f);
         } else if (f.id == global) {
@@ -541,6 +597,19 @@ void proto_poll(uint32_t now_ms)
         if (pressed && !((ecu_prev >> i) & 1u)) proto_send_ecu_cmd(c->subsystem, c->index);
         if (pressed) ecu_prev |= (uint8_t)(1u << i);
         else         ecu_prev &= (uint8_t)~(1u << i);
+    }
+
+    /* A followed channel whose frame has stopped arriving falls back to its failsafe
+     * bit. Holding the last value would leave a fuel pump running on the strength of a
+     * frame that arrived before the ECU died. */
+    if (cfg.can_timeout_ms) {
+        for (uint8_t i = 0; i < RCM_ECU_FOLLOWS; i++) {
+            const struct ecu_follow_t *fl = &cfg.ecu_follow[i];
+            if (!fl->can_id || fl->ch >= RCM_CHANNELS) continue;
+            if (cfg.ch[fl->ch].mode != CH_OUTPUT) continue;
+            if ((uint32_t)(now_ms - follow_seen[i]) <= cfg.can_timeout_ms) continue;
+            ch_command(fl->ch, (cfg.failsafe_state >> fl->ch) & 1u);
+        }
     }
 
     if (filters_dirty) {

@@ -104,6 +104,11 @@ void cfg_defaults(struct rcm_config_t *c)
     c->ign_shutdown_ms  = 3000;
     /* Off by default. A project car spends real time with the ignition on and the
      * engine off, and a board that switches itself off mid-job is worse than a charger. */
+    for (uint8_t i = 0; i < RCM_ECU_FOLLOWS; i++) {
+        c->ecu_follow[i].ch     = IGN_CH_NONE;
+        c->ecu_follow[i].bit    = 0;
+        c->ecu_follow[i].can_id = 0;
+    }
     for (uint8_t i = 0; i < RCM_ECU_CMDS; i++) {
         c->ecu_cmd[i].ch        = IGN_CH_NONE;
         c->ecu_cmd[i].subsystem = 0;
