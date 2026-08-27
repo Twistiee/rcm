@@ -208,7 +208,68 @@ void proto_broadcast(uint32_t now_ms)
 
 /* --- receive --------------------------------------------------------------- */
 
-static void handle_ctl(const struct can_frame_t *f)
+static void send_cfg_reply(uint8_t sel, uint8_t idx)
+{
+    uint8_t d[8] = { sel, idx, 0, 0, 0, 0, 0, 0 };
+    uint8_t *p = &d[2];
+
+    switch (sel) {
+    case RCM_CFG_SEL_IDS:
+        p[0] = (uint8_t)cfg.can_base_id;       p[1] = (uint8_t)(cfg.can_base_id >> 8);
+        p[2] = (uint8_t)cfg.can_bitrate;       p[3] = (uint8_t)(cfg.can_bitrate >> 8);
+        p[4] = (uint8_t)(cfg.can_bitrate >> 16); p[5] = (uint8_t)(cfg.can_bitrate >> 24);
+        break;
+    case RCM_CFG_SEL_TIMING:
+        p[0] = (uint8_t)cfg.broadcast_ms;      p[1] = (uint8_t)(cfg.broadcast_ms >> 8);
+        p[2] = (uint8_t)cfg.can_timeout_ms;    p[3] = (uint8_t)(cfg.can_timeout_ms >> 8);
+        p[4] = (uint8_t)cfg.input_debounce_ms; p[5] = (uint8_t)(cfg.input_debounce_ms >> 8);
+        break;
+    case RCM_CFG_SEL_FAILSAFE:
+        pack21(p, cfg.failsafe_state);
+        break;
+    case RCM_CFG_SEL_IGN:
+        p[0] = cfg.ign_mode;    p[1] = cfg.ign_brake_ch; p[2] = cfg.ign_start_ch;
+        p[3] = cfg.ign_run_ch;  p[4] = cfg.ign_run_out_ch; p[5] = cfg.ign_ecu_flags;
+        break;
+    case RCM_CFG_SEL_IGNTIME:
+        p[0] = (uint8_t)cfg.ign_hold_stop_ms;  p[1] = (uint8_t)(cfg.ign_hold_stop_ms >> 8);
+        p[2] = (uint8_t)cfg.ign_crank_max_ms;  p[3] = (uint8_t)(cfg.ign_crank_max_ms >> 8);
+        p[4] = (uint8_t)cfg.ign_shutdown_ms;   p[5] = (uint8_t)(cfg.ign_shutdown_ms >> 8);
+        break;
+    case RCM_CFG_SEL_IGNTIME2:
+        p[0] = (uint8_t)cfg.ign_off_hold_ms;   p[1] = (uint8_t)(cfg.ign_off_hold_ms >> 8);
+        p[2] = (uint8_t)cfg.ign_idle_timeout_s;p[3] = (uint8_t)(cfg.ign_idle_timeout_s >> 8);
+        p[4] = (uint8_t)cfg.ign_wake_start_ms; p[5] = (uint8_t)(cfg.ign_wake_start_ms >> 8);
+        break;
+    case RCM_CFG_SEL_PEER:
+        if (idx == 0) { p[0] = cfg.peer_node; pack21(&p[1], cfg.peer_mask); }
+        else          { pack21(p, cfg.peer_toggle_mask); }
+        break;
+    case RCM_CFG_SEL_RUNSRC:
+        p[0] = (uint8_t)cfg.ecu_rpm_can_id;    p[1] = (uint8_t)(cfg.ecu_rpm_can_id >> 8);
+        p[2] = (uint8_t)cfg.ign_run_rpm;       p[3] = (uint8_t)(cfg.ign_run_rpm >> 8);
+        break;
+    case RCM_CFG_SEL_ECUCMD:
+        if (idx >= RCM_ECU_CMDS) return;
+        p[0] = cfg.ecu_cmd[idx].ch;
+        p[1] = (uint8_t)cfg.ecu_cmd[idx].subsystem;
+        p[2] = (uint8_t)(cfg.ecu_cmd[idx].subsystem >> 8);
+        p[3] = (uint8_t)cfg.ecu_cmd[idx].index;
+        p[4] = (uint8_t)(cfg.ecu_cmd[idx].index >> 8);
+        break;
+    case RCM_CFG_SEL_CHANNEL:
+        if (idx >= RCM_CHANNELS) return;
+        p[0] = cfg.ch[idx].mode;      p[1] = cfg.ch[idx].flags;
+        p[2] = cfg.ch[idx].func;      p[3] = cfg.ch[idx].behaviour;
+        p[4] = (uint8_t)cfg.ch[idx].param; p[5] = (uint8_t)(cfg.ch[idx].param >> 8);
+        break;
+    default:
+        return;                       /* unknown selector: say nothing at all */
+    }
+    can_send(proto_id(RCM_F_CFG_REPLY), d, 8);
+}
+
+static void handle_ctl(const struct can_frame_t *f, bool global)
 {
     if (f->len < 1) return;
 
@@ -250,6 +311,12 @@ static void handle_ctl(const struct can_frame_t *f)
             cfg.ch[ch].mode  = f->data[2];
             cfg.ch[ch].flags = f->data[3];
         }
+        break;
+
+    case RCM_OP_GET_CFG:
+        /* Never answer a GLOBAL request. Eight nodes replying at once would collide,
+         * and the asker cannot tell whose answer it got anyway. */
+        if (!global && f->len >= 2) send_cfg_reply(f->data[1], f->len >= 3 ? f->data[2] : 0);
         break;
 
     case RCM_OP_SET_ECU_CMD:
@@ -420,7 +487,7 @@ void proto_poll(uint32_t now_ms)
         if (f.id == peer) {
             handle_peer_inputs(&f);
         } else if (f.id == global) {
-            handle_ctl(&f);
+            handle_ctl(&f, true);
         } else if (f.id == (uint16_t)(base + RCM_F_CMD_SET)) {
             /* The starter is masked out of anything arriving over the bus. Only the
              * ignition state machine turns it, and it does so with the brake held and
@@ -429,7 +496,7 @@ void proto_poll(uint32_t now_ms)
             if (f.len >= 6) ch_command_mask(unpack21(&f.data[0]) & ~starter_mask(),
                                             unpack21(&f.data[3]));
         } else if (f.id == (uint16_t)(base + RCM_F_CMD_CTL)) {
-            handle_ctl(&f);
+            handle_ctl(&f, false);
         } else {
             ours = false;
         }

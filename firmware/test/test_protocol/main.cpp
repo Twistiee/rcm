@@ -653,6 +653,85 @@ static void test_a_second_slot_sends_its_own_command(void)
     TEST_ASSERT_EQUAL_HEX8(0x09, EXT_TX[0].data[4]);
 }
 
+/* --- reading configuration back ---------------------------------------------
+ * Every other opcode is a setter. Without this a tool can configure a board and never
+ * ask what it is configured as, so every check has to be behavioural -- which is exactly
+ * how bench sessions end up drawing conclusions from stale frames. */
+
+static const can_frame_t *cfg_reply(void)
+{
+    for (size_t i = TX.size(); i-- > 0; )
+        if (TX[i].id == NODE_BASE + RCM_F_CFG_REPLY) return &TX[i];
+    return nullptr;
+}
+
+static const can_frame_t *ask(uint8_t sel, uint8_t idx = 0)
+{
+    TX.clear();
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_GET_CFG, sel, idx });
+    run_ms(TICK_MS * 4);
+    return cfg_reply();
+}
+
+static void test_config_read_back_returns_what_was_set(void)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IGNITION, IGN_MOMENTARY, 10, 4, 11, 6 });
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_RUN_SRC, 0x01, 0x02, 0xF4, 0x01 });
+    run_ms(TICK_MS * 4);
+
+    const can_frame_t *r = ask(RCM_CFG_SEL_IGN);
+    TEST_ASSERT_NOT_NULL_MESSAGE(r, "no reply to a config request");
+    TEST_ASSERT_EQUAL_HEX8(RCM_CFG_SEL_IGN, r->data[0]);
+    TEST_ASSERT_EQUAL_UINT8(IGN_MOMENTARY, r->data[2]);
+    TEST_ASSERT_EQUAL_UINT8(10, r->data[3]);
+    TEST_ASSERT_EQUAL_UINT8(4,  r->data[4]);
+    TEST_ASSERT_EQUAL_UINT8(11, r->data[5]);
+
+    r = ask(RCM_CFG_SEL_RUNSRC);
+    TEST_ASSERT_NOT_NULL(r);
+    TEST_ASSERT_EQUAL_HEX16(0x201, (uint16_t)(r->data[2] | (r->data[3] << 8)));
+    TEST_ASSERT_EQUAL_UINT16(500,  (uint16_t)(r->data[4] | (r->data[5] << 8)));
+}
+
+static void test_config_read_back_is_indexed_for_tables(void)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_ECU_CMD, 2, 7, 0x16, 0x00, 0x21, 0x00 });
+    run_ms(TICK_MS * 4);
+
+    const can_frame_t *r = ask(RCM_CFG_SEL_ECUCMD, 2);
+    TEST_ASSERT_NOT_NULL(r);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(2, r->data[1], "the reply must say which slot it is");
+    TEST_ASSERT_EQUAL_UINT8(7, r->data[2]);
+    TEST_ASSERT_EQUAL_HEX16(0x0016, (uint16_t)(r->data[3] | (r->data[4] << 8)));
+    TEST_ASSERT_EQUAL_HEX16(0x0021, (uint16_t)(r->data[5] | (r->data[6] << 8)));
+
+    /* a different slot is genuinely a different answer, not the same one echoed */
+    r = ask(RCM_CFG_SEL_ECUCMD, 3);
+    TEST_ASSERT_NOT_NULL(r);
+    TEST_ASSERT_EQUAL_UINT8(3, r->data[1]);
+    TEST_ASSERT_EQUAL_UINT8(IGN_CH_NONE, r->data[2]);
+}
+
+static void test_a_global_config_request_is_never_answered(void)
+{
+    /* THE one that matters on a real bus. Eight nodes replying to one broadcast would
+     * collide, and the asker could not tell whose answer it got anyway. */
+    TX.clear();
+    inject(proto_global_id(), { RCM_OP_GET_CFG, RCM_CFG_SEL_IGN, 0 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_NULL_MESSAGE(cfg_reply(), "answered a broadcast config request");
+
+    /* and the same request addressed to this node still works */
+    TEST_ASSERT_NOT_NULL(ask(RCM_CFG_SEL_IGN));
+}
+
+static void test_out_of_range_requests_say_nothing(void)
+{
+    TEST_ASSERT_NULL_MESSAGE(ask(0x7F), "answered an unknown selector");
+    TEST_ASSERT_NULL_MESSAGE(ask(RCM_CFG_SEL_ECUCMD, RCM_ECU_CMDS), "answered a bad slot");
+    TEST_ASSERT_NULL_MESSAGE(ask(RCM_CFG_SEL_CHANNEL, RCM_CHANNELS), "answered a bad channel");
+}
+
 static void test_set_failsafe_and_bitrate(void)
 {
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_FAILSAFE, 0x03, 0x00, 0x10 });
@@ -962,5 +1041,9 @@ int main(void)
     RUN_TEST(test_no_ecu_command_when_unconfigured);
     RUN_TEST(test_a_button_already_held_at_boot_does_not_command);
     RUN_TEST(test_a_second_slot_sends_its_own_command);
+    RUN_TEST(test_config_read_back_returns_what_was_set);
+    RUN_TEST(test_config_read_back_is_indexed_for_tables);
+    RUN_TEST(test_a_global_config_request_is_never_answered);
+    RUN_TEST(test_out_of_range_requests_say_nothing);
     return UNITY_END();
 }

@@ -44,6 +44,7 @@ STRIDE = 0x10
 GLOBAL_OFFSET = 0x80
 
 F_OUTPUTS, F_INPUTS, F_FAULTS, F_STATUS = 0x0, 0x1, 0x2, 0x3
+F_CFG_REPLY = 0x4
 F_CMD_SET, F_CMD_CTL = 0x8, 0x9
 
 OP = {
@@ -353,6 +354,96 @@ def cmd_faults(bus, args):
     return 0
 
 
+# selector -> (name, index count, decoder). Mirrors RCM_OP_GET_CFG in protocol.h.
+def _u16(d, i): return d[i] | (d[i + 1] << 8)
+
+
+CFG_SEL = {
+    0x00: ("ids", 1, lambda d: "base id 0x%03X, bitrate %d"
+           % (_u16(d, 2), d[4] | (d[5] << 8) | (d[6] << 16) | (d[7] << 24))),
+    0x01: ("timing", 1, lambda d: "broadcast %dms, can timeout %dms, debounce %dms"
+           % (_u16(d, 2), _u16(d, 4), _u16(d, 6))),
+    0x02: ("failsafe", 1, lambda d: "channels %s"
+           % (_chlist(unpack21(d[2:5])) or "none")),
+    0x03: ("ignition", 1, lambda d: "mode %s, brake %s, starter %s, run %s, RUN out %s, flags 0x%02X"
+           % ("momentary" if d[2] else "maintained", _ch(d[3]), _ch(d[4]), _ch(d[5]),
+              _ch(d[6]), d[7])),
+    0x04: ("igntimes", 1, lambda d: "hold-to-stop %dms, crank max %dms, shutdown hold %dms"
+           % (_u16(d, 2), _u16(d, 4), _u16(d, 6))),
+    0x05: ("igntimes2", 1, lambda d: "ign-off hold %dms, idle timeout %ds, wake-start %dms"
+           % (_u16(d, 2), _u16(d, 4), _u16(d, 6))),
+    0x06: ("peer", 2, lambda d: ("node %s, follows %s" % (_ch(d[2], "none"),
+                                 _chlist(unpack21(d[3:6])) or "nothing"))
+           if d[1] == 0 else "toggles %s" % (_chlist(unpack21(d[2:5])) or "nothing")),
+    0x07: ("runsrc", 1, lambda d: "ECU rpm id %s, running at %d rpm"
+           % (("0x%03X" % _u16(d, 2)) if _u16(d, 2) else "none", _u16(d, 4))),
+    0x08: ("ecucmd", 6, lambda d: "channel %s -> subsystem %d index %d%s"
+           % (_ch(d[2]), _u16(d, 3), _u16(d, 5), _cmd_name(_u16(d, 3), _u16(d, 5)))),
+    0x09: ("channel", CHANNELS, lambda d: "%-6s flags 0x%02X func %d behaviour %d param %d"
+           % (["unused", "out", "in"][d[2]] if d[2] < 3 else "?", d[3], d[4], d[5],
+              _u16(d, 6))),
+}
+
+
+def _chan_arg(a):
+    """A channel as the user says it: 1-based, or 'none'."""
+    if a in ("none", "off", "unassigned"):
+        return 0xFF
+    n = int(a, 0)
+    if not 1 <= n <= CHANNELS:
+        sys.exit("channel must be 1..%d, or 'none'" % CHANNELS)
+    return n - 1
+
+
+def _chlist(v):
+    return ",".join(str(c) for c in bits_to_channels(v))
+
+
+def _ch(v, none="unassigned"):
+    return none if v == 0xFF else str(v + 1)
+
+
+def _cmd_name(sub, idx):
+    for n, (s_, i_) in ECU_CMDS.items():
+        if (s_, i_) == (sub, idx):
+            return "  (%s)" % n
+    return ""
+
+
+def cmd_get(bus, args):
+    """Ask the board what it is configured as. Every other opcode is a setter, so
+    without this the only way to check a board is to watch what it does."""
+    rcm = Rcm(bus, args.base, args.node)
+    wanted = [k for k, v in CFG_SEL.items()
+              if args.what in ("all", v[0])]
+    if not wanted:
+        sys.exit("unknown section %r -- try: all, %s"
+                 % (args.what, ", ".join(v[0] for v in CFG_SEL.values())))
+    reply_id = args.base + args.node * STRIDE + F_CFG_REPLY
+    for sel in sorted(wanted):
+        name, count, decode = CFG_SEL[sel]
+        for idx in range(count):
+            rcm.flush()
+            rcm.ctl(0x1A, sel, idx)
+            d = None
+            t0 = time.time()
+            while time.time() - t0 < 0.5:
+                m = bus.recv(timeout=0.1)
+                if m and m.arbitration_id == reply_id and m.data[0] == sel                         and m.data[1] == idx:
+                    d = bytes(m.data)
+                    break
+            if d is None:
+                if count == 1:
+                    print("  %-10s no reply" % name)
+                continue
+            # channels are 1-based everywhere else in this tool and on the board's
+            # terminals; ecucmd slots are genuinely 0-based in the protocol.
+            shown = idx + 1 if sel == 0x09 else idx
+            label = name if count == 1 else "%s[%d]" % (name, shown)
+            print("  %-12s %s" % (label, decode(d)))
+    return 0
+
+
 def cmd_ctl(bus, args):
     rcm = Rcm(bus, args.base, args.node)
     op = OP[args.op]
@@ -394,6 +485,26 @@ def cmd_ctl(bus, args):
                      % ",".join(str(c + 1) for c in range(CHANNELS)
                                 if (toggle & ~follow) >> c & 1))
         extra = [node, *pack21(follow), *pack21(toggle)]
+    elif args.op == "ignition":
+        # Channel numbers here are 1-based like everywhere else in this tool, and like
+        # the board's terminals. They were raw 0-based passthrough, which meant `ctl
+        # ignition` and `ctl chmode` disagreed about what "channel 7" meant.
+        if len(args.args) < 4:
+            sys.exit("ignition <maintained|momentary> <brake> <starter> <run> [RUN-out]"
+                     "  -- channels 1-%d or 'none'" % CHANNELS)
+        mode = {"maintained": 0, "momentary": 1}.get(args.args[0])
+        if mode is None:
+            mode = int(args.args[0], 0)
+        extra = [mode] + [_chan_arg(a) for a in args.args[1:]]
+    elif args.op == "runsrc":
+        # <can id> <rpm>, not four raw bytes.
+        if len(args.args) < 1:
+            sys.exit("runsrc <ecu-rpm-can-id|none> [running-rpm]")
+        cid = 0 if args.args[0] in ("none", "off") else int(args.args[0], 0)
+        if cid > 0x7FF:
+            sys.exit("an 11-bit standard id is 0..0x7FF")
+        rpm = int(args.args[1], 0) if len(args.args) > 1 else 0
+        extra = [cid & 0xFF, cid >> 8, rpm & 0xFF, rpm >> 8]
     elif args.op == "ecucmd":
         if len(args.args) < 2:
             sys.exit("ecucmd <slot 0-%d> <channel|none> <%s | subsystem index>"
@@ -547,6 +658,11 @@ def main():
     p = sub.add_parser("walk", help="bring-up: drive each channel in turn")
     p.add_argument("--dwell", type=float, default=1.0)
 
+    p = sub.add_parser("get", help="read configuration back off the board")
+    p.add_argument("what", nargs="?", default="all",
+                   help="all, or one section: ids timing failsafe ignition igntimes "
+                        "igntimes2 peer runsrc ecucmd channel")
+
     p = sub.add_parser("ctl", help="control opcode")
     p.add_argument("op", choices=sorted(OP))
     p.add_argument("args", nargs="*")
@@ -584,7 +700,7 @@ def main():
         time.sleep(0.2)               # let it get a first broadcast out
 
     fn = {"scan": cmd_scan, "monitor": cmd_monitor, "set": cmd_set, "walk": cmd_walk,
-          "faults": cmd_faults, "ctl": cmd_ctl, "dump": cmd_dump, "sim": cmd_sim}[args.cmd]
+          "faults": cmd_faults, "ctl": cmd_ctl, "get": cmd_get, "dump": cmd_dump, "sim": cmd_sim}[args.cmd]
     try:
         return fn(bus, args)
     finally:

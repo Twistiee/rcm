@@ -56,6 +56,7 @@
 #define RCM_F_INPUTS    0x1
 #define RCM_F_FAULTS    0x2
 #define RCM_F_STATUS    0x3
+#define RCM_F_CFG_REPLY 0x4   /* answer to RCM_OP_GET_CFG */
 /* received by us */
 #define RCM_F_CMD_SET   0x8
 #define RCM_F_CMD_CTL   0x9
@@ -102,6 +103,25 @@
 #define RCM_OP_SET_ECU_CMD    0x19   /* b1 slot 0..RCM_ECU_CMDS-1, b2 input channel or
                                       * 0xFF for unused, b3..b4 LE subsystem,
                                       * b5..b6 LE index */
+#define RCM_OP_GET_CFG        0x1A   /* b1 selector, b2 index. The board answers on
+                                      * RCM_F_CFG_REPLY. Every other opcode is a SETTER:
+                                      * without this a tool can configure a board but
+                                      * never ask what it is configured as, which means
+                                      * every check has to be behavioural. */
+
+/* --- RCM_OP_GET_CFG selectors ----------------------------------------------
+ * Reply layout is always: d0 selector, d1 index, d2..d7 payload. */
+#define RCM_CFG_SEL_IDS       0x00   /* base id (2), bitrate (4)                     */
+#define RCM_CFG_SEL_TIMING    0x01   /* broadcast, can timeout, input debounce (2+2+2)*/
+#define RCM_CFG_SEL_FAILSAFE  0x02   /* 21 channel bits (3)                          */
+#define RCM_CFG_SEL_IGN       0x03   /* mode, brake, start, run, run_out, ecu flags   */
+#define RCM_CFG_SEL_IGNTIME   0x04   /* hold-stop, crank max, shutdown hold (2+2+2)   */
+#define RCM_CFG_SEL_IGNTIME2  0x05   /* off hold, idle timeout s, wake start (2+2+2)  */
+#define RCM_CFG_SEL_PEER      0x06   /* index 0: node + follow mask; index 1: toggle  */
+#define RCM_CFG_SEL_RUNSRC    0x07   /* ecu rpm can id (2), running rpm (2)           */
+#define RCM_CFG_SEL_ECUCMD    0x08   /* index = slot: ch, subsystem (2), index (2)    */
+#define RCM_CFG_SEL_CHANNEL   0x09   /* index = channel: mode, flags, func, beh, param*/
+#define RCM_CFG_SEL_MAX       0x09
 
 /* --- asking rusEFI to start or stop the engine ------------------------------
  * An EXTENDED frame from rusEFI's bench-test command block. Verified against rusEFI's

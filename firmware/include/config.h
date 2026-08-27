@@ -126,10 +126,12 @@ struct ch_cfg_t {
 
 /* ---- persisted configuration ---------------------------------------------- */
 #define RCM_CFG_MAGIC    0x314D4352UL   /* "RCM1" little-endian */
-/* v2 added the ignition block. A stored v1 record is rejected by cfg_valid() and the
- * board falls back to defaults rather than misreading it -- which is the whole reason
- * `version` and `size` are in there. */
-#define RCM_CFG_VERSION  4
+/* v2 added the ignition block, v5 the ECU command table. A stored older record is
+ * rejected by cfg_valid() and the board falls back to defaults rather than misreading
+ * it -- which is the whole reason `version` and `size` are in there. Note `size` alone
+ * would catch a struct that GREW; the version is what catches one that changed meaning
+ * without changing length. */
+#define RCM_CFG_VERSION  5
 
 #define RCM_ECU_CMDS 6
 
