@@ -11,7 +11,7 @@ unit-tested against a model of the board. None of it has seen a relay.
 pio run                          build for the board
 pio run -t upload                flash over J_SWD with an ST-Link
 pio run -e selftest -t upload    bring-up console on the USB-C port
-pio test -e native               154 host unit tests
+pio test -e native               201 host unit tests
 python tools/gen_dbc.py          regenerate ../docs/rcm.dbc
 python tools/test_rcm_bench.py   self-test the bench tool, no hardware needed
 python tools/rcm_bench.py --help talk to a board over CAN
@@ -182,8 +182,13 @@ beat any configuration.
 The shortest path from a keypad to a relay module without an ECU in the middle. Set
 `peer_node` and a relay module applies that node's debounced input bits straight to its
 own outputs, channel for channel. `peer_mask` bounds what it may touch;
-`peer_toggle_mask` picks channels where a *press* toggles rather than follows — momentary
-button, latching load.
+`peer_toggle_mask` picks channels where a *press* toggles rather than follows.
+
+Prefer setting the **input behaviour** to `IN_TOGGLE` on the keypad instead, where
+available: the latched state then travels in the keypad's own INPUTS frame, so mirroring
+just follows it, a dash sees the real state, and any ECU command bound to that button gets
+one edge per intent. `peer_toggle_mask` un-picks it at the destination, which only ever
+works for the one consumer that implements it.
 
 The first frame from a peer only establishes a baseline, so a board joining the bus while
 a button happens to be held does not fire every toggle channel at once.
@@ -196,8 +201,28 @@ a button happens to be held does not fire every toggle channel at once.
 IMU enable, and the 500k override. These are exactly the settings you cannot fix over the
 bus once they are wrong, which is why they are on a switch.
 
-**Config** lives in EEPROM and can be changed over CAN: bitrate, base ID, timings, the
-channel mode table, failsafe states, peer mirroring, IMU axis remap.
+**Everything else lives in EEPROM and is settable over CAN** — bitrate, base ID, timings,
+channel modes and behaviours, failsafe states, peer mirroring, IMU axis remap, the ECU
+command and follow tables.
+
+**And readable back over CAN.** `RCM_OP_GET_CFG` takes a selector and an index and answers
+on its own frame. That is not a convenience: without it every check has to be behavioural,
+which is how a bench session ends up concluding something from a stale broadcast frame.
+`rcm_bench get` dumps the lot.
+
+### A channel's role is its label, and nothing else
+
+The ignition machinery needs to find four channels: the brake, the starter, the
+engine-running signal, and the RUN output that feeds an ECU's ignition input. Those are
+named by the channel's **function label** and nowhere else.
+
+There used to be a second copy — `ign_brake_ch` and friends — with nothing tying the two
+together. Label channel 12 "Brake pedal", point `ign_brake_ch` at channel 5, and the board
+reads the brake from 5 while every display says 12. Pressing start with a foot on the
+brake then does nothing, the configuration looks correct, and you go and suspect the
+switch. One record of a role, so nothing can disagree with it.
+
+### Storage
 
 Two CRC'd copies at `0x0000` and `0x0400`. The backup is written **first**, so a power
 loss between the two writes always leaves one valid record. On boot, a bad primary with a
@@ -207,6 +232,40 @@ board already does the obviously right thing for what it is.
 
 `RCM_OP_LOAD_DEFAULTS` only touches RAM. Someone has to send `SAVE_CONFIG` as a second,
 deliberate act.
+
+---
+
+## Talking to a rusEFI ECU
+
+Two directions, both optional, both configured by table so neither side needs new firmware
+when rusEFI adds something.
+
+**The ECU decides, this board switches.** rusEFI broadcasts the state it wants each relay
+in — `MainRelayAct`, `FuelPumpAct`, `Fan`, `Fan2`, `EGOHeatAct`, `CELAct`, `RevLimAct` —
+as single bits in one frame, re-asserted every broadcast period rather than sent on
+change. Bind a bit to a channel and the channel follows it. rusEFI has far fewer outputs
+than this board has channels, so this is how the split usually wants to go.
+
+Two details that matter:
+
+- a followed channel whose frame stops arriving **falls back to its failsafe bit**.
+  Holding the last value would leave a fuel pump running on the strength of a frame that
+  arrived before the ECU died.
+- that staleness timeout is **separate from the bus timeout**, because rusEFI multiplies
+  its own broadcast period by **five** while TunerStudio is connected over CAN. Sharing
+  one value would drop fans and pumps while tuning, and read as a fault in this board.
+  Allow at least 5× the ECU's configured period.
+
+**A button asks the ECU to act.** Any input channel can be bound to a TunerStudio command,
+sent as an extended frame. Start/stop the engine lands on the same entry point as rusEFI's
+own physical start button, so the ECU keeps its own interlocks and decides whether that
+means crank or stop. `LUA_COMMAND_1`..`4` bump counters a rusEFI Lua script can watch,
+which is how traction control, launch control or a map switch get done — rusEFI has no
+fixed command for any of them.
+
+Commands are stored as a raw (subsystem, index) pair rather than a list of names: every
+TunerStudio command is that shape, so a new one is a config change rather than a release.
+The friendly names live in `tools/rcm_bench.py`, where they cost nothing.
 
 ---
 
@@ -281,7 +340,7 @@ and also cross-checks the tool's byte packing against the DBC — so bench tool,
 
 ## Testing
 
-154 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
+201 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
 `.cpp` files against a model of the board in `test/stubs/`, so they test the code that
 ships rather than a transcription of it.
 

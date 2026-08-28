@@ -164,9 +164,9 @@ Eleven of twenty-one, with plenty in hand. Main, starter and fuel pump are absen
 the ECU drives them. The starter would be absent regardless: the firmware masks it out of
 every CAN and peer path so a stray or replayed frame cannot crank the engine.
 
-**Keypad** (node 4-7, channels default to inputs): headlights, high beam, horn, rain
-light, fan override, pump prime, traction/launch/map-select, plus tell-tale inputs. Ten
-or so of twenty-one.
+**Keypad** (node 4-7): ten buttons and their lamps, alternating input/output -- see "The
+keypad board" above. Headlights, high beam, horn, rain light, fan override, pump prime,
+traction/launch/map-select, start/stop.
 
 Buttons switch **+12V into the channel** — inputs sense high, and need more than 10.87 V
 at the terminal to read as pressed.
@@ -299,6 +299,51 @@ on `J_PWR`** rated about 8 A. Eight 80 Ω coils at 14.4 V is 8 x 180 mA = **1.44
 there is plenty of margin here — but it is the first thing to check before adding
 directly-driven loads, and it is the known limit a revision should fix with a second
 ground pole.
+
+## The keypad board: buttons AND their LEDs
+
+A keypad is **not** 21 inputs. Each button has an LED in it, and that LED has to be
+switched, so the channels alternate:
+
+| Channel | | |
+|---|---|---|
+| 1 | input | button 1 |
+| 2 | output | button 1's LED |
+| 3 | input | button 2 |
+| 4 | output | button 2's LED |
+| … | | |
+
+So 21 channels is **ten buttons and their lamps**, with one channel spare. Two things
+follow that are worth knowing before wiring one.
+
+**The role strap's default is wrong for this.** Closing the role DIP makes every channel
+default to an input, which suits a pure input panel and not a real keypad. It is only a
+default -- set the even channels back to outputs with `ctl chmode` -- but a fresh keypad
+does not come up ready to light anything.
+
+**LED current is low-side, like everything else.** The LED's positive side takes a
+permanent feed and the channel sinks it. In a moulded button where the lamp shares a
+common with the switch, that may not be possible without opening the button up -- the same
+constraint the rear light clusters have.
+
+### What the LED should show
+
+The useful thing for a lamp to show is **whether the load is actually on**, not whether
+the button was pressed. Those differ exactly when it matters: a blown fuse, a relay that
+did not pull in, a channel the relay module refused because it was in failsafe.
+
+**That is not built.** Peer mirroring runs one way -- a relay module follows a keypad's
+INPUTS frame -- and it is strictly channel-for-channel. For a lamp to track a load it
+would need the reverse: the keypad following the relay module's OUTPUTS frame, and with a
+mapping, since keypad channel 2 lights for relay module channel N rather than channel 2.
+
+The pieces are all there. `ecu_follow` already binds a channel to an arbitrary (frame,
+bit) pair and this board's own OUTPUTS frame is just another frame on the bus, so a keypad
+could follow a relay module today by pointing follow slots at the relay module's broadcast
+-- it simply has not been tried, and there are only six slots against ten lamps.
+
+Until then a lamp can mirror the button locally, which is honest about the button and
+silent about the load.
 
 ## Pairing the two boards
 

@@ -13,14 +13,25 @@ nothing about it is rusEFI-specific beyond the choice of message IDs.
 
 ## Status — read this first
 
-**The boards were ordered on 2026-08-08 and have not been powered on.** The firmware is
-written, builds, and passes 154 host unit tests against a simulated board, but **not one
-line of it has run on real hardware.** The PCB has never been checked against a
-multimeter.
+**revA has been built, powered and brought up.** Every subsystem has run on real
+hardware: the MCU and its 8 MHz crystal, USB, the DIP straps, the EEPROM, CAN through the
+transceiver onto a real bus, the IMU, the 12 V sense, the self-latching power, the
+watchdog, the output drivers under a real relay load, and the board switching itself off.
+201 host unit tests pass alongside that.
 
-Take it as a design worth reading, not a design worth trusting. If you build one, expect
-to find things. `DESIGN.md` records what has already been found and fixed, which is a fair
-guide to how much else is probably in there.
+What that does **not** mean is that it is proven in a car. Specifically, still untested:
+
+- **the keypad role on hardware** — one board has been powered, never two, so
+  board-to-board peer mirroring has only been exercised with a PC pretending to be the
+  keypad
+- **more than two channels under load at once**, and nothing thermal
+- **a stored configuration surviving a power cycle** — the EEPROM read and write are
+  proven, a full configure-save-reboot cycle is not
+
+Bring-up found three real firmware bugs that no amount of desk testing had: a `%f` in
+printf corrupting memory, a strap display that could never show a change, and a short
+press on the ignition button switching the board back off. `DESIGN.md` records those and
+everything else found along the way, which is a fair guide to how much is probably left.
 
 ### What happens when it resets
 
@@ -136,17 +147,23 @@ PlatformIO + STM32duino, in [`firmware/`](firmware/) — see
 - 21 channels, in or out per channel as a **software** table, changeable over CAN
 - **Coil-circuit diagnosis** — blown fuse, missing relay, open coil or broken wire, all
   reported per channel, and a short-to-12V too
+- **Input behaviours**: momentary, **toggle** (a momentary button driving a latching
+  load), and **hold-to-arm** (true only once held, for things a knock must not arm)
+- **Output behaviours**: steady, flash on a shared period so several channels stay in
+  phase, single pulse, and delay-off
 - CAN at **500 kbps by default and any exact bitrate you like**. Bit timing is solved at
   runtime for an 87.5% sample point; if a rate cannot be produced exactly, it refuses to
   start rather than running the bus 1% out
 - Node addressing for 8 boards, CAN-loss failsafe, ignition-off shutdown, watchdog
+- **Everything is configurable over CAN, and readable back over CAN** — every setting has
+  a getter as well as a setter, so a tool can ask a board what it is rather than infer it
 - Optional **keypad → relay peer mirroring**, so a button panel can drive a relay module
   with no ECU in the middle
 
 ```
 pio run -d firmware                     build
 pio run -d firmware -e selftest -t upload   bring-up console over USB-C
-pio test -d firmware -e native          154 host unit tests
+pio test -d firmware -e native          201 host unit tests
 ```
 
 **Two bring-up paths.** A **USB-C console** needs nothing but the cable — it proves the
@@ -168,6 +185,15 @@ your loom.
 
 [`docs/rcm.dbc`](docs/rcm.dbc) is generated from the firmware headers, so **uaDASH and
 TunerStudio can render channel state, inputs and faults with no custom display code**.
+
+**The board can drive channels from the ECU's own decisions, and ask the ECU to act.**
+rusEFI broadcasts what it thinks its relays should be doing — main relay, fuel pump, both
+fans, O2 heater, check-engine, rev limiter — as single bits. Any of those can be bound to
+a channel, so the ECU decides and this board switches, which matters because rusEFI has
+far fewer outputs than this board has channels. In the other direction, a button can send
+any TunerStudio command: start/stop the engine, or one of rusEFI's Lua command counters,
+which is how you get traction control, launch control or a map switch without either side
+needing new firmware.
 
 The BMI270 publishes as a **Bosch MM5.10** at `0x174`/`0x178`/`0x17C` — frames rusEFI
 already decodes. Set `imuType = IMU_MM5_10` and yaw rate plus lateral, longitudinal and
