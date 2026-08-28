@@ -313,7 +313,8 @@ switched, so the channels alternate:
 | 4 | output | button 2's LED |
 | … | | |
 
-So 21 channels is **ten buttons and their lamps**, with one channel spare. Two things
+This car's keypad is **8 buttons**, so 16 channels with 5 spare. 21 channels tops out at
+ten buttons, and the firmware's 12 follow slots are sized for that. Two things
 follow that are worth knowing before wiring one.
 
 **The role strap's default is wrong for this.** Closing the role DIP makes every channel
