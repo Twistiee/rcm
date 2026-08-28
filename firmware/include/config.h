@@ -154,13 +154,25 @@ struct ch_cfg_t {
 #define RCM_CFG_VERSION  5
 
 #define RCM_ECU_CMDS 6
-#define RCM_ECU_FOLLOWS 6
+/* Twelve, not six, because a keypad is ten buttons and ten LAMPS -- and a lamp that
+ * tracks the actual load rather than the button is exactly a follow slot. Six covered
+ * an engine bay; it does not cover a keypad. 12 x 4 bytes of config. */
+#define RCM_ECU_FOLLOWS 12
 
 /* Drive one of our channels from a bit in the ECU's broadcast.
  *
  * rusEFI publishes what it thinks its relays should be doing -- MainRelayAct, FuelPumpAct,
  * Fan, Fan2, EGOHeatAct, RevLimAct -- as single bits, all in frame 0x200. It has limited
  * outputs, so the useful arrangement is: the ECU decides, this board switches.
+ *
+ * The source does not have to be the ECU. Any frame will do, which covers the two other
+ * things this is for:
+ *   - a keypad LAMP tracking the real state of a load, by following the relay module's
+ *     own OUTPUTS frame (bit N-1 is channel N). That is worth more than mirroring the
+ *     button, because the two differ exactly when it matters -- a blown fuse, a relay
+ *     that did not pull in, a channel refused because the board was in failsafe.
+ *   - a lamp for something rusEFI has no standard signal for, like traction control or
+ *     launch armed, broadcast from a Lua script on whatever id you choose.
  *
  * Stored as a raw (frame id, bit) pair for the same reason the command table is: naming
  * them in firmware would mean a release every time rusEFI adds a signal, and this way any

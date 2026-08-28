@@ -417,7 +417,7 @@ CFG_SEL = {
            % (_ch(d[2]), _u16(d, 3), _u16(d, 5), _cmd_name(_u16(d, 3), _u16(d, 5)))),
     0x0B: ("timing2", 1, lambda d: "ECU follow goes stale after %dms"
            % _u16(d, 2)),
-    0x0A: ("follow", 6, lambda d: "channel %s <- frame 0x%03X bit %d%s"
+    0x0A: ("follow", 12, lambda d: "channel %s <- frame 0x%03X bit %d%s"
            % (_ch(d[2]), _u16(d, 4), d[3], _bit_name(_u16(d, 4), d[3]))),
     0x09: ("channel", CHANNELS, lambda d: "%-6s %-9s flags 0x%02X func %-14s param %d"
            % (["unused", "out", "in"][d[2]] if d[2] < 3 else "?",
@@ -581,7 +581,9 @@ def cmd_ctl(bus, args):
         extra = [cid & 0xFF, cid >> 8, rpm & 0xFF, rpm >> 8]
     elif args.op == "ecufollow":
         if len(args.args) < 2:
-            sys.exit("ecufollow <slot 0-5> <channel|none> <%s | frame-id bit>"
+            sys.exit("ecufollow <slot 0-11> <channel|none> <%s | frame-id bit> -- a lamp "
+                     "can follow a relay module OUTPUTS frame too: bit N-1 of "
+                     "that node base id is its channel N"
                      % "|".join(sorted(ECU_BITS)))
         slot = int(args.args[0], 0)
         ch = _chan_arg(args.args[1])

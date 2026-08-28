@@ -915,6 +915,35 @@ static void test_follow_staleness_is_independent_of_the_bus_timeout(void)
     }
 }
 
+static void test_a_lamp_can_follow_another_boards_output(void)
+{
+    /* What a keypad LAMP is for. The relay module's OUTPUTS frame carries channel N as
+     * bit N-1, so a lamp follows the real state of a load rather than the button that
+     * asked for it -- and those differ exactly when it matters: a blown fuse, a relay
+     * that did not pull in, a channel refused because the board was in failsafe.
+     *
+     * Nothing about the mechanism knows or cares that the frame came from a sibling
+     * rather than an ECU. */
+    follow(0, 5, 8, 0x340);          /* our lamp ch5 <- node 4's channel 9 */
+    inject(0x340, { 0x00, 0x01, 0, 0, 0, 0, 0, 0 });   /* bit 8 set = its channel 9 on */
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(5), "the lamp did not follow the load");
+
+    inject(0x340, { 0x00, 0x00, 0, 0, 0, 0, 0, 0 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(5), "the lamp stayed lit after the load went");
+}
+
+static void test_the_high_follow_slots_work_too(void)
+{
+    /* Ten lamps needs more than the six slots an engine bay wanted. An off-by-one in the
+     * bound would leave the last few silently doing nothing. */
+    follow(RCM_ECU_FOLLOWS - 1, 5, 3, 0x500);
+    inject(0x500, { 1u << 3, 0, 0, 0, 0, 0, 0, 0 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(5), "the last follow slot does nothing");
+}
+
 static void test_follow_refuses_a_bit_past_the_end_of_a_frame(void)
 {
     follow(0, 5, 34, 0x200);
@@ -1249,6 +1278,8 @@ int main(void)
     RUN_TEST(test_a_followed_channel_falls_back_when_the_ecu_goes_quiet);
     RUN_TEST(test_the_ecu_broadcast_does_not_hold_off_the_failsafe);
     RUN_TEST(test_follow_staleness_is_independent_of_the_bus_timeout);
+    RUN_TEST(test_a_lamp_can_follow_another_boards_output);
+    RUN_TEST(test_the_high_follow_slots_work_too);
     RUN_TEST(test_follow_refuses_a_bit_past_the_end_of_a_frame);
     return UNITY_END();
 }
