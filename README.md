@@ -9,6 +9,22 @@ controller or as a switch panel, decided in firmware rather than by a different 
 Designed for a [rusEFI](https://rusefi.com/) bus (uaEFI SUPER ECU + uaDASH display), but
 nothing about it is rusEFI-specific beyond the choice of message IDs.
 
+> ### A note on how this was built
+>
+> **This project is largely AI-developed.** The schematic, PCB layout, firmware and
+> documentation were written by me working with Claude, and much of the text and code here
+> came out of that. It is called out up front because some people would rather know, and
+> because it should colour how much you trust it.
+>
+> What it does *not* mean is unreviewed or untested. The board exists and has been brought
+> up on the bench; the claims in the Status section below were measured rather than
+> asserted, and where something has only been reasoned about it says so. The firmware has a
+> host-side unit test suite. Bring-up still found real bugs that review had missed — which
+> is rather the point of the Status section.
+>
+> Treat it as you would any one-person hobby project: read the schematic before you build
+> it, and don't put it in charge of anything you can't afford to have fail.
+
 ---
 
 ## Status — read this first
@@ -16,17 +32,16 @@ nothing about it is rusEFI-specific beyond the choice of message IDs.
 **revA has been built, powered and brought up.** Every subsystem has run on real
 hardware: the MCU and its 8 MHz crystal, USB, the DIP straps, the EEPROM, CAN through the
 transceiver onto a real bus, the IMU, the 12 V sense, the self-latching power, the
-watchdog, the output drivers under a real relay load, and the board switching itself off.
-201 host unit tests pass alongside that.
+watchdog, the output drivers under a real relay load, a stored configuration surviving a
+full save-reset-read cycle, and the board switching itself off. 201 host unit tests pass
+alongside that.
 
 What that does **not** mean is that it is proven in a car. Specifically, still untested:
 
-- **the keypad role on hardware** — one board has been powered, never two, so
-  board-to-board peer mirroring has only been exercised with a PC pretending to be the
-  keypad
+- **board-to-board peer mirroring** — the keypad role strap is proven and a board does
+  come up as a keypad, but only one board has ever been powered, so the peer link has been
+  exercised only with a PC pretending to be the other board
 - **more than two channels under load at once**, and nothing thermal
-- **a stored configuration surviving a power cycle** — the EEPROM read and write are
-  proven, a full configure-save-reboot cycle is not
 
 Bring-up found three real firmware bugs that no amount of desk testing had: a `%f` in
 printf corrupting memory, a strap display that could never show a change, and a short
