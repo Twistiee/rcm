@@ -11,7 +11,7 @@ unit-tested against a model of the board. None of it has seen a relay.
 pio run                          build for the board
 pio run -t upload                flash over J_SWD with an ST-Link
 pio run -e selftest -t upload    bring-up console on the USB-C port
-pio test -e native               201 host unit tests
+pio test -e native               226 host unit tests
 python tools/gen_dbc.py          regenerate ../docs/rcm.dbc
 python tools/test_rcm_bench.py   self-test the bench tool, no hardware needed
 python tools/rcm_bench.py --help talk to a board over CAN
@@ -164,6 +164,55 @@ Two honest caveats:
 - The MM5.10 encoding saturates at ±163.8 °/s of yaw. That is most of the way through a
   spin, and the encoders clamp rather than wrap — a wrapped yaw rate would tell the ECU
   the car had suddenly turned the other way.
+
+### Which way up the board is mounted
+
+The IMU does not have to face any particular direction, but the board has to be **told**
+which way it is facing, because a wrong axis map reports confident, plausible, wrong
+motion to an ECU that may act on it. `cfg.imu_map` names, for each vehicle axis, the
+sensor axis that feeds it and whether to negate it. Vehicle axes are the automotive
+convention: **X forward, Y left, Z up**.
+
+```
+rcm_bench.py ctl imumap x y z       # board flat, +X edge pointing down the car
+rcm_bench.py ctl imumap ny x z      # the same board rotated 90 deg clockwise
+rcm_bench.py ctl imumap x ny nz     # board mounted upside down
+rcm_bench.py ctl imulevel           # or solve it from gravity, standing still
+rcm_bench.py get imu                # read back what it settled on
+rcm_bench.py ctl save
+```
+
+Write a negated axis as `ny`, not `-y` — a leading dash is taken for a command-line
+option before the tool ever sees it.
+
+**Auto-level solves one axis, not three.** Standing still, the only acceleration is
+gravity, so the reading fixes which way is **up** and nothing else — spin the board on a
+level bench and gravity never changes. Forward and left are not guessable this way, so
+they are filled in as a right-handed pair and left for you to confirm on a drive: braking
+should read **negative vehicle X**. Handedness is preserved rather than left to chance
+because a left-handed map reads perfectly plausibly at a standstill and only shows up as
+the car yawing the wrong way in a corner.
+
+**It refuses more often than it succeeds, on purpose.** `imu_solve_level()` returns
+`MOVING` if the vector is not ~1 g (engine running, someone leaning on the car), `MOVING`
+again if the **gyro** shows more than 2 °/s, and `TILTED` if no axis is within 15° of
+vertical.
+
+The gyro check is there because the accelerometer alone cannot see rotation, and that
+was a real bug caught on the bench rather than a theoretical one. Magnitude only responds
+to *linear* acceleration: turn the board slowly and gravity still totals exactly 1 g, it
+just points somewhere else. Spinning the board flat on a desk measured `|a|` = 0.991,
+1.005 and 0.995 g — perfect, square, and completely wrong — while the gyro read 46–68 °/s.
+The first version solved happily all three times. Sitting still the same board reads
+0.17 °/s, so 2 °/s sits an order of magnitude above the noise and an order below anything
+a person does. That second one is the important refusal:
+an axis map can only ever describe a **square** mount, so a board on a raked dash cannot
+be corrected by any map at all. Rounding it to the nearest axis would bake a component of
+gravity into the forward reading as a permanent phantom acceleration. If you need the
+board at an angle, that needs real angle correction, which this firmware does not have.
+
+Mount it **rigidly** either way — on a compliant bracket you measure the bracket
+resonating, not the car.
 
 ### Bitrate
 
@@ -340,7 +389,7 @@ and also cross-checks the tool's byte packing against the DBC — so bench tool,
 
 ## Testing
 
-201 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
+226 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
 `.cpp` files against a model of the board in `test/stubs/`, so they test the code that
 ships rather than a transcription of it.
 
@@ -375,6 +424,12 @@ a receive FIFO, and filter banks indexed the way the hardware indexes them.
   silently and always the same frame. Hence the transmit queue.
 - **A reboot latch** in `proto_poll()` that was never cleared. Harmless on real hardware,
   where `NVIC_SystemReset()` does not return, but a reset loop anywhere it did.
+- **An auto-level that could not see rotation.** The first version gated only on the
+  accelerometer reading ~1 g, which is true of a board being slowly turned over — gravity
+  does not change magnitude when you rotate it. Spun flat on a desk it read a perfect
+  0.991 g and solved a confident, wrong map. Only found by turning a real board while the
+  command ran; every host test had fed it accelerometer vectors alone. It now gates on the
+  gyro too, and `test_imu_level` carries the measured numbers from that session.
 - **Stale receive frames** in the bench tool — read-back after a command returned frames
   captured *before* it, so every command looked like it had done nothing. True of a real
   slcan adapter as much as of the simulator.
@@ -382,7 +437,10 @@ a receive FIFO, and filter banks indexed the way the hardware indexes them.
 ### What is NOT covered
 
 - **`imu.cpp`** — the BMI270 needs an 8KB config upload over I2C to a real chip. Only the
-  MM5.10 encoding is checked, via the DBC.
+  MM5.10 encoding is checked, via the DBC. The axis solving is split into `imu_level.cpp`
+  precisely so it *can* be tested without the chip: `test_imu_level` walks all six square
+  mountings, feeds each the gravity vector it would really produce, and checks the map
+  that comes back puts Z upright and keeps the axes right-handed.
 - **The peripherals themselves.** The HAL shim proves this firmware drives bxCAN the way
   ST document it, not that the silicon then behaves. The self-test build's loopback check
   is what covers that, on hardware.
@@ -445,7 +503,7 @@ Flash the **selftest** build first — steps 1 to 6 need only the USB cable.
 | 2 | Node address | LED2 flashes N+1 times at boot; then `d` in the console |
 | 3 | EEPROM | `e` |
 | 4 | CAN controller | `c` — internal loopback, no other node needed |
-| 5 | IMU | `i` — should read about 1 g total, sitting still |
+| 5 | IMU | `i` — should read about 1 g total, sitting still; `L` to auto-level |
 | 6 | **Bit order** | `w` — walks all 21 channels, meter each terminal as it goes |
 | 7 | Fuse detection | wire one relay, pull its fuse, `s` |
 | 8 | On the real bus | flash the normal build, then `rcm_bench.py scan` |

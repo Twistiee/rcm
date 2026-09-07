@@ -182,11 +182,39 @@ def test_stale_frames():
     with_sim(body)
 
 
+def test_imu_axis_spelling():
+    """The axis names are the whole safety of imumap: the board cannot tell a wrong map
+    from a right one -- both read 1 g standing still -- so a typo has to be caught here
+    or not at all."""
+    print()
+    print("IMU axis map")
+    import rcm_bench as rb
+
+    check("an axis name maps to the byte the firmware expects",
+          rb.IMU_AXES["x"] == 0x00 and rb.IMU_AXES["z"] == 0x02
+          and rb.IMU_AXES["ny"] == 0x81)
+    check("'nx' and '-x' mean the same thing",
+          rb.IMU_AXES["nx"] == rb.IMU_AXES["-x"] == 0x80)
+    check("every axis name is a real axis with at most a sign bit",
+          all(v & 0x7F <= 2 for v in rb.IMU_AXES.values()))
+
+    # The decoder is what a bench session reads to confirm an install, so it has to say
+    # something a person can check against the board in front of them.
+    check("a map byte decodes to a signed sensor axis",
+          rb._axis(0x81) == "-sensor Y" and rb._axis(0x02) == "+sensor Z",
+          rb._axis(0x81))
+
+    # Identity must survive the round trip, or "imumap x y z" would not mean "as built".
+    ident = [rb.IMU_AXES[a] for a in ("x", "y", "z")]
+    check("identity is 0,1,2", ident == [0, 1, 2], str(ident))
+
+
 if __name__ == "__main__":
     test_against_dbc()
     test_commands()
     test_walk()
     test_stale_frames()
+    test_imu_axis_spelling()
     print()
     if fails:
         print("%d FAILED:" % len(fails))

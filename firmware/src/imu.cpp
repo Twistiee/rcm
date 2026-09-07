@@ -50,6 +50,10 @@ static bool ready;
 
 static float acc_v[3];   /* vehicle axes, g     */
 static float gyr_v[3];   /* vehicle axes, deg/s */
+static float acc_r[3];   /* sensor axes, g     -- auto-level solves from these; the  */
+static float gyr_r[3];   /* sensor axes, deg/s -- remap is what everything else reads */
+static uint8_t level_res  = RCM_IMU_LEVEL_NONE;
+static uint8_t level_tilt = 90;
 
 /* --- Bosch API interface shims --------------------------------------------- */
 
@@ -134,11 +138,17 @@ bool imu_ok(void) { return ready; }
 
 /* --- read ------------------------------------------------------------------ */
 
-/* imu_map[i] = source axis for vehicle axis i, bit 7 = negate. */
+/* imu_map[i] = source axis for vehicle axis i, bit 7 = negate.
+ *
+ * The axis is masked to 0..2 rather than 0..3: the low two bits can hold a 3, and a 3
+ * would index one float past the end of a three-float array. Nothing should ever store
+ * one -- imu_map_valid() rejects it on the way in -- but this reads whatever survived
+ * in EEPROM, so it does not get to assume that. */
 static inline float remap(const float *src, uint8_t axis)
 {
     const uint8_t m = cfg.imu_map[axis];
-    const uint8_t s = m & 0x03;
+    uint8_t s = m & 0x03;
+    if (s > 2) s = 0;
     return (m & 0x80) ? -src[s] : src[s];
 }
 
@@ -157,13 +167,43 @@ void imu_tick(void)
                          (float)d.gyr.z * GYR_RANGE_DPS / 32768.0f };
 
     for (uint8_t i = 0; i < 3; i++) {
+        acc_r[i] = a[i];
+        gyr_r[i] = g[i];
         acc_v[i] = remap(a, i);
         gyr_v[i] = remap(g, i);
     }
 }
 
-float imu_accel(uint8_t axis) { return axis < 3 ? acc_v[axis] : 0.0f; }
-float imu_gyro(uint8_t axis)  { return axis < 3 ? gyr_v[axis] : 0.0f; }
+float imu_accel(uint8_t axis)     { return axis < 3 ? acc_v[axis] : 0.0f; }
+float imu_gyro(uint8_t axis)      { return axis < 3 ? gyr_v[axis] : 0.0f; }
+float imu_accel_raw(uint8_t axis)  { return axis < 3 ? acc_r[axis] : 0.0f; }
+float imu_gyro_raw(uint8_t axis)   { return axis < 3 ? gyr_r[axis] : 0.0f; }
+
+uint8_t imu_level_result(void)   { return level_res; }
+uint8_t imu_level_tilt_deg(void) { return level_tilt; }
+
+uint8_t imu_autolevel(void)
+{
+    if (!ready) { level_res = RCM_IMU_LEVEL_NO_IMU; level_tilt = 90; return level_res; }
+
+    /* Solve from a fresh sample rather than whatever imu_tick() last left behind, so
+     * the answer describes the board now and not a second ago. */
+    imu_tick();
+
+    uint8_t map[3];
+    float   tilt = 90.0f;
+    const uint8_t r = imu_solve_level(acc_r, gyr_r, map, &tilt);
+
+    level_tilt = (uint8_t)(tilt < 0.0f ? 0 : (tilt > 90.0f ? 90 : (uint8_t)(tilt + 0.5f)));
+    level_res  = r;
+    if (r != RCM_IMU_LEVEL_OK) return r;   /* refused: leave the old map alone */
+
+    for (uint8_t i = 0; i < 3; i++) cfg.imu_map[i] = map[i];
+    /* Re-run the remap so a reader immediately after this sees the new axes rather
+     * than one stale sample in the old ones. */
+    imu_tick();
+    return r;
+}
 
 /* --- publish --------------------------------------------------------------- */
 

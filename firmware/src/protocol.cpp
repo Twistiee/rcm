@@ -282,6 +282,11 @@ static void send_cfg_reply(uint8_t sel, uint8_t idx)
         p[0] = (uint8_t)cfg.ecu_follow_stale_ms;
         p[1] = (uint8_t)(cfg.ecu_follow_stale_ms >> 8);
         break;
+    case RCM_CFG_SEL_IMU:
+        p[0] = cfg.imu_map[0]; p[1] = cfg.imu_map[1]; p[2] = cfg.imu_map[2];
+        p[3] = imu_level_result();
+        p[4] = imu_level_tilt_deg();
+        break;
     case RCM_CFG_SEL_FOLLOW:
         if (idx >= RCM_ECU_FOLLOWS) return;
         p[0] = cfg.ecu_follow[idx].ch;
@@ -377,6 +382,21 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
             follow_seen[f->data[1]] = millis();   /* do not start out already stale */
             filters_dirty = true;                 /* the frame needs a filter */
         }
+        break;
+
+    case RCM_OP_SET_IMU_MAP:
+        /* All three or none. A map with a repeated axis is not a rotation -- it folds
+         * two vehicle axes onto one sensor axis, leaving a third that no reading can
+         * ever reach, so the board would report a car incapable of yawing. */
+        if (f->len >= 4 && imu_map_valid(&f->data[1]))
+            for (uint8_t i = 0; i < 3; i++) cfg.imu_map[i] = f->data[1 + i];
+        break;
+
+    case RCM_OP_IMU_LEVEL:
+        /* Guarded by a magic byte for the same reason REBOOT is: this silently rewrites
+         * the orientation of everything the ECU is told about the car's motion, and a
+         * stray two-byte frame should not be able to do that. */
+        if (f->len >= 2 && f->data[1] == 0x5A) imu_autolevel();
         break;
 
     case RCM_OP_GET_CFG:

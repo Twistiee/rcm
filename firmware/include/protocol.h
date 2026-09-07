@@ -117,6 +117,21 @@
 #define RCM_OP_SET_ECU_FOLLOW 0x1C   /* b1 slot, b2 OUTPUT channel or 0xFF, b3 bit 0..63,
                                       * b4..b5 LE frame id. Drives that channel from that
                                       * bit of the ECU's broadcast. */
+#define RCM_OP_SET_IMU_MAP    0x1D   /* b1..b3 the map for vehicle X, Y, Z. Each byte is
+                                      * the SENSOR axis (0..2) that feeds that vehicle
+                                      * axis, bit 7 set to negate it. Vehicle axes are the
+                                      * automotive convention: X forward, Y left, Z up.
+                                      * Rejected unless all three name a real axis AND the
+                                      * three are distinct -- two vehicle axes fed from one
+                                      * sensor axis is not a rotation, it is a fold, and it
+                                      * would report a car that can never yaw. */
+#define RCM_OP_IMU_LEVEL      0x1E   /* b1 must be 0x5A. Solve imu_map from gravity with
+                                      * the car standing still. Fills in Z (up) only --
+                                      * gravity cannot see the difference between forward
+                                      * and left -- and picks X/Y to keep the axes
+                                      * right-handed so yaw comes out the right way round.
+                                      * Confirm the result with GET_CFG; it is held in RAM
+                                      * like every other setter, so SAVE_CONFIG to keep it. */
 
 /* --- RCM_OP_GET_CFG selectors ----------------------------------------------
  * Reply layout is always: d0 selector, d1 index, d2..d7 payload. */
@@ -132,7 +147,8 @@
 #define RCM_CFG_SEL_CHANNEL   0x09   /* index = channel: mode, flags, func, beh, param*/
 #define RCM_CFG_SEL_FOLLOW    0x0A   /* index = slot: ch, bit, frame id (2)           */
 #define RCM_CFG_SEL_TIMING2   0x0B   /* ECU follow staleness ms (2)                   */
-#define RCM_CFG_SEL_MAX       0x0B
+#define RCM_CFG_SEL_IMU       0x0C   /* map X, Y, Z, last auto-level result, tilt deg  */
+#define RCM_CFG_SEL_MAX       0x0C
 
 /* --- asking rusEFI to start or stop the engine ------------------------------
  * An EXTENDED frame from rusEFI's bench-test command block. Verified against rusEFI's
@@ -159,6 +175,15 @@
 #define RCM_ECU_SUB_STOP      0x0024u   /* TS_STOP_ENGINE -- index ignored */
 #define RCM_ECU_IDX_STARTSTOP 0x0009u   /* TS_START_STOP_ENGINE, under TS_X14 */
 #define RCM_ECU_IDX_LUA1      0x0021u   /* LUA_COMMAND_1, under TS_BENCH_CATEGORY */
+
+/* --- RCM_CFG_SEL_IMU, byte 5: how the last auto-level went ------------------
+ * Reported rather than silently applied, because a refusal is the useful answer: it
+ * means the board is not mounted square, and no axis swap can fix that. */
+#define RCM_IMU_LEVEL_NONE    0x00   /* never attempted since boot            */
+#define RCM_IMU_LEVEL_OK      0x01   /* applied                               */
+#define RCM_IMU_LEVEL_MOVING  0x02   /* |a| was not ~1 g -- engine on, or moving */
+#define RCM_IMU_LEVEL_TILTED  0x03   /* square-ish to nothing; see byte 6      */
+#define RCM_IMU_LEVEL_NO_IMU  0x04   /* no IMU, or the strap disables it       */
 
 /* Send one TunerStudio command to the ECU. */
 void proto_send_ecu_cmd(uint16_t subsystem, uint16_t index);

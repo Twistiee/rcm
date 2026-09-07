@@ -84,7 +84,25 @@ OP = {
     # behaviour names depend on the channel's mode: outputs take
     # steady/flash/pulse/delayoff, inputs take momentary/toggle/holdarm.
     "chfunc":       0x1B,
+    # which way up the board is bolted in.
+    #   imumap <X> <Y> <Z>   each of x/y/z/-x/-y/-z, naming the SENSOR axis that feeds
+    #                        that VEHICLE axis (X forward, Y left, Z up)
+    "imumap":       0x1D,
+    # solve the map from gravity, with the car standing still.
+    "imulevel":     0x1E,
 }
+# Vehicle axis <- sensor axis. Spelled as axis names because "0x82" is unreadable and
+# getting it wrong is not something the board can detect for you.
+#
+# "nx" is the documented spelling of a negated axis rather than "-x", because argparse
+# takes a leading dash for an option and rejects the command before this table is ever
+# consulted. "-x" is still accepted, for anyone who writes it out of habit and knows to
+# put "--" ahead of the arguments.
+IMU_AXES = {"x": 0x00, "y": 0x01, "z": 0x02,
+            "nx": 0x80, "ny": 0x81, "nz": 0x82,
+            "-x": 0x80, "-y": 0x81, "-z": 0x82}
+IMU_LEVEL_RESULT = {0: "not attempted", 1: "ok", 2: "REFUSED: not standing still",
+                    3: "REFUSED: not mounted square", 4: "REFUSED: no IMU"}
 MODES = {"unused": 0, "out": 1, "in": 2}
 # The behaviour byte means whichever list applies to the channel's mode.
 OUT_BEH = {"steady": 0, "flash": 1, "pulse": 2, "delayoff": 3}
@@ -415,6 +433,10 @@ CFG_SEL = {
            % (("0x%03X" % _u16(d, 2)) if _u16(d, 2) else "none", _u16(d, 4))),
     0x08: ("ecucmd", 6, lambda d: "channel %s -> subsystem %d index %d%s"
            % (_ch(d[2]), _u16(d, 3), _u16(d, 5), _cmd_name(_u16(d, 3), _u16(d, 5)))),
+    0x0C: ("imu", 1, lambda d: "vehicle X=%s Y=%s Z=%s   (last auto-level: %s%s)"
+           % (_axis(d[2]), _axis(d[3]), _axis(d[4]),
+              IMU_LEVEL_RESULT.get(d[5], "?"),
+              "" if d[5] in (0, 1) else ", %d deg off square" % d[6])),
     0x0B: ("timing2", 1, lambda d: "ECU follow goes stale after %dms"
            % _u16(d, 2)),
     0x0A: ("follow", 12, lambda d: "channel %s <- frame 0x%03X bit %d%s"
@@ -423,6 +445,11 @@ CFG_SEL = {
            % (["unused", "out", "in"][d[2]] if d[2] < 3 else "?",
               _beh_name(d[2], d[5]), d[3], _func_name(d[4]), _u16(d, 6))),
 }
+
+
+def _axis(b):
+    """Render a map byte the way you would say it out loud: sensor -Y, not 0x81."""
+    return "%ssensor %s" % ("-" if b & 0x80 else "+", "XYZ"[b & 0x03] if (b & 0x03) < 3 else "?")
 
 
 def _bit_name(cid, bit):
@@ -579,6 +606,33 @@ def cmd_ctl(bus, args):
             sys.exit("an 11-bit standard id is 0..0x7FF")
         rpm = int(args.args[1], 0) if len(args.args) > 1 else 0
         extra = [cid & 0xFF, cid >> 8, rpm & 0xFF, rpm >> 8]
+    elif args.op == "imumap":
+        # Named axes, not raw bytes. The board cannot tell a wrong map from a right one
+        # -- both read 1g at a standstill -- so the only defence is making it hard to
+        # type the wrong thing.
+        if len(args.args) != 3:
+            sys.exit("imumap <X> <Y> <Z> -- each of x/y/z/nx/ny/nz ('n' negates), "
+                     "naming the SENSOR axis that feeds that VEHICLE axis. Vehicle "
+                     "axes are the automotive convention: X forward, Y left, Z up.\n"
+                     "  imumap x y z     board flat, +X edge pointing down the car\n"
+                     "  imumap ny x z    the same board rotated 90 deg clockwise\n"
+                     "  imumap x ny nz   board mounted upside down\n"
+                     "Write a negated axis as 'ny', not '-y' -- a leading dash is "
+                     "taken for an option.")
+        extra = []
+        for a in args.args:
+            k = a.strip().lower()
+            if k not in IMU_AXES:
+                sys.exit("axis %r must be one of x/y/z/nx/ny/nz ('n' negates)" % a)
+            extra.append(IMU_AXES[k])
+        if len({b & 0x03 for b in extra}) != 3:
+            sys.exit("each sensor axis may be used once -- %s names one twice, which "
+                     "is a fold, not a rotation: one axis would never be read at all."
+                     % " ".join(args.args))
+
+    elif args.op == "imulevel":
+        extra = [0x5A]
+
     elif args.op == "ecufollow":
         if len(args.args) < 2:
             sys.exit("ecufollow <slot 0-11> <channel|none> <%s | frame-id bit> -- a lamp "

@@ -243,6 +243,65 @@ static void test_imu(void)
     Serial.println(F("  Use that to set imu_map before trusting the MM5.10 output."));
 }
 
+/* Solve imu_map from gravity. This is the install-time job: bolt the board in, stop
+ * moving, press L, then save. It fills in which way is UP and nothing else -- gravity
+ * cannot distinguish forward from left, so the X/Y it picks are a right-handed guess
+ * that still needs confirming against a real drive. */
+static void imu_level(void)
+{
+    Serial.println(F("IMU auto-level:"));
+    /* Bring the chip up the same way 'i' does. The normal firmware does this at boot
+     * behind the CFG_IMU_EN strap; the self-test does not, so without this L only
+     * worked if you happened to have run 'i' since the last reset. */
+    if (!imu_ok() && !imu_begin()) {
+        Serial.println(F("  no IMU -- run 'i' to see why."));
+        return;
+    }
+    /* Let a few samples through first: solving off the very first reading after init
+     * can catch the chip before it has produced one. */
+    for (int i = 0; i < 5; i++) { imu_tick(); delay(50); }
+    const uint8_t r = imu_autolevel();
+    const uint8_t t = imu_level_tilt_deg();
+    static const char AX[] = "XYZ";
+
+    switch (r) {
+    case RCM_IMU_LEVEL_OK:
+        Serial.printf("  solved, %d deg off square.\n", t);
+        for (uint8_t i = 0; i < 3; i++)
+            Serial.printf("    vehicle %c = %csensor %c\n", AX[i],
+                          (cfg.imu_map[i] & 0x80) ? '-' : '+', AX[cfg.imu_map[i] & 0x03]);
+        Serial.println(F("  UP is now right. FORWARD is a guess -- gravity cannot see it."));
+        Serial.println(F("  Check it on a drive: braking should read NEGATIVE vehicle X."));
+        Serial.println(F("  Not saved yet. Send the SAVE_CONFIG opcode to keep it."));
+        break;
+    case RCM_IMU_LEVEL_MOVING: {
+        /* Say WHICH check refused. They share a result code, but they mean different
+         * things to whoever is holding the board: too much g is being shaken or leaned
+         * on, too much rate is being turned -- and turning still reads a clean 1 g, so
+         * without this the message would send you looking for the wrong problem. */
+        float a[3], g[3];
+        for (uint8_t i = 0; i < 3; i++) { a[i] = imu_accel_raw(i); g[i] = imu_gyro_raw(i); }
+        const float mag  = sqrtf(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
+        const float rate = sqrtf(g[0]*g[0] + g[1]*g[1] + g[2]*g[2]);
+        Serial.printf("  refused: |a| = %.3f g, turning at %.2f deg/s.\n", mag, rate);
+        if (mag < 0.85f || mag > 1.15f)
+            Serial.println(F("  That is not just gravity -- being shaken, or leaned on."));
+        else
+            Serial.println(F("  Gravity is fine; the board is TURNING. Hold it still."));
+        Serial.println(F("  Map left alone."));
+        break;
+    }
+    case RCM_IMU_LEVEL_TILTED:
+        Serial.printf("  refused: %d deg off square, and an axis swap cannot fix that.\n", t);
+        Serial.println(F("  Either mount the board square, or accept the tilt -- there is"));
+        Serial.println(F("  no angle correction in this firmware. Map left alone."));
+        break;
+    default:
+        Serial.println(F("  refused."));
+        break;
+    }
+}
+
 static void show_channels(void)
 {
     ch_tick(millis());
@@ -320,6 +379,7 @@ static void menu(void)
     Serial.println(F("  e  EEPROM"));
     Serial.println(F("  c  CAN controller (internal loopback)"));
     Serial.println(F("  i  IMU"));
+    Serial.println(F("  L  IMU auto-level (car standing still)"));
     Serial.println(F("  s  channel + sense table"));
     Serial.println(F("  w  walk all 21 channels, 2s each"));
     Serial.println(F("  1  toggle a channel (then type its number and Enter)"));
@@ -415,6 +475,7 @@ void loop(void)
     case 'e': test_eeprom();   break;
     case 'c': test_can();      break;
     case 'i': test_imu();      break;
+    case 'L': imu_level();     break;
     case 's': show_channels(); break;
     case 'w': walk_channels(); break;
     case '0': ch_all_off(); Serial.println(F("all off")); break;

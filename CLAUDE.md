@@ -93,6 +93,25 @@ Things worth knowing before touching it:
   clear of everything rusEFI uses. The IMU deliberately emits **Bosch MM5.10** frames at
   `0x174`/`0x178`/`0x17C` because rusEFI decodes those natively — set
   `imuType = IMU_MM5_10` and it just works.
+- **The IMU's mounting orientation is configuration, not a constraint** — `cfg.imu_map`
+  names the sensor axis (and sign) feeding each vehicle axis, so the board can be bolted
+  in any of the 24 square orientations. Set it with `rcm_bench ctl imumap x y z` (a
+  negated axis is `ny`, never `-y` — argparse takes a leading dash for an option), or
+  solve it from gravity with `ctl imulevel` / the self-test's `L`. Two things not to
+  quietly "fix": the setter **rejects a map that repeats an axis**, because that is a
+  fold rather than a rotation and would leave one axis permanently unread while still
+  looking correct at a standstill; and auto-level **refuses a mount more than 15 deg off
+  square** rather than rounding to the nearest axis, because an axis map cannot express
+  a tilt and rounding would bake gravity into the forward reading forever. The solver
+  lives in its own `imu_level.cpp` purely so the host suite can test it without a BMI270.
+- **Auto-level gates on the GYRO as well as the accelerometer, and that is not
+  redundant** — proven on the bench 2026-09-07. `|a|` only responds to linear
+  acceleration, so a board being turned still reads a flawless 1 g: spun flat on a desk
+  it measured 0.991/1.005/0.995 g while the gyro read 46-68 deg/s, and the accel-only
+  version solved a confident wrong map every time. Rest noise on this board is 0.17
+  deg/s, hence the 2 deg/s limit. Do not "simplify" the rate check away, and do not
+  reduce it to a per-axis test -- 1.9 deg/s on each of three axes is 3.3 deg/s of real
+  rotation.
 - **`docs/rcm.dbc` is generated** by `firmware/tools/gen_dbc.py`, which reads the IDs out
   of `protocol.h`. Do not hand-edit it. Validate with `cantools` after changes.
 - **`include/board.h` mirrors `gen_spec.py`'s `PINMAP`.** A firmware pin map that has

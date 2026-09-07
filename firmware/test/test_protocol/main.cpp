@@ -78,6 +78,14 @@ uint8_t  can_tx_errors(void) { return 0; }
 
 bool imu_ok(void) { return false; }
 
+/* Auto-level is exercised properly in test_imu_level against the real solver. Here it
+ * only has to record that the opcode reached it, so the magic-byte guard can be tested
+ * without a BMI270. */
+static int AUTOLEVEL_CALLS = 0;
+uint8_t imu_autolevel(void)      { AUTOLEVEL_CALLS++; return RCM_IMU_LEVEL_OK; }
+uint8_t imu_level_result(void)   { return RCM_IMU_LEVEL_NONE; }
+uint8_t imu_level_tilt_deg(void) { return 90; }
+
 bool     app_outputs_live(void) { return FAKE_OUTPUTS_LIVE; }
 void     app_set_outputs_live(bool v) { FAKE_OUTPUTS_LIVE = v; sr_outputs_enable(v); }
 bool     app_eeprom_ok(void)    { return true; }
@@ -86,6 +94,7 @@ uint16_t app_ignition_mv(void)  { return 12700; }
 
 static void NVIC_SystemReset(void) { RESETS++; }
 
+#include "../../src/imu_level.cpp"   /* imu_map_valid(), the real one */
 #include "../../src/protocol.cpp"
 
 /* --- helpers --------------------------------------------------------------- */
@@ -661,6 +670,73 @@ static const can_frame_t *ask(uint8_t sel, uint8_t idx = 0)
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_GET_CFG, sel, idx });
     run_ms(TICK_MS * 4);
     return cfg_reply();
+}
+
+/* --- IMU axis map ------------------------------------------------------------
+ * The board does not have to be mounted any particular way up, but it does have to be
+ * TOLD which way it is, and a bad map is worse than no map: it reports confident,
+ * plausible, wrong motion to an ECU that may act on it. So the setter validates. */
+
+static void test_setting_the_imu_map_takes(void)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_MAP, 0x81, 0x00, 0x82 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_EQUAL_HEX8(0x81, cfg.imu_map[0]);   /* vehicle X = -sensor Y */
+    TEST_ASSERT_EQUAL_HEX8(0x00, cfg.imu_map[1]);
+    TEST_ASSERT_EQUAL_HEX8(0x82, cfg.imu_map[2]);
+}
+
+static void test_the_imu_map_reads_back(void)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_MAP, 0x82, 0x81, 0x00 });
+    run_ms(TICK_MS * 2);
+    const can_frame_t *r = ask(RCM_CFG_SEL_IMU);
+    TEST_ASSERT_NOT_NULL(r);
+    TEST_ASSERT_EQUAL_HEX8(0x82, r->data[2]);
+    TEST_ASSERT_EQUAL_HEX8(0x81, r->data[3]);
+    TEST_ASSERT_EQUAL_HEX8(0x00, r->data[4]);
+}
+
+static void test_a_map_with_a_repeated_axis_is_refused(void)
+{
+    /* Sensor X feeding both vehicle X and Y. Nothing would ever reach vehicle Z, so the
+     * car could brake and corner but never be seen to yaw -- and it reads fine standing
+     * still, which is when anyone would check it. */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_MAP, 0x00, 0x00, 0x02 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_EQUAL_HEX8(0x00, cfg.imu_map[0]);   /* untouched defaults */
+    TEST_ASSERT_EQUAL_HEX8(0x01, cfg.imu_map[1]);
+    TEST_ASSERT_EQUAL_HEX8(0x02, cfg.imu_map[2]);
+}
+
+static void test_a_map_naming_a_fourth_axis_is_refused(void)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_MAP, 0x00, 0x01, 0x03 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_EQUAL_HEX8(0x02, cfg.imu_map[2]);   /* still the default */
+}
+
+static void test_a_short_imu_map_frame_is_refused(void)
+{
+    /* Two of the three axes is not a partial update, it is an undefined map. */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_MAP, 0x02, 0x01 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_EQUAL_HEX8(0x00, cfg.imu_map[0]);
+    TEST_ASSERT_EQUAL_HEX8(0x02, cfg.imu_map[2]);
+}
+
+static void test_auto_level_needs_its_magic_byte(void)
+{
+    const int before = AUTOLEVEL_CALLS;
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_IMU_LEVEL });          /* no magic */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_IMU_LEVEL, 0x00 });
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_IMU_LEVEL, 0xA5 });    /* reboot's, not ours */
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_INT(before, AUTOLEVEL_CALLS);
+
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_IMU_LEVEL, 0x5A });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_EQUAL_INT(before + 1, AUTOLEVEL_CALLS);
 }
 
 static void test_config_read_back_returns_what_was_set(void)
@@ -1263,6 +1339,12 @@ int main(void)
     RUN_TEST(test_no_ecu_command_when_unconfigured);
     RUN_TEST(test_a_button_already_held_at_boot_does_not_command);
     RUN_TEST(test_a_second_slot_sends_its_own_command);
+    RUN_TEST(test_setting_the_imu_map_takes);
+    RUN_TEST(test_the_imu_map_reads_back);
+    RUN_TEST(test_a_map_with_a_repeated_axis_is_refused);
+    RUN_TEST(test_a_map_naming_a_fourth_axis_is_refused);
+    RUN_TEST(test_a_short_imu_map_frame_is_refused);
+    RUN_TEST(test_auto_level_needs_its_magic_byte);
     RUN_TEST(test_config_read_back_returns_what_was_set);
     RUN_TEST(test_config_read_back_is_indexed_for_tables);
     RUN_TEST(test_a_global_config_request_is_never_answered);
