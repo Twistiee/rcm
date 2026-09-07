@@ -111,10 +111,12 @@ IN_BEH = {"momentary": 0, "toggle": 1, "holdarm": 2}
 # Only the four the FIRMWARE acts on are named here. The other ~47 labels are display
 # text that lives in the firmware's chnames.cpp, and duplicating them would just create
 # something to drift. These four are derived from the ignition block, never set by hand.
-IGN_FUNCS = {1: "IGNITION", 2: "STARTER", 128: "IN_BRAKE", 129: "IN_ENGINE_RUN"}
+IGN_FUNCS = {1: "IGNITION", 2: "STARTER", 128: "IN_BRAKE", 129: "IN_ENGINE_RUN",
+             130: "IN_CLUTCH"}
 # The roles the firmware LOOKS UP. Labelling a channel with one is how it is given that
 # job -- there is no separate channel-number setting to keep in step.
-FUNC_NAMES = {"ignition": 1, "starter": 2, "brake": 128, "enginerun": 129, "none": 0}
+FUNC_NAMES = {"ignition": 1, "starter": 2, "brake": 128, "enginerun": 129,
+              "clutch": 130, "none": 0}
 
 # Named (subsystem, index) pairs for the ECU command table. EVERY TunerStudio command is
 # that shape -- see the cmd_* lines in rusefi's tunerstudio.template.ini -- so the
@@ -416,7 +418,7 @@ CFG_SEL = {
            % (_u16(d, 2), _u16(d, 4), _u16(d, 6))),
     0x02: ("failsafe", 1, lambda d: "channels %s"
            % (_chlist(unpack21(d[2:5])) or "none")),
-    0x03: ("ignition", 1, lambda d: "mode %s, brake %s, starter %s, run %s, RUN out %s, flags 0x%02X"
+    0x03: ("ignition", 1, lambda d: "mode %s, start pedal %s, starter %s, run %s, RUN out %s, flags 0x%02X"
            % ("momentary" if d[2] else "maintained", _ch(d[3]), _ch(d[4]), _ch(d[5]),
               _ch(d[6]), d[7])),
     0x04: ("igntimes", 1, lambda d: "hold-to-stop %dms, crank max %dms, shutdown hold %dms"

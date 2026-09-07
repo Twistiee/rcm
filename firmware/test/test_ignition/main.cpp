@@ -20,6 +20,7 @@ struct rcm_straps_t straps;
 #include "../../src/ignition.cpp"
 
 #define BRAKE_CH 10
+#define CLUTCH_CH 9
 #define START_CH 4
 #define RUN_CH   11
 #define RUNOUT_CH 6
@@ -250,6 +251,102 @@ static void test_a_press_that_ended_before_boot_still_arms(void)
  * Off by default, which is the two-button car: the ignition button only ever powers the
  * board, and a separate button in ecu_cmd[] does the starting. With both flags set it
  * becomes the VW arrangement -- one button wakes, starts and stops. */
+
+/* --- the clutch takes over as the start pedal ---------------------------------
+ * A manual starts on the clutch, not the brake: the clutch is the interlock that proves
+ * the engine is not about to drive the wheels. There is no setting for this -- labelling
+ * a channel FN_IN_CLUTCH IS the setting, so there is one record of the decision and
+ * nothing that can disagree with it. When both pedals are labelled, the clutch wins and
+ * the brake takes no part in ignition at all. */
+
+static void with_clutch(void)
+{
+    cfg.ch[CLUTCH_CH].func = FN_IN_CLUTCH;
+    cfg.ch[CLUTCH_CH].mode = CH_INPUT;
+    SIM.wiring[CLUTCH_CH] = SIM_BUTTON_OPEN;
+}
+
+static void test_the_clutch_gates_the_crank_once_it_is_labelled(void)
+{
+    momentary_setup(false);
+    with_clutch();
+    SIM.wiring[CLUTCH_CH] = SIM_BUTTON_PRESSED;
+    SIM.wiring[BRAKE_CH]  = SIM_BUTTON_OPEN;     /* brake NOT pressed */
+    tick(cfg.input_debounce_ms + 50);
+    sw = true; tick(50);
+
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(START_CH),
+        "clutch down did not crank -- the clutch is supposed to be the start pedal");
+    TEST_ASSERT_FALSE_MESSAGE(ign_wants_shutdown(),
+        "a clutch-held press must never be a shutdown");
+}
+
+static void test_the_brake_no_longer_starts_once_a_clutch_exists(void)
+{
+    /* The dangerous half. If this regressed, a car could be cranked in gear by pressing
+     * the brake, which is exactly the interlock the clutch was added to provide. */
+    momentary_setup(false);
+    with_clutch();
+    SIM.wiring[BRAKE_CH]  = SIM_BUTTON_PRESSED;  /* brake down ... */
+    SIM.wiring[CLUTCH_CH] = SIM_BUTTON_OPEN;     /* ... clutch UP */
+    tick(cfg.input_debounce_ms + 50);
+    sw = true; tick(50);
+
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(START_CH),
+        "cranked on the brake with the clutch up -- that is a start in gear");
+}
+
+static void test_a_press_with_the_clutch_up_is_a_shutdown(void)
+{
+    /* The other half of the same decision: the pedal does not merely gate cranking, it
+     * decides what the press MEANS. Up must still shut down, or a one-button car has no
+     * way to be switched off. */
+    momentary_setup(false);
+    with_clutch();
+    SIM.wiring[CLUTCH_CH] = SIM_BUTTON_OPEN;
+    SIM.wiring[BRAKE_CH]  = SIM_BUTTON_PRESSED;  /* brake must not rescue it */
+    tick(cfg.input_debounce_ms + 50);
+    sw = true; tick(50);
+
+    TEST_ASSERT_TRUE_MESSAGE(ign_wants_shutdown(),
+        "clutch up was not treated as 'switch the car off'");
+}
+
+static void test_without_a_clutch_the_brake_still_starts(void)
+{
+    /* An automatic, or any board configured before the clutch existed, must be
+     * completely unaffected. */
+    momentary_setup(false);
+    SIM.wiring[BRAKE_CH] = SIM_BUTTON_PRESSED;
+    tick(cfg.input_debounce_ms + 50);
+    sw = true; tick(50);
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(START_CH),
+        "a board with no clutch labelled stopped starting on the brake");
+}
+
+static void test_the_read_back_names_the_pedal_that_actually_gates(void)
+{
+    /* A read-back that named the brake while the clutch did the gating would be a
+     * confident wrong answer, which is worse than no answer. */
+    momentary_setup(false);
+    TEST_ASSERT_EQUAL_UINT8(BRAKE_CH, ign_start_pedal_ch());
+    with_clutch();
+    TEST_ASSERT_EQUAL_UINT8(CLUTCH_CH, ign_start_pedal_ch());
+}
+
+static void test_a_clutch_alone_satisfies_the_crank_prerequisite(void)
+{
+    /* crank_allowed() needs a start pedal AND a starter. A clutch must count as that
+     * pedal, or a manual car with no brake input wired would never turn the starter. */
+    momentary_setup(false);
+    cfg.ch[BRAKE_CH].func = FN_NONE;             /* no brake at all */
+    with_clutch();
+    SIM.wiring[CLUTCH_CH] = SIM_BUTTON_PRESSED;
+    tick(cfg.input_debounce_ms + 50);
+    sw = true; tick(50);
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(START_CH),
+        "a clutch-only car could not crank");
+}
 
 static void test_two_button_mode_never_talks_to_the_ecu(void)
 {
@@ -894,6 +991,12 @@ int main(void)
     RUN_TEST(test_holding_the_wake_press_does_not_shut_the_board_down);
     RUN_TEST(test_a_wake_press_the_boot_sample_missed_is_still_consumed);
     RUN_TEST(test_a_press_that_ended_before_boot_still_arms);
+    RUN_TEST(test_the_clutch_gates_the_crank_once_it_is_labelled);
+    RUN_TEST(test_the_brake_no_longer_starts_once_a_clutch_exists);
+    RUN_TEST(test_a_press_with_the_clutch_up_is_a_shutdown);
+    RUN_TEST(test_without_a_clutch_the_brake_still_starts);
+    RUN_TEST(test_the_read_back_names_the_pedal_that_actually_gates);
+    RUN_TEST(test_a_clutch_alone_satisfies_the_crank_prerequisite);
     RUN_TEST(test_two_button_mode_never_talks_to_the_ecu);
     RUN_TEST(test_one_button_press_with_brake_asks_the_ecu_to_start);
     RUN_TEST(test_one_button_press_without_brake_is_still_a_shutdown);

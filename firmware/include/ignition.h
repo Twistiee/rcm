@@ -94,4 +94,9 @@ void ign_note_activity(uint32_t now_ms);
 void ign_note_rpm(uint16_t rpm, uint32_t now_ms);
 bool ign_has_run_source(void);
 
+/* WHICH channel gates starting: the clutch if one is labelled, the brake otherwise.
+ * Exposed because the config read-back must report the channel that actually gates,
+ * not the one someone assumes gates. */
+uint8_t ign_start_pedal_ch(void);
+
 #endif /* RCM_IGNITION_H */

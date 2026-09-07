@@ -90,12 +90,30 @@ static void request_shutdown(uint32_t now)
     set_run_out(false);         /* first thing to go, before anything else */
 }
 
-/* Cranking needs BOTH channels configured. Requiring the brake input as well as the
+/* WHICH PEDAL MEANS "START": the clutch if one is configured, the brake otherwise.
+ *
+ * A manual car starts on the clutch -- that is the interlock the gearbox actually needs,
+ * because it is the one that proves the engine is not about to drive the wheels. An
+ * automatic has no clutch and starts on the brake. Rather than add a setting to choose,
+ * the CHANNEL LABEL is the choice, the same way every other role on this board is
+ * resolved: label a channel FN_IN_CLUTCH and the clutch gates starting. That keeps one
+ * record of the decision, and it cannot disagree with itself.
+ *
+ * When BOTH are labelled -- which is the normal case, since the brake is wanted anyway
+ * for brake lights and for the ECU -- the clutch wins. The brake then takes no part in
+ * ignition at all. */
+uint8_t ign_start_pedal_ch(void)
+{
+    const uint8_t clutch = cfg_ch_for(FN_IN_CLUTCH);
+    return ch_configured(clutch) ? clutch : cfg_ch_for(FN_IN_BRAKE);
+}
+
+/* Cranking needs BOTH channels configured. Requiring the start pedal as well as the
  * starter output means the dangerous capability takes two deliberate settings, and a
  * half-configured board simply will not turn a starter. */
 static bool crank_allowed(void)
 {
-    return ch_configured(cfg_ch_for(FN_STARTER)) && ch_configured(cfg_ch_for(FN_IN_BRAKE));
+    return ch_configured(cfg_ch_for(FN_STARTER)) && ch_configured(ign_start_pedal_ch());
 }
 
 void ign_begin(bool sw_closed_at_boot)
@@ -159,8 +177,8 @@ static void tick_momentary(uint32_t now, bool sw)
          * edge for us to see, and waiting for one would leave the button dead forever.
          *
          * One thing DOES happen during the wake press, and only in one-button mode:
-         * hold it with the brake down and the car starts, the way a VW does. It needs
-         * both the brake and a deliberate hold, and the request still only ASKS -- the
+         * hold it with the start pedal down and the car starts, the way a VW does. It
+         * needs both the pedal and a deliberate hold, and the request still only ASKS -- the
          * ECU decides, and suppresses starts for startButtonSuppressOnStartUpMs after
          * it gets power anyway. Without those conditions this stays what it was: a
          * press that is consumed and means nothing. */
@@ -168,7 +186,7 @@ static void tick_momentary(uint32_t now, bool sw)
             && (cfg.ign_ecu_flags & IGN_ECU_START_ON_BRAKE)
             && cfg.ign_wake_start_ms
             && (now - press_ms) >= cfg.ign_wake_start_ms
-            && read_ch(cfg_ch_for(FN_IN_BRAKE))) {
+            && read_ch(ign_start_pedal_ch())) {
             wake_start_fired = true;
             proto_send_ecu_cmd(RCM_ECU_SUB_X14, RCM_ECU_IDX_STARTSTOP);
         }
@@ -203,10 +221,11 @@ static void tick_momentary(uint32_t now, bool sw)
     switch (state) {
     case IGN_ST_IGNITION:
         if (rising) {
-            /* THE BRAKE DECIDES WHAT THIS PRESS MEANS, and it decides that before
-             * anything else. Brake down is always an attempt to START; brake up is
-             * always "turn the car off". Nothing about a press with the brake held may
-             * ever end in a shutdown.
+            /* THE START PEDAL DECIDES WHAT THIS PRESS MEANS, and it decides that before
+             * anything else. Pedal down is always an attempt to START; pedal up is
+             * always "turn the car off". Nothing about a press with the pedal held may
+             * ever end in a shutdown. On a manual that pedal is the clutch -- see
+             * ign_start_pedal_ch(); the brake is not consulted.
              *
              * That matters because the starter is often NOT ours. If the ECU owns the
              * starter relay -- which is the better arrangement, since it has RPM
@@ -214,7 +233,7 @@ static void tick_momentary(uint32_t now, bool sw)
              * ign_start_ch is unconfigured and the ECU is watching this same button.
              * Treating a brake-held press as "off" would power the board down, drop the
              * RUN output and kill the ECU in the middle of its own crank. */
-            if (read_ch(cfg_ch_for(FN_IN_BRAKE))) {
+            if (read_ch(ign_start_pedal_ch())) {
                 /* Gated on the run SIGNAL, not the state: state can be stale after a
                  * reset, and engaging a starter against a turning engine wrecks the
                  * pinion and the ring gear. */
@@ -236,14 +255,16 @@ static void tick_momentary(uint32_t now, bool sw)
         break;
 
     case IGN_ST_CRANKING:
-        /* NOTE what is NOT here: releasing the brake does not stop cranking.
+        /* NOTE what is NOT here: releasing the start pedal does not stop cranking.
          *
-         * The brake gates the START, not the continuation, for two reasons. A key does
-         * the same -- nothing makes you hold the brake through a crank. And more
-         * importantly the brake input CANNOT BE READ while cranking: it is a digital
+         * The pedal gates the START, not the continuation, for two reasons. A key does
+         * the same -- nothing makes you hold a pedal through a crank. And more
+         * importantly the pedal input CANNOT BE READ while cranking: it is a digital
          * channel needing >10.87V at the terminal, and a starter drags the battery to
-         * 9-10V. Aborting on "brake released" would therefore abort every single start
+         * 9-10V. Aborting on "pedal released" would therefore abort every single start
          * the instant the starter loaded the battery, and the car would never fire.
+         * This applies to a clutch exactly as it did to a brake -- same divider, same
+         * threshold, same sagging rail.
          * (The button itself survives, because IGN_SENSE is an ADC with a 6V threshold
          * rather than a logic input.) */
         if (running) {                       /* caught -- let go of the starter */

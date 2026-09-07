@@ -93,6 +93,14 @@ Things worth knowing before touching it:
   clear of everything rusEFI uses. The IMU deliberately emits **Bosch MM5.10** frames at
   `0x174`/`0x178`/`0x17C` because rusEFI decodes those natively — set
   `imuType = IMU_MM5_10` and it just works.
+- **Which pedal starts the car is decided by the channel LABEL, not a setting** — the
+  clutch if a channel is labelled `FN_IN_CLUTCH`, the brake otherwise, resolved by
+  `ign_start_pedal_ch()`. A manual starts on the clutch (the interlock that stops a crank
+  in gear); an automatic has no clutch and starts on the brake. When both are labelled the
+  clutch wins and the brake plays no part in ignition. The pedal decides what a press
+  *means* — down is always a start attempt, up is always "switch off" — so the two halves
+  cannot be configured apart. `GET_CFG`'s ignition selector deliberately reports the pedal
+  that actually gates, not `FN_IN_BRAKE`.
 - **The IMU's mounting orientation is configuration, not a constraint** — `cfg.imu_map`
   names the sensor axis (and sign) feeding each vehicle axis, so the board can be bolted
   in any of the 24 square orientations. Set it with `rcm_bench ctl imumap x y z` (a

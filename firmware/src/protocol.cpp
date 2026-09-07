@@ -248,7 +248,10 @@ static void send_cfg_reply(uint8_t sel, uint8_t idx)
         /* The channels here are RESOLVED from the labels, not stored. Reporting them
          * is what makes "which channel is the brake?" answerable without guessing. */
         p[0] = cfg.ign_mode;
-        p[1] = cfg_ch_for(FN_IN_BRAKE);      p[2] = cfg_ch_for(FN_STARTER);
+        /* The START PEDAL, not "the brake" -- on a manual the clutch is what gates a
+         * crank, and a read-back that named the brake would be answering about a channel
+         * with no say in it. */
+        p[1] = ign_start_pedal_ch();         p[2] = cfg_ch_for(FN_STARTER);
         p[3] = cfg_ch_for(FN_IN_ENGINE_RUN); p[4] = cfg_ch_for(FN_IGNITION);
         p[5] = cfg.ign_ecu_flags;
         break;

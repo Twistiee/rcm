@@ -11,7 +11,7 @@ unit-tested against a model of the board. None of it has seen a relay.
 pio run                          build for the board
 pio run -t upload                flash over J_SWD with an ST-Link
 pio run -e selftest -t upload    bring-up console on the USB-C port
-pio test -e native               226 host unit tests
+pio test -e native               232 host unit tests
 python tools/gen_dbc.py          regenerate ../docs/rcm.dbc
 python tools/test_rcm_bench.py   self-test the bench tool, no hardware needed
 python tools/rcm_bench.py --help talk to a board over CAN
@@ -266,7 +266,7 @@ which is how a bench session ends up concluding something from a stale broadcast
 
 ### A channel's role is its label, and nothing else
 
-The ignition machinery needs to find four channels: the brake, the starter, the
+The ignition machinery needs to find four channels: the start pedal, the starter, the
 engine-running signal, and the RUN output that feeds an ECU's ignition input. Those are
 named by the channel's **function label** and nowhere else.
 
@@ -275,6 +275,31 @@ together. Label channel 12 "Brake pedal", point `ign_brake_ch` at channel 5, and
 reads the brake from 5 while every display says 12. Pressing start with a foot on the
 brake then does nothing, the configuration looks correct, and you go and suspect the
 switch. One record of a role, so nothing can disagree with it.
+
+### Which pedal starts the car
+
+**The clutch if a channel is labelled `FN_IN_CLUTCH`, the brake otherwise.** There is no
+setting for this — the label *is* the setting, for exactly the reason above.
+
+A manual starts on the clutch: that is the interlock that proves the engine is not about
+to drive the wheels, and it is what stops a car being cranked in gear. An automatic has no
+clutch and starts on the brake. So labelling the pedal you actually wired chooses the
+behaviour, and when **both** are labelled — the normal case, since the brake is wanted
+anyway for brake lights and the ECU — the clutch wins and the brake takes no part in
+ignition at all.
+
+The pedal does not merely gate cranking, it decides what a press *means*: pedal down is
+always an attempt to start, pedal up is always "switch the car off". So swapping pedals
+swaps both halves together, which is why they are one lookup rather than two settings.
+
+`GET_CFG`'s ignition selector reports the pedal that **actually gates**, not the brake —
+a read-back naming a channel with no say in starting would be a confident wrong answer.
+`rcm_bench get ignition` prints it as `start pedal`.
+
+Everything the brake-only version documented about cranking still applies unchanged: the
+pedal gates the *start*, not the continuation, because a starter drags the rail to 9–10 V
+and a 10.87 V digital input cannot be read through that. Aborting on "pedal released"
+would abort every start the instant the starter loaded the battery.
 
 ### Storage
 
@@ -394,7 +419,7 @@ and also cross-checks the tool's byte packing against the DBC — so bench tool,
 
 ## Testing
 
-226 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
+232 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
 `.cpp` files against a model of the board in `test/stubs/`, so they test the code that
 ships rather than a transcription of it.
 
