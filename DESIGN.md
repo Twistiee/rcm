@@ -1714,6 +1714,42 @@ useful things to put on one are exactly the things you need when the bus is not 
 you -- a recovery or safe-mode flag, and a variant/behaviour select that does not need a
 tool to change.
 
+### 3b. A DIP pole for IMU orientation? -- user request, and the argument against
+
+Asked for 2026-09-07: one pole selecting between the two mountings this car actually uses
+-- terminal edge to the **rear** (`imumap x y z`) and to the **right** (`imumap ny x z`).
+The keypad ended up on the right because the Exocet tunnel is too narrow otherwise, and
+those two orientations are exactly the pair auto-level cannot tell apart: same sensor Z
+up, differing only by yaw, so gravity sees no difference and returns identity for both.
+A physical switch is an honest fix for something a sensor genuinely cannot determine.
+
+**But it argues with a rule this project already set**, twice over:
+
+- Straps are for *"exactly the settings you cannot fix over the bus once they are wrong"*
+  (`firmware/README.md`). IMU orientation is now settable AND readable over CAN, so by
+  that test it does not belong on one.
+- More seriously, it would put **one real-world fact in two places**. The channel-function
+  rework of 2026-08-16 existed specifically to stop that happening -- one record of a
+  role, so nothing can disagree with it. A strap plus a stored `imu_map` can disagree, and
+  the failure is silent: both orientations read a clean 1 g standing still, so a board
+  whose strap and EEPROM disagree looks perfectly healthy right up until it reports
+  cornering as braking.
+
+**If it is built anyway, the strap must be the only source, not an override.** Make the
+pole *select which of two maps is in force* and have `SET_IMU_MAP` refuse -- or better,
+have `GET_CFG` report the strap-derived map so the read-back cannot lie about what is
+actually in effect. What must not happen is a stored map that the strap quietly overrides,
+because then `get imu` answers a question about the wrong one.
+
+**Cheaper alternative that needs no hardware:** the map is already in EEPROM and already
+survives a power cycle, so the two-mounting problem is one `rcm_bench ctl imumap` and a
+`save` at install time. The strap only earns its place if boards get swapped between cars
+or positions often enough that needing a laptop is the real cost. For a single car it
+probably does not. Recorded because it is a fair request, not because it is settled.
+
+Depends on item 3 above either way -- there is no spare strap pole until those two are
+wired.
+
 ### 4. Silkscreen that identifies pins without opening the PCB file
 
 The board currently cannot be wired from what is printed on it. Reference designators are
