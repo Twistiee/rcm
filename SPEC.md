@@ -94,8 +94,11 @@ module stay at its default, and costs little now that SIM7600 is gone: the 3V3 l
 - `Y1` 8MHz HSE + 2× 20pF — matches joesbox's stock `RCC_HSE_ON`, PLLM=8
 - `Y2` 32.768kHz LSE + 2× 12pF. **No backup cell** (`VBAT`→`+3V3`) — time lost each park.
   With microSD gone this no longer gates logging, so it is now harmless
-- BOOT0 10k pulldown + **`J_BOOT` 1×03 select header** (3V3 / BOOT0 / GND) so USB DFU is
-  reachable without cutting a track; NRST 100nF + reset switch
+- BOOT0 10k pulldown + **`J_BOOT` 1×03 select header** (3V3 / BOOT0 / GND); NRST 100nF +
+  reset switch. ⚠ **This does NOT deliver USB DFU on revA — see "BOOT1 collides with
+  `SR_OE_N`" in `DESIGN.md`.** `BOOT1` is `PB2`, which this board uses for `SR_OE_N` and
+  holds HIGH at reset, so lifting BOOT0 selects boot-from-SRAM (garbage) rather than the
+  ROM bootloader, and the MCU hangs. Verified on hardware 2026-09-07
 - `J_SWD` 1×05 (3V3, SWDIO, SWCLK, NRST, GND); 2× status LED
 
 ## Block 5 — CAN
@@ -241,13 +244,17 @@ of them ERC-clean:
    schematic simply lacked them, and the IMU would never have responded.
 6. **Sense divider failed `VIH` at rest voltage** — see block 8. 220k → 270k.
 7. **No way to reach USB DFU** — BOOT0 was pulled down with no jumper. `J_BOOT` added.
+   ⚠ **This fix did not work, and the header alone cannot make it work:** `BOOT1` (`PB2`)
+   is `SR_OE_N` and is high at reset, which selects SRAM rather than system memory. See
+   `DESIGN.md`
 
 **revB was checked for the same IMU faults and is CORRECT on both counts**: `CSB` → `+3V3`,
 and R57 (0R, fitted) pulls SDO to GND for 0x68 with R58 (DNP) as the 0x69 alternate.
 
 ### Deferred / accepted
 
-- **`USB_VBUS` is not sensed** — fine for a self-powered device doing DFU, but there is no
+- **`USB_VBUS` is not sensed** — moot on revA, which cannot reach DFU at all (BOOT1/`PB2`
+  conflict, see `DESIGN.md`); fine for a self-powered device doing DFU, but there is no
   VBUS-detect path.
 - **`R_RS` = 10k** puts the CAN transceiver in slope-control mode; change to 0R for
   full-speed edges if EMI turns out not to matter.

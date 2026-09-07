@@ -1779,6 +1779,74 @@ footprints. Adding text is therefore a change to the generator, not hand-editing
 and the generated silk must be regenerated and re-checked for stray pad flashes before
 shipping (see the JLC notes above).
 
+## BOOT1 collides with `SR_OE_N`, so revA can never reach USB DFU (2026-09-07)
+
+**The first actual hardware flaw found on revA.** Not a functional one -- the board does
+its job perfectly and nothing here affects normal operation -- but a capability `SPEC.md`
+claims and the board cannot deliver.
+
+### What happened
+
+Jumpered `J_BOOT` to 3V3 to try flashing over USB instead of the ST-Link, rebooted the
+board over CAN, and it vanished: no DFU device, no CAN, no USB. SWD still attached, but
+with a nonsense `pc` of `0x40020400` and the core in an unknown state.
+
+The diagnosis is one memory read. On an STM32F4 the boot pins alias one of three memories
+at `0x00000000`, so reading it says which:
+
+```
+0x00000000: 36a1451a 09a41b02 f5066576 f67f47f8    <- what is actually booting
+0x08000000: 20020000 0800ab99 0800abe9 0800abe9    <- user flash, not it
+0x1fff0000: 20002af8 1fff503b 1fff5047 1fff5047    <- ROM bootloader, not it
+0x20000000: 36a1451a 09a41b02 f5066576 f67f47f8    <- SRAM. identical. that is it.
+```
+
+It was executing uninitialised SRAM, which is why it hung instantly.
+
+### Why
+
+The F4 boot table needs BOTH pins, and only one of them was ever considered:
+
+| BOOT0 | BOOT1 | Boots from |
+|---|---|---|
+| 0 | x | Main flash |
+| 1 | **0** | **System memory — the ROM bootloader, i.e. DFU** |
+| 1 | **1** | Embedded SRAM |
+
+**`BOOT1` is `PB2`. This board uses `PB2` for `SR_OE_N`**, and `R_OE` deliberately holds it
+HIGH at reset. So BOOT0=1 always lands in the SRAM row, never the bootloader row. The
+`J_BOOT` header works exactly as designed and still cannot get there.
+
+### Why it cannot simply be fixed on revA
+
+`R_OE` pulling `OE_N` high while the MCU pin is high-impedance is not incidental — it is
+what parks all 21 channels Hi-Z on every reset, and the reason a reset does not flap
+relays (see "Any reset drops every channel", above). Defeating it to reach DFU would mean
+the 595s come up enabled with undefined shift-register contents, on a board whose whole
+purpose is switching things in a car. **The safety behaviour has to win.**
+
+A bench-only workaround exists and should be treated as bench-only: with **every output
+disconnected**, tack a temporary pull-down on `PB2`, and BOOT0=1 then reaches the ROM
+bootloader properly. Never with a loom attached.
+
+### The revB fix
+
+**Move `SR_OE_N` off `PB2` to any other free GPIO.** Roughly twenty are spare on the
+LQFP-64, it is a single net, and it costs nothing. That alone makes `J_BOOT` do what
+`SPEC.md` always claimed, and firmware updates stop needing an ST-Link — which matters a
+great deal more once a board is buried in a centre tunnel where `J_SWD` is awkward to
+reach and `J_BOOT` plus a USB cable is not.
+
+Worth pairing with a check of every other strap-like pin against its reset-time function.
+This one was found by trying it; nothing in the schematic review caught that a pin had two
+jobs, because both jobs are individually correct.
+
+### What this does not change
+
+Configuration was never affected. Channel modes, functions, failsafe states, ignition
+timings, peer mirroring and the IMU map are all set, read back and saved over CAN with no
+debugger and no USB. Only firmware updates need the ST-Link.
+
 ## Already recorded elsewhere in this file
 
 | | Where |

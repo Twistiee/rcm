@@ -256,3 +256,8 @@ a worse outcome than a missing one. `gen_jlc_bom_cpl.py` warns loudly about unso
 for exactly this reason.
 
 `J_SWD`, `J_BOOT` and `JB2` are all standard 2.54mm headers and are now **assembled**.
+⚠ **`J_BOOT` does not give you USB DFU on revA** — `BOOT1` is `PB2`, which is `SR_OE_N` and
+is held high at reset, so BOOT0=1 boots from SRAM and hangs rather than entering the ROM
+bootloader. Verified on hardware; do not suggest DFU as an alternative to the ST-Link, and
+do not "fix" it by weakening `R_OE`, which is what parks the outputs Hi-Z on reset. The
+revB fix is to move `SR_OE_N` to another GPIO. See `DESIGN.md`.

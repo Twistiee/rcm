@@ -43,6 +43,13 @@ What that does **not** mean is that it is proven in a car. Specifically, still u
   exercised only with a PC pretending to be the other board
 - **more than two channels under load at once**, and nothing thermal
 
+One genuine hardware flaw has been found, and it is a missing capability rather than a
+functional fault: **revA cannot reach USB DFU.** `BOOT1` is `PB2`, which this board uses
+for `SR_OE_N` and holds high at reset, so lifting BOOT0 boots from SRAM instead of the ROM
+bootloader. The `J_BOOT` header is fitted and works; the pin conflict defeats it. Firmware
+therefore needs an ST-Link on `J_SWD`. Configuration is unaffected — that is all over CAN.
+`DESIGN.md` has the analysis and the one-net revB fix.
+
 Bring-up found three real firmware bugs that no amount of desk testing had: a `%f` in
 printf corrupting memory, a strap display that could never show a change, and a short
 press on the ignition button switching the board back off. `DESIGN.md` records those and
