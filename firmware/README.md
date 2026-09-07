@@ -211,6 +211,11 @@ be corrected by any map at all. Rounding it to the nearest axis would bake a com
 gravity into the forward reading as a permanent phantom acceleration. If you need the
 board at an angle, that needs real angle correction, which this firmware does not have.
 
+All of this is hardware-verified over both transports (2026-09-07): solving flat and on
+its side, refusing a 34 deg tilt, refusing a flat spin, setting and reading a map over
+CAN, and refusing a repeated axis, a fourth axis, a short frame and a missing magic byte
+sent as raw frames — so the guards are the firmware's, not just the tool's.
+
 Mount it **rigidly** either way — on a compliant bracket you measure the bracket
 resonating, not the car.
 
