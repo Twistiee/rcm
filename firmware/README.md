@@ -11,7 +11,7 @@ unit-tested against a model of the board. None of it has seen a relay.
 pio run                          build for the board
 pio run -t upload                flash over J_SWD with an ST-Link
 pio run -e selftest -t upload    bring-up console on the USB-C port
-pio test -e native               232 host unit tests
+pio test -e native               237 host unit tests
 python tools/gen_dbc.py          regenerate ../docs/rcm.dbc
 python tools/test_rcm_bench.py   self-test the bench tool, no hardware needed
 python tools/rcm_bench.py --help talk to a board over CAN
@@ -219,6 +219,37 @@ sent as raw frames — so the guards are the firmware's, not just the tool's.
 Mount it **rigidly** either way — on a compliant bracket you measure the bracket
 resonating, not the car.
 
+### What the status LEDs mean
+
+**Green is SOLID when all is well.** It only flashes to tell you something, so a glance
+separates "fine" from "look at me" without counting blink rates.
+
+| Green | Meaning |
+|---|---|
+| **Solid** | Running normally |
+| 1 Hz | Was being commanded over CAN, and the master went away |
+| 6.7 Hz | The CAN controller never started at all — wrong bitrate, or worse |
+
+**Red is off unless an output that has a job is faulty.**
+
+Both rules exist because the first version cried wolf, and an indicator that is always on
+tells you nothing:
+
+- Green went frantic whenever the bus was quiet. But **a keypad is never commanded** — it
+  *reports* button presses — so a quiet bus is its normal condition and it flashed fast
+  forever. `proto_ever_addressed()` is what separates "nobody has ever commanded this
+  board" from "this board lost its master", and only the second is a fault. Note this is
+  independent of the CAN timeout: the failsafe still fires and is still reported over the
+  bus, the LED just stops treating a keypad's normal life as an emergency.
+- Red lit for an open circuit on **any** channel, including the eighteen nobody has wired
+  yet, so every board on a bench sat with a fault lamp on.
+
+The fault rule lives in **one** function, `ch_fault_actionable()`, used by both the LED and
+the `RCM_ST_ANY_FAULT` status flag, with a test asserting the two agree — a dark lamp while
+`rcm_bench scan` reports `FAULT` is exactly the sort of contradiction that costs an
+evening. The per-channel `FAULTS` frame is **not** filtered: that detail is what you want
+while diagnosing, and only the summary is a lamp.
+
 ### Bitrate
 
 Solved for at runtime from the actual APB1 clock, targeting an 87.5% sample point, and
@@ -419,7 +450,7 @@ and also cross-checks the tool's byte packing against the DBC — so bench tool,
 
 ## Testing
 
-232 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
+237 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
 `.cpp` files against a model of the board in `test/stubs/`, so they test the code that
 ships rather than a transcription of it.
 
@@ -529,7 +560,7 @@ Flash the **selftest** build first — steps 1 to 6 need only the USB cable.
 
 | # | Check | How |
 |---|---|---|
-| 1 | Board stays alive | LED1 blinks; board stays on with the ignition input pulled low |
+| 1 | Board stays alive | LED1 solid (or blinking, see below); board stays on with the ignition input pulled low |
 | 2 | Node address | LED2 flashes N+1 times at boot; then `d` in the console |
 | 3 | EEPROM | `e` |
 | 4 | CAN controller | `c` — internal loopback, no other node needed |

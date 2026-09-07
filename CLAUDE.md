@@ -93,6 +93,14 @@ Things worth knowing before touching it:
   clear of everything rusEFI uses. The IMU deliberately emits **Bosch MM5.10** frames at
   `0x174`/`0x178`/`0x17C` because rusEFI decodes those natively — set
   `imuType = IMU_MM5_10` and it just works.
+- **Status LEDs: green SOLID means well; it flashes only to report something.** 1 Hz = it
+  lost a master it previously had (`proto_failsafe() && proto_ever_addressed()`), 6.7 Hz =
+  the CAN controller never started. The `ever_addressed` half matters: a keypad is never
+  commanded, so without it a keypad alarms forever and the lamp stops being read. This is
+  deliberately INDEPENDENT of `can_timeout_ms` — the failsafe still fires and is still
+  reported on the bus; only the LED is decoupled. Red lights only for outputs with a
+  function label, via `ch_fault_actionable()`, which the `RCM_ST_ANY_FAULT` flag uses too
+  so the lamp and the bus cannot disagree. The per-channel `FAULTS` frame stays unfiltered.
 - **Which pedal starts the car is decided by the channel LABEL, not a setting** — the
   clutch if a channel is labelled `FN_IN_CLUTCH`, the brake otherwise, resolved by
   `ign_start_pedal_ch()`. A manual starts on the clutch (the interlock that stops a crank

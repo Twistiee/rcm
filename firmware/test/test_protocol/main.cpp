@@ -242,6 +242,10 @@ static void test_status_flags_and_seq(void)
 
 static void test_faults_reach_the_bus(void)
 {
+    /* The channel needs a JOB for its fault to be worth flagging -- an unlabelled
+     * channel is not wired to anything. Without this the summary bit stays clear, which
+     * is the behaviour the next test pins. */
+    cfg.ch[9].func = FN_FUEL_PUMP;
     SIM.wiring[9] = SIM_COIL_OPEN;
     run_ms(cfg.output_settle_ms + cfg.fault_confirm_ms + 200);
     TX.clear();
@@ -249,6 +253,40 @@ static void test_faults_reach_the_bus(void)
 
     TEST_ASSERT_EQUAL_HEX32(1ul << 9, get21(sent(NODE_BASE + RCM_F_FAULTS)->data));
     TEST_ASSERT_TRUE(sent(NODE_BASE + RCM_F_OUTPUTS)->data[3] & RCM_ST_ANY_FAULT);
+}
+
+static void test_an_unwired_channel_is_reported_but_does_not_raise_the_flag(void)
+{
+    /* Eighteen unwired terminals reading open is what a bench board looks like, not a
+     * fault. If the summary bit lit for those it would be set permanently on every
+     * board, and a bit that is always set is one nobody reads.
+     *
+     * The per-channel FAULTS frame still carries it, because that is the detail you
+     * want while diagnosing -- only the SUMMARY is filtered. */
+    cfg.ch[9].func = FN_NONE;                    /* labelled with no job */
+    SIM.wiring[9] = SIM_COIL_OPEN;
+    run_ms(cfg.output_settle_ms + cfg.fault_confirm_ms + 200);
+    TX.clear();
+    proto_broadcast(SIM.now_ms);
+
+    TEST_ASSERT_EQUAL_HEX32_MESSAGE(1ul << 9, get21(sent(NODE_BASE + RCM_F_FAULTS)->data),
+        "the FAULTS frame must still carry every channel, filtered or not");
+    TEST_ASSERT_FALSE_MESSAGE(sent(NODE_BASE + RCM_F_OUTPUTS)->data[3] & RCM_ST_ANY_FAULT,
+        "an unwired terminal raised the summary fault bit");
+}
+
+static void test_the_lamp_and_the_bus_cannot_disagree(void)
+{
+    /* Both read the same function, so a future change cannot move one without the
+     * other. That was the actual risk: a red LED that is dark while `scan` says FAULT. */
+    cfg.ch[9].func = FN_FUEL_PUMP;
+    SIM.wiring[9] = SIM_COIL_OPEN;
+    run_ms(cfg.output_settle_ms + cfg.fault_confirm_ms + 200);
+    TX.clear();
+    proto_broadcast(SIM.now_ms);
+    const bool on_bus = (sent(NODE_BASE + RCM_F_OUTPUTS)->data[3] & RCM_ST_ANY_FAULT) != 0;
+    TEST_ASSERT_EQUAL_MESSAGE(ch_fault_actionable(), on_bus,
+        "the status flag and the lamp disagree about whether this board is faulty");
 }
 
 static void test_raw_sense_is_published_alongside_logical_inputs(void)
@@ -737,6 +775,48 @@ static void test_auto_level_needs_its_magic_byte(void)
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_IMU_LEVEL, 0x5A });
     run_ms(TICK_MS * 2);
     TEST_ASSERT_EQUAL_INT(before + 1, AUTOLEVEL_CALLS);
+}
+
+/* --- "the bus went quiet" only means something if it was ever loud -------------
+ * A keypad is never commanded -- it REPORTS button presses -- so a silent bus is its
+ * normal condition. The old green LED alarmed at it forever, which is how an indicator
+ * stops being read. proto_ever_addressed() is what separates that from a relay module
+ * whose master actually went away. */
+
+static void test_a_board_starts_out_never_addressed(void)
+{
+    TEST_ASSERT_FALSE(proto_ever_addressed());
+}
+
+static void test_ecu_broadcasts_do_not_count_as_being_addressed(void)
+{
+    /* The same rule the failsafe uses: the ECU shouting at the dash says nothing about
+     * whether anyone is commanding THIS board. If this leaked, every board on a running
+     * car would claim it had a master. */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_RUN_SRC, 0x01, 0x02, 0xF4, 0x01 });
+    run_ms(TICK_MS * 2);
+    proto_begin();                                  /* clears the flag again */
+    TEST_ASSERT_FALSE(proto_ever_addressed());
+
+    inject(0x201, { 0xE8, 0x03 });                  /* ECU RPM, not addressed to us */
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_FALSE_MESSAGE(proto_ever_addressed(),
+        "an ECU broadcast was counted as somebody commanding this board");
+}
+
+static void test_being_commanded_sets_it_and_it_stays_set(void)
+{
+    proto_begin();
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_ALL_OFF });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_TRUE(proto_ever_addressed());
+
+    /* It must NOT clear when the bus goes quiet again -- that is the whole point. A
+     * board that lost its master has to keep saying so. */
+    run_ms(cfg.can_timeout_ms + TICK_MS * 4);
+    TEST_ASSERT_TRUE_MESSAGE(proto_failsafe(), "expected the timeout to have fired");
+    TEST_ASSERT_TRUE_MESSAGE(proto_ever_addressed(),
+        "forgot it had ever been commanded, so a lost master looks like a quiet keypad");
 }
 
 static void test_config_read_back_returns_what_was_set(void)
@@ -1296,6 +1376,8 @@ int main(void)
     RUN_TEST(test_output_bits_land_in_the_right_places);
     RUN_TEST(test_status_flags_and_seq);
     RUN_TEST(test_faults_reach_the_bus);
+    RUN_TEST(test_an_unwired_channel_is_reported_but_does_not_raise_the_flag);
+    RUN_TEST(test_the_lamp_and_the_bus_cannot_disagree);
     RUN_TEST(test_raw_sense_is_published_alongside_logical_inputs);
     RUN_TEST(test_cmd_set_applies_only_masked_channels);
     RUN_TEST(test_cmd_set_reaches_channel_21);
@@ -1345,6 +1427,9 @@ int main(void)
     RUN_TEST(test_a_map_naming_a_fourth_axis_is_refused);
     RUN_TEST(test_a_short_imu_map_frame_is_refused);
     RUN_TEST(test_auto_level_needs_its_magic_byte);
+    RUN_TEST(test_a_board_starts_out_never_addressed);
+    RUN_TEST(test_ecu_broadcasts_do_not_count_as_being_addressed);
+    RUN_TEST(test_being_commanded_sets_it_and_it_stays_set);
     RUN_TEST(test_config_read_back_returns_what_was_set);
     RUN_TEST(test_config_read_back_is_indexed_for_tables);
     RUN_TEST(test_a_global_config_request_is_never_answered);

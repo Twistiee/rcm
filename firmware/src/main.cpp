@@ -80,22 +80,37 @@ uint16_t app_ignition_mv(void) { return ign_mv; }
 bool     app_ignition_on(void) { return ign_mv >= IGN_ON_MV; }
 
 /* --- LEDs ------------------------------------------------------------------
- * LED1 (green) is the heartbeat and carries the coarse health of the board.
- * LED2 (red) is faults. Between them you can tell what a board is doing from
- * across a workshop with nothing plugged into it, which turns out to matter far
- * more than it sounds like it should.
+ * LED1 (green): SOLID means well. It only flashes to tell you something, so a glance
+ * across a workshop separates "fine" from "look at me" without counting blink rates.
+ * LED2 (red): faults, and only faults worth acting on.
+ *
+ * Both rules exist because the previous version cried wolf. Green went frantic whenever
+ * the bus was quiet -- but a keypad is never commanded, it REPORTS, so a quiet bus is
+ * its normal condition and it flashed fast forever. Red lit for an open circuit on any
+ * channel, including the eighteen nobody has wired yet, so every bench board sat there
+ * with a fault lamp on. An indicator that is always on tells you nothing at all.
  */
 static void leds(uint32_t now)
 {
-    const bool fault = ch_fault_open() || ch_fault_short();
+    /* Only outputs that have been given a job can meaningfully be faulty -- see
+     * ch_fault_actionable(), which the CAN status flag uses too so the lamp and the bus
+     * cannot tell you different things. */
+    const bool fault = ch_fault_actionable();
 
-    uint16_t period;
-    if (!can_up)                 period = 150;   /* frantic: CAN never came up  */
-    else if (proto_failsafe())   period = 300;   /* fast: the bus has gone quiet */
-    else if (straps.keypad)      period = 1000;
-    else                         period = 2000;  /* slow idle: all well          */
+    bool green;
+    if (!can_up) {
+        /* The controller itself never started -- a wrong bitrate or worse. Distinct from
+         * losing a working bus, and worth its own frantic rate. */
+        green = (now % 150) < 75;
+    } else if (proto_failsafe() && proto_ever_addressed()) {
+        /* Something WAS commanding this board and stopped. Only alarming because it was
+         * loud before: see proto_ever_addressed(). */
+        green = (now % 1000) < 500;                   /* 1 Hz */
+    } else {
+        green = true;                                 /* solid: all well */
+    }
 
-    digitalWrite(PIN_LED1, ((now % period) < (period / 2)) ? HIGH : LOW);
+    digitalWrite(PIN_LED1, green ? HIGH : LOW);
     digitalWrite(PIN_LED2, fault ? (((now % 400) < 200) ? HIGH : LOW) : LOW);
 }
 

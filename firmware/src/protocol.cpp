@@ -52,6 +52,11 @@ static void ecu_seed(void)
 }
 static uint32_t last_rx_ms;
 static bool     failsafe_active;
+/* Has ANYTHING ever addressed this node since boot? "The bus went quiet" only means
+ * something if it was ever loud. A keypad is never commanded -- it reports button
+ * presses -- so for one of those a silent bus is the normal condition, not a fault, and
+ * a board that alarms about its normal condition just teaches you to ignore the alarm. */
+static bool     ever_addressed;
 static bool     reboot_pending;
 
 /* Peer mirroring keeps an edge memory so toggle channels fire once per press
@@ -99,6 +104,7 @@ void proto_begin(void)
     seq = 0;
     last_rx_ms = millis();
     failsafe_active = false;
+    ever_addressed = false;
     reboot_pending = false;
     filters_dirty = false;
     /* Seed from the CURRENT button states, not from zero. Otherwise a board that boots
@@ -163,7 +169,10 @@ static uint8_t status_flags(void)
     uint8_t f = 0;
     if (app_outputs_live())                     f |= RCM_ST_OUT_ENABLED;
     if (failsafe_active)                        f |= RCM_ST_FAILSAFE;
-    if (ch_fault_open() || ch_fault_short())    f |= RCM_ST_ANY_FAULT;
+    /* Watched outputs only -- the same test the status LED uses. A board reporting a
+     * permanent fault because eighteen unwired terminals read open is a board whose
+     * fault bit nobody looks at. The FAULTS frame below still carries every channel. */
+    if (ch_fault_actionable())                  f |= RCM_ST_ANY_FAULT;
     if (imu_ok())                               f |= RCM_ST_IMU_OK;
     if (app_eeprom_ok())                        f |= RCM_ST_EEPROM_OK;
     if (straps.keypad)                          f |= RCM_ST_ROLE_KEYPAD;
@@ -607,6 +616,7 @@ void proto_poll(uint32_t now_ms)
         if (ours) {
             last_rx_ms = now_ms;
             failsafe_active = false;
+            ever_addressed = true;
             /* Somebody is still talking to this board, so it is not idle. */
             ign_note_activity(now_ms);
         }
@@ -669,4 +679,6 @@ void proto_poll(uint32_t now_ms)
 }
 
 bool proto_failsafe(void)   { return failsafe_active; }
+
+bool proto_ever_addressed(void) { return ever_addressed; }
 uint32_t proto_last_rx(void) { return last_rx_ms; }

@@ -330,6 +330,30 @@ uint8_t  ch_aux(void)       { return aux_stable; }
 uint32_t ch_fault_open(void)  { return fault_open; }
 uint32_t ch_fault_short(void) { return fault_short; }
 
+/* Outputs that have actually been given a job.
+ *
+ * A channel sitting at its defaults is not wired to anything, and "open circuit on a
+ * terminal nobody has connected" is not a fault, it is a description of a bench. The
+ * raw masks above stay unfiltered because per-channel detail is what you want while
+ * diagnosing; this is the summary that decides whether to light a lamp. */
+uint32_t ch_watched_outputs(void)
+{
+    uint32_t m = 0;
+    for (uint8_t ch = 0; ch < RCM_CHANNELS; ch++)
+        if (cfg.ch[ch].mode == CH_OUTPUT && cfg.ch[ch].func != FN_NONE)
+            m |= 1u << ch;
+    return m;
+}
+
+/* THE single answer to "is anything wrong that someone should act on?" -- deliberately
+ * one function rather than the same expression written out at each call site, because
+ * the status LED and the CAN status flag disagreeing about whether the board is faulty
+ * is precisely the sort of thing nobody notices until they are chasing it. */
+bool ch_fault_actionable(void)
+{
+    return ((fault_open | fault_short) & ch_watched_outputs()) != 0;
+}
+
 void ch_clear_faults(void)
 {
     fault_open = fault_short = 0;

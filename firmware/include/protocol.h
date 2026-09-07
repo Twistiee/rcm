@@ -185,6 +185,11 @@
 #define RCM_IMU_LEVEL_TILTED  0x03   /* square-ish to nothing; see byte 6      */
 #define RCM_IMU_LEVEL_NO_IMU  0x04   /* no IMU, or the strap disables it       */
 
+/* True once anything has addressed THIS node since boot. Distinguishes "nobody has ever
+ * commanded this board", which is a keypad's normal life, from "this board was being
+ * commanded and the master went away", which is a real fault. */
+bool proto_ever_addressed(void);
+
 /* Send one TunerStudio command to the ECU. */
 void proto_send_ecu_cmd(uint16_t subsystem, uint16_t index);
 

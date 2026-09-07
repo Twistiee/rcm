@@ -42,6 +42,14 @@ uint32_t ch_fault_open(void);    /* driver off but the node is not at +12V:
                                   * blown fuse, missing relay, open coil, broken wire */
 uint32_t ch_fault_short(void);   /* driver on but the node stays at +12V:
                                   * the low side is not pulling down, or a 12V short */
+
+/* Outputs that have been given a function label, i.e. the ones actually wired to
+ * something. Faults on anything else are not news. */
+uint32_t ch_watched_outputs(void);
+
+/* Is any WATCHED output faulty? The one answer the status LED and the CAN status flag
+ * both use, so they cannot disagree. */
+bool ch_fault_actionable(void);
 void     ch_clear_faults(void);
 
 /* Suspend coil-circuit diagnosis while the supply is too low to trust it.
