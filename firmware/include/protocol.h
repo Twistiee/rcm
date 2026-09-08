@@ -132,6 +132,10 @@
                                       * right-handed so yaw comes out the right way round.
                                       * Confirm the result with GET_CFG; it is held in RAM
                                       * like every other setter, so SAVE_CONFIG to keep it. */
+#define RCM_OP_SET_IMU_RATE   0x20   /* b1..b2 LE publish period ms. The sensor ODR
+                                      * follows automatically -- publishing faster than
+                                      * the ODR would resend one sample and look like
+                                      * real data. */
 #define RCM_OP_SET_AUX_FUNC   0x1F   /* b1 pin 0..2, b2 function label. Gives a J_AUX pin
                                       * a job, the same way SET_CH_FUNC does for a channel.
                                       * The useful one today is FN_IN_IMU_LEVEL: a switch
@@ -150,7 +154,7 @@
 #define RCM_CFG_SEL_ECUCMD    0x08   /* index = slot: ch, subsystem (2), index (2)    */
 #define RCM_CFG_SEL_CHANNEL   0x09   /* index = channel: mode, flags, func, beh, param*/
 #define RCM_CFG_SEL_FOLLOW    0x0A   /* index = slot: ch, bit, frame id (2)           */
-#define RCM_CFG_SEL_TIMING2   0x0B   /* ECU follow staleness ms (2)                   */
+#define RCM_CFG_SEL_TIMING2   0x0B   /* ECU follow stale ms (2), IMU publish ms (2)   */
 #define RCM_CFG_SEL_IMU       0x0C   /* map X, Y, Z, last auto-level result, tilt deg  */
 #define RCM_CFG_SEL_AUX       0x0D   /* the three J_AUX function labels               */
 #define RCM_CFG_SEL_MAX       0x0D

@@ -315,6 +315,8 @@ static void send_cfg_reply(uint8_t sel, uint8_t idx)
     case RCM_CFG_SEL_TIMING2:
         p[0] = (uint8_t)cfg.ecu_follow_stale_ms;
         p[1] = (uint8_t)(cfg.ecu_follow_stale_ms >> 8);
+        p[2] = (uint8_t)cfg.imu_rate_ms;
+        p[3] = (uint8_t)(cfg.imu_rate_ms >> 8);
         break;
     case RCM_CFG_SEL_AUX:
         p[0] = cfg.aux_func[0]; p[1] = cfg.aux_func[1]; p[2] = cfg.aux_func[2];
@@ -453,6 +455,18 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
                     memcpy(cfg.imu_up,  up,  sizeof up);
                     imu_reload_basis();
                 }
+            }
+        }
+        break;
+
+    case RCM_OP_SET_IMU_RATE:
+        /* 1ms floor: a period of zero would divide by zero picking an ODR, and would
+         * ask the loop to publish as fast as it can go. */
+        if (f->len >= 3) {
+            const uint16_t ms = (uint16_t)(f->data[1] | (f->data[2] << 8));
+            if (ms >= 1 && ms <= 1000) {
+                cfg.imu_rate_ms = ms;
+                imu_apply_rate();
             }
         }
         break;

@@ -33,7 +33,7 @@ nothing about it is rusEFI-specific beyond the choice of message IDs.
 hardware: the MCU and its 8 MHz crystal, USB, the DIP straps, the EEPROM, CAN through the
 transceiver onto a real bus, the IMU, the 12 V sense, the self-latching power, the
 watchdog, the output drivers under a real relay load, a stored configuration surviving a
-full save-reset-read cycle, and the board switching itself off. 259 host unit tests pass
+full save-reset-read cycle, and the board switching itself off. 261 host unit tests pass
 alongside that.
 
 What that does **not** mean is that it is proven in a car. Specifically, still untested:
@@ -185,7 +185,7 @@ PlatformIO + STM32duino, in [`firmware/`](firmware/) — see
 ```
 pio run -d firmware                     build
 pio run -d firmware -e selftest -t upload   bring-up console over USB-C
-pio test -d firmware -e native          259 host unit tests
+pio test -d firmware -e native          261 host unit tests
 ```
 
 **Two bring-up paths.** A **USB-C console** needs nothing but the cable — it proves the

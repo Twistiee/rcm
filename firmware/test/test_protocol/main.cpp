@@ -89,6 +89,10 @@ uint8_t imu_level_result(void)   { return RCM_IMU_LEVEL_NONE; }
 uint8_t imu_level_tilt_deg(void) { return 90; }
 uint32_t imu_level_when(void)    { return 0; }
 void imu_reload_basis(void)      {}
+/* The real one reprograms the BMI270 ODR over I2C. Here it only has to exist, so the
+ * rate opcode can be tested without a chip. */
+static int RATE_APPLIES = 0;
+bool imu_apply_rate(void)        { RATE_APPLIES++; return true; }
 void imu_current_basis(float R[3][3])
 {
     /* The real basis lives in imu.cpp, which needs a BMI270. Building it here from the
@@ -1044,6 +1048,31 @@ static void test_a_tap_on_the_save_pin_does_nothing(void)
         "a brief tap committed the config");
 }
 
+static void test_the_imu_rate_can_be_changed_over_the_bus(void)
+{
+    /* Tuned on the bench without a reflash, which is how the 250Hz ceiling was found. */
+    const int before = RATE_APPLIES;
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_RATE, 5, 0 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_EQUAL_UINT16(5, cfg.imu_rate_ms);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(before + 1, RATE_APPLIES,
+        "the sensor ODR was not re-applied, so the chip would lag the setting");
+
+    const can_frame_t *r = ask(RCM_CFG_SEL_TIMING2);
+    TEST_ASSERT_NOT_NULL(r);
+    TEST_ASSERT_EQUAL_UINT16(5, (uint16_t)(r->data[4] | (r->data[5] << 8)));
+}
+
+static void test_a_zero_imu_rate_is_refused(void)
+{
+    /* Zero would divide by zero picking an ODR, and would ask the loop to publish as
+     * fast as it can spin. */
+    const uint16_t before = cfg.imu_rate_ms;
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_RATE, 0, 0 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_EQUAL_UINT16(before, cfg.imu_rate_ms);
+}
+
 static void test_the_aux_labels_read_back(void)
 {
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_AUX_FUNC, 2, FN_IN_IMU_LEVEL });
@@ -1687,6 +1716,8 @@ int main(void)
     RUN_TEST(test_the_two_calibration_pins_do_different_jobs);
     RUN_TEST(test_the_save_pin_commits_to_eeprom);
     RUN_TEST(test_a_tap_on_the_save_pin_does_nothing);
+    RUN_TEST(test_the_imu_rate_can_be_changed_over_the_bus);
+    RUN_TEST(test_a_zero_imu_rate_is_refused);
     RUN_TEST(test_the_aux_labels_read_back);
     RUN_TEST(test_a_bad_aux_pin_is_refused);
     RUN_TEST(test_config_read_back_returns_what_was_set);

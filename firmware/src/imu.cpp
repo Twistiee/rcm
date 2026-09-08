@@ -57,6 +57,24 @@ static uint8_t level_tilt = 90;
 static uint32_t level_at;
 static void rebuild_basis(void);
 
+/* Sample at least twice as fast as we publish, where the part allows it.
+ *
+ * Publishing faster than the ODR is the trap worth naming: the same sample goes out
+ * repeatedly and looks exactly like real data arriving at a higher rate. Sampling at
+ * exactly the publish rate is legal but leaves no margin, and on this part the internal
+ * filter bandwidth is tied to the ODR -- so oversampling buys anti-aliasing as well as
+ * freshness. The ACC and GYR ODR constants share values, so one table serves both. */
+static uint8_t odr_for(uint16_t period_ms)
+{
+    const uint16_t hz = period_ms ? (uint16_t)(1000u / period_ms) : 50u;
+    if (hz <= 12)  return BMI2_ACC_ODR_25HZ;
+    if (hz <= 25)  return BMI2_ACC_ODR_50HZ;
+    if (hz <= 50)  return BMI2_ACC_ODR_100HZ;
+    if (hz <= 100) return BMI2_ACC_ODR_200HZ;
+    if (hz <= 200) return BMI2_ACC_ODR_400HZ;
+    return BMI2_ACC_ODR_800HZ;
+}
+
 /* --- Bosch API interface shims --------------------------------------------- */
 
 static BMI2_INTF_RETURN_TYPE i2c_read(uint8_t reg, uint8_t *data, uint32_t len, void *intf)
@@ -118,12 +136,12 @@ bool imu_begin(void)
     sc[1].type = BMI2_GYRO;
     if (bmi2_get_sensor_config(sc, 2, &dev) != BMI2_OK) return false;
 
-    sc[0].cfg.acc.odr         = BMI2_ACC_ODR_100HZ;   /* 2x our 50Hz publish rate */
+    sc[0].cfg.acc.odr         = odr_for(cfg.imu_rate_ms);
     sc[0].cfg.acc.range       = BMI2_ACC_RANGE_4G;
     sc[0].cfg.acc.bwp         = BMI2_ACC_NORMAL_AVG4;
     sc[0].cfg.acc.filter_perf = BMI2_PERF_OPT_MODE;
 
-    sc[1].cfg.gyr.odr         = BMI2_GYR_ODR_100HZ;
+    sc[1].cfg.gyr.odr         = odr_for(cfg.imu_rate_ms);
     sc[1].cfg.gyr.range       = BMI2_GYR_RANGE_250;
     sc[1].cfg.gyr.bwp         = BMI2_GYR_NORMAL_MODE;
     sc[1].cfg.gyr.noise_perf  = BMI2_PERF_OPT_MODE;
@@ -279,6 +297,20 @@ void imu_current_basis(float R[3][3]) { memcpy(R, basis, sizeof basis); }
 
 /* Adopt vectors that someone else wrote straight into cfg. */
 void imu_reload_basis(void) { rebuild_basis(); }
+
+/* Re-apply the sensor ODR after cfg.imu_rate_ms changes, so the rate can be tuned over
+ * the bus without a reflash. Silently does nothing if the chip is not up. */
+bool imu_apply_rate(void)
+{
+    if (!ready) return false;
+    struct bmi2_sens_config sc[2];
+    sc[0].type = BMI2_ACCEL;
+    sc[1].type = BMI2_GYRO;
+    if (bmi2_get_sensor_config(sc, 2, &dev) != BMI2_OK) return false;
+    sc[0].cfg.acc.odr = odr_for(cfg.imu_rate_ms);
+    sc[1].cfg.gyr.odr = odr_for(cfg.imu_rate_ms);
+    return bmi2_set_sensor_config(sc, 2, &dev) == BMI2_OK;
+}
 
 /* --- publish --------------------------------------------------------------- */
 

@@ -76,7 +76,12 @@ void cfg_defaults(struct rcm_config_t *c)
     c->output_settle_ms  = 100;   /* a relay coil's flyback needs time to collapse
                                    * before the sense node means anything */
     c->fault_confirm_ms  = 500;
-    c->imu_rate_ms       = 20;    /* 50Hz -- what a Bosch MM5.10 runs at */
+    /* 200Hz. Measured ceiling on this hardware is ~250Hz -- the main loop iterates in
+     * about 4ms, dominated by the blocking I2C read -- and at 4ms it already misses
+     * deadlines (246Hz measured against 250 nominal). 5ms is met with margin (202.6Hz
+     * measured) and costs 18% of a 500k bus. A consistent interval matters more to an
+     * IMU consumer than a faster but jittery one. */
+    c->imu_rate_ms       = 5;
 
     for (uint8_t i = 0; i < RCM_CHANNELS; i++) {
         c->ch[i].mode      = straps.keypad ? CH_INPUT : CH_OUTPUT;

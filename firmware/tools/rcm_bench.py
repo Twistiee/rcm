@@ -95,6 +95,9 @@ OP = {
     # The one that does anything today is 'imulevel': hold that pin high for 2s and the
     # board re-levels its IMU, no laptop needed. Held, not tapped, and never auto-saved.
     "auxfunc":      0x1F,
+    # IMU publish period in ms. The sensor ODR follows automatically.
+    #   imurate <ms>     10 = 100Hz, 5 = 200Hz, 3 = 333Hz, 2 = 500Hz
+    "imurate":      0x20,
 }
 # Vehicle axis <- sensor axis. Spelled as axis names because "0x82" is unreadable and
 # getting it wrong is not something the board can detect for you.
@@ -448,8 +451,8 @@ CFG_SEL = {
            "   (last calibration: %s)"
            % (_axis(d[2]), _axis(d[3]), _axis(d[4]), d[7],
               IMU_LEVEL_RESULT.get(d[5], "?"))),
-    0x0B: ("timing2", 1, lambda d: "ECU follow goes stale after %dms"
-           % _u16(d, 2)),
+    0x0B: ("timing2", 1, lambda d: "ECU follow stale after %dms, IMU publish %dms (%d Hz)"
+           % (_u16(d, 2), _u16(d, 4), (1000 // _u16(d, 4)) if _u16(d, 4) else 0)),
     0x0A: ("follow", 12, lambda d: "channel %s <- frame 0x%03X bit %d%s"
            % (_ch(d[2]), _u16(d, 4), d[3], _bit_name(_u16(d, 4), d[3]))),
     0x09: ("channel", CHANNELS, lambda d: "%-6s %-9s flags 0x%02X func %-14s param %d"
@@ -640,6 +643,12 @@ def cmd_ctl(bus, args):
             sys.exit("each sensor axis may be used once -- %s names one twice, which "
                      "is a fold, not a rotation: one axis would never be read at all."
                      % " ".join(args.args))
+
+    elif args.op == "imurate":
+        if len(args.args) != 1:
+            sys.exit("imurate <ms> -- publish period. 10=100Hz, 5=200Hz, 3=333Hz, 2=500Hz")
+        ms = int(args.args[0], 0)
+        extra = [ms & 0xFF, ms >> 8]
 
     elif args.op == "auxfunc":
         if len(args.args) != 2:

@@ -11,7 +11,7 @@ unit-tested against a model of the board. None of it has seen a relay.
 pio run                          build for the board
 pio run -t upload                flash over J_SWD with an ST-Link
 pio run -e selftest -t upload    bring-up console on the USB-C port
-pio test -e native               259 host unit tests
+pio test -e native               261 host unit tests
 python tools/gen_dbc.py          regenerate ../docs/rcm.dbc
 python tools/test_rcm_bench.py   self-test the bench tool, no hardware needed
 python tools/rcm_bench.py --help talk to a board over CAN
@@ -251,6 +251,42 @@ the three axes were distinct, and let this through.)
 Mount it **rigidly** either way -- on a compliant bracket you measure the bracket
 resonating, not the car.
 
+### IMU publish rate, and what actually limits it
+
+`imu_rate_ms` sets the publish period; the sensor ODR follows it automatically, at least
+2x where the part allows. Publishing faster than the ODR is the trap worth naming --
+the same sample goes out repeatedly and looks exactly like real data arriving faster.
+
+```
+rcm_bench.py ctl imurate 5      # 200 Hz
+rcm_bench.py get timing2        # reads it back
+```
+
+Measured on real hardware over the bus, not calculated:
+
+| Setting | Nominal | Measured | Bus load |
+|---|---|---|---|
+| 20 ms | 50 Hz | 50.5 Hz | 6.1% |
+| 10 ms | 100 Hz | 101.3 Hz | 10.1% |
+| **5 ms** | **200 Hz** | **202.6 Hz** | **18.0%** |
+| 4 ms | 250 Hz | 246.4 Hz | 21.4% |
+| 3 ms | 333 Hz | 249.5 Hz | 21.7% |
+| 2 ms | 500 Hz | 253.1 Hz | 22.0% |
+
+**The board tops out at about 250 Hz**, and asking for more just gets you 250. The limit
+is the main loop, which iterates in roughly 4 ms -- the blocking I2C read of the BMI270,
+plus the shift-register I/O and the CAN work -- not the sensor (which reaches 800 Hz) and
+not the bus.
+
+**5 ms is the default rather than 4** because at 4 ms the board already misses deadlines:
+246 Hz measured against 250 nominal, so the interval is irregular. At 5 ms it exceeds
+nominal (202.6 against 200), meaning every deadline is met with room to spare. A
+consistent interval is worth more to whatever consumes the data than 20% more samples
+arriving unevenly.
+
+Raising the ceiling would mean a non-blocking or DMA I2C read. Worth doing only if
+something downstream is provably sampling faster than 200 Hz.
+
 ### Bitrate
 
 Solved for at runtime from the actual APB1 clock, targeting an 87.5% sample point, and
@@ -451,7 +487,7 @@ and also cross-checks the tool's byte packing against the DBC — so bench tool,
 
 ## Testing
 
-259 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
+261 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
 `.cpp` files against a model of the board in `test/stubs/`, so they test the code that
 ships rather than a transcription of it.
 
