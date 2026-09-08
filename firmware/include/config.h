@@ -123,8 +123,13 @@ enum ch_func_t {
     FN_IN_DOOR,
     FN_IN_BONNET,
     FN_IN_TRACTION_CTL,
-    FN_IN_IMU_LEVEL,    /* a momentary that re-levels the IMU -- see imu_level.cpp.
-                         * HELD, not tapped, and the result is never auto-saved. */
+    FN_IN_IMU_LEVEL,    /* held: re-measure UP, keeping the forward direction  */
+    FN_IN_IMU_FWD,      /* held with the REAR edge at the ground: re-measure
+                         * FORWARD, keeping up. Gravity cannot see yaw, so this
+                         * is the only way to tell the board which way it faces */
+    FN_IN_CFG_SAVE,     /* held: commit the config to EEPROM. Calibration is
+                         * never auto-saved, so without this the switches can
+                         * level a board but not finish the job without a laptop */
     FN_IN_LAUNCH_ARM,
     FN_IN_PIT_LIMITER,
     FN_IN_MAP_SELECT,
@@ -153,7 +158,7 @@ struct ch_cfg_t {
  * it -- which is the whole reason `version` and `size` are in there. Note `size` alone
  * would catch a struct that GREW; the version is what catches one that changed meaning
  * without changing length. */
-#define RCM_CFG_VERSION  6
+#define RCM_CFG_VERSION  7
 
 #define RCM_ECU_CMDS 6
 /* Twelve, not six, because a keypad is ten buttons and ten LAMPS -- and a lamp that
@@ -240,13 +245,20 @@ struct rcm_config_t {
     uint32_t peer_toggle_mask;     /* of those, ones where a PRESS toggles rather
                                     * than follows -- momentary button, latching load */
 
-    /* IMU axis remap. imu_map[i] says which SENSOR axis feeds vehicle axis i
-     * (0=X 1=Y 2=Z), with bit 7 set to negate it. Vehicle axes are the automotive
-     * convention: X forward, Y left, Z up. This exists because the board does not
-     * always get to be mounted flat and forward -- a keypad in a door card is the
-     * obvious case. Default is identity, which is only right if the board is lying
-     * flat with its +X edge pointing down the car. */
-    uint8_t  imu_map[3];
+    /* IMU orientation, as two MEASURED unit vectors in SENSOR axes: where UP is, and
+     * where FORWARD is. Vehicle axes are the automotive convention -- X forward, Y left,
+     * Z up -- and the rotation is built from these by imu_basis().
+     *
+     * This used to be a signed axis permutation, which is exact, cheap, and cannot
+     * describe a mounting that is not square. Real brackets never are, and the error is
+     * silent: a 10 degree lean puts 0.17 g of gravity into the longitudinal reading,
+     * permanently, which is most of a moderate braking event. Vectors cost 24 bytes and
+     * a 3x3 multiply -- about 50ns on this part's FPU -- and describe any angle exactly,
+     * with a square mounting still landing on exactly +/-1.
+     *
+     * Default is identity: board flat, its +X edge pointing down the car. */
+    float    imu_up[3];
+    float    imu_fwd[3];
 
     /* What the three J_AUX pins do. Same function labels as a channel, for the same
      * reason: the label IS the role, so there is one record of it. Until this existed

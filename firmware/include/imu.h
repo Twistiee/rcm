@@ -32,19 +32,54 @@ float imu_gyro(uint8_t axis);
 float imu_accel_raw(uint8_t axis);
 float imu_gyro_raw(uint8_t axis);
 
-/* Solve a map from one gravity reading. Returns an RCM_IMU_LEVEL_* code; map_out and
- * tilt_deg are only meaningful on RCM_IMU_LEVEL_OK. Pure maths, no hardware -- see
- * imu_level.cpp for what it can and cannot determine. */
-uint8_t imu_solve_level(const float a[3], const float g[3], uint8_t map_out[3],
-                        float *tilt_deg);
+/* --- orientation maths (imu_level.cpp, no hardware, host-tested) --------------
+ * The orientation is two MEASURED unit vectors in SENSOR axes -- where up is and where
+ * forward is -- not an axis permutation. A permutation can only snap to 90 degrees, and
+ * a real bracket is never square: a 10 degree lean puts 0.17 g of gravity into the
+ * longitudinal reading permanently. Vectors describe any angle exactly. */
+
+/* Build vehicle-from-sensor rotation R (rows = vehicle X, Y, Z). False if the two
+ * vectors cannot define a frame -- zero length, or forward parallel to up. */
+bool imu_basis(const float up[3], const float fwd[3], float R[3][3]);
+
+/* The default: board flat, +X edge pointing down the car. */
+void imu_identity(float up[3], float fwd[3]);
+
+/* One gravity reading -> unit vector, or an RCM_IMU_LEVEL_* refusal. There is no tilt
+ * limit: any mounting angle is representable now. Still refuses if the board is moving
+ * or turning, because then the reading is not gravity. */
+uint8_t imu_solve_gravity(const float a[3], const float g[3], float out[3]);
+
+/* Angle between two unit vectors, and whether they are far enough apart to define a
+ * frame. The separation test is what catches "held the board flat during the FORWARD
+ * step", whose answer would otherwise be the board normal. */
+float imu_angle_deg(const float a[3], const float b[3]);
+bool  imu_separated_enough(const float a[3], const float b[3]);
+
+/* Reporting only: the nearest SQUARE mounting, and how far off square it really is. */
+void imu_nearest_map(const float R[3][3], uint8_t map_out[3], float *off_deg);
+
+/* Exact +/-1 vector for an axis-map byte, so the byte-oriented SET_IMU_MAP still works
+ * and a square mounting stays exact. */
+bool imu_vec_from_axis(uint8_t b, float out[3]);
 
 /* True if a map names each of the three sensor axes exactly once. */
 bool imu_map_valid(const uint8_t map[3]);
 
-/* Auto-level from the current reading and apply the result to cfg (RAM only, like
- * every other setter -- SAVE_CONFIG to keep it). Returns an RCM_IMU_LEVEL_* code and
- * stores it, with the measured tilt, for RCM_CFG_SEL_IMU to report. */
+/* Re-measure UP from gravity, keeping the forward direction. Applied to cfg in RAM
+ * only -- never auto-saved. */
 uint8_t imu_autolevel(void);
+
+/* Re-measure FORWARD: hold the board so the edge you want at the REAR of the car points
+ * at the ground. The axis reading +1 g is then the one that will face forward. Keeps the
+ * up direction. */
+uint8_t imu_set_forward(void);
+
+/* The live vehicle-from-sensor rotation, for reporting. */
+void imu_current_basis(float R[3][3]);
+
+/* Rebuild the rotation after cfg.imu_up / cfg.imu_fwd are written directly. */
+void imu_reload_basis(void);
 uint8_t imu_level_result(void);   /* last imu_autolevel() code, NONE before any */
 uint8_t imu_level_tilt_deg(void); /* saturating, 90 if never attempted */
 uint32_t imu_level_when(void);    /* millis() of the last attempt, 0 if never -- the

@@ -5,6 +5,7 @@
 #include <string.h>
 #include "board.h"
 #include "config.h"
+#include "imu.h"
 #include "store.h"
 #include "protocol.h"
 
@@ -91,9 +92,7 @@ void cfg_defaults(struct rcm_config_t *c)
     c->peer_mask        = 0;
     c->peer_toggle_mask = 0;
 
-    c->imu_map[0] = 0;  /* identity: vehicle X = sensor X, and so on */
-    c->imu_map[1] = 1;
-    c->imu_map[2] = 2;
+    imu_identity(c->imu_up, c->imu_fwd);   /* flat, +X edge down the car */
 
     /* Ignition defaults to a plain level, which is what a key or a maintained switch
      * gives. Nothing about cranking is configured out of the box: a board that could

@@ -82,9 +82,23 @@ bool imu_ok(void) { return false; }
  * only has to record that the opcode reached it, so the magic-byte guard can be tested
  * without a BMI270. */
 static int AUTOLEVEL_CALLS = 0;
+static int FORWARD_CALLS   = 0;
 uint8_t imu_autolevel(void)      { AUTOLEVEL_CALLS++; return RCM_IMU_LEVEL_OK; }
+uint8_t imu_set_forward(void)    { FORWARD_CALLS++;   return RCM_IMU_LEVEL_OK; }
 uint8_t imu_level_result(void)   { return RCM_IMU_LEVEL_NONE; }
 uint8_t imu_level_tilt_deg(void) { return 90; }
+uint32_t imu_level_when(void)    { return 0; }
+void imu_reload_basis(void)      {}
+void imu_current_basis(float R[3][3])
+{
+    /* The real basis lives in imu.cpp, which needs a BMI270. Building it here from the
+     * same cfg vectors keeps the config read-back test honest about what it reports. */
+    if (!imu_basis(cfg.imu_up, cfg.imu_fwd, R)) {
+        float u[3], f[3];
+        imu_identity(u, f);
+        (void)imu_basis(u, f, R);
+    }
+}
 
 bool     app_outputs_live(void) { return FAKE_OUTPUTS_LIVE; }
 void     app_set_outputs_live(bool v) { FAKE_OUTPUTS_LIVE = v; sr_outputs_enable(v); }
@@ -710,6 +724,17 @@ static const can_frame_t *ask(uint8_t sel, uint8_t idx = 0)
     return cfg_reply();
 }
 
+/* The stored orientation is a rotation now, so "the map" is derived rather than held.
+ * These tests still speak in map bytes because that is what the wire protocol and a
+ * person both use; this is the translation. */
+static uint8_t cfg_map_byte(int i)
+{
+    float R[3][3]; uint8_t m[3]; float off;
+    imu_current_basis(R);
+    imu_nearest_map(R, m, &off);
+    return m[i];
+}
+
 /* --- IMU axis map ------------------------------------------------------------
  * The board does not have to be mounted any particular way up, but it does have to be
  * TOLD which way it is, and a bad map is worse than no map: it reports confident,
@@ -717,22 +742,43 @@ static const can_frame_t *ask(uint8_t sel, uint8_t idx = 0)
 
 static void test_setting_the_imu_map_takes(void)
 {
-    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_MAP, 0x81, 0x00, 0x82 });
+    /* X = -sensor Y, Z = -sensor Z. Y is then forced to -sensor X to stay right-handed;
+     * asking for +X here would be a left-handed frame and is refused, see below. */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_MAP, 0x81, 0x80, 0x82 });
     run_ms(TICK_MS * 2);
-    TEST_ASSERT_EQUAL_HEX8(0x81, cfg.imu_map[0]);   /* vehicle X = -sensor Y */
-    TEST_ASSERT_EQUAL_HEX8(0x00, cfg.imu_map[1]);
-    TEST_ASSERT_EQUAL_HEX8(0x82, cfg.imu_map[2]);
+    TEST_ASSERT_EQUAL_HEX8(0x81, cfg_map_byte(0));   /* vehicle X = -sensor Y */
+    TEST_ASSERT_EQUAL_HEX8(0x80, cfg_map_byte(1));
+    TEST_ASSERT_EQUAL_HEX8(0x82, cfg_map_byte(2));
 }
 
 static void test_the_imu_map_reads_back(void)
 {
-    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_MAP, 0x82, 0x81, 0x00 });
+    /* The keypad mounting: X = -sensor Y, Y = +sensor X, Z = +sensor Z. */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_MAP, 0x81, 0x00, 0x02 });
     run_ms(TICK_MS * 2);
     const can_frame_t *r = ask(RCM_CFG_SEL_IMU);
     TEST_ASSERT_NOT_NULL(r);
-    TEST_ASSERT_EQUAL_HEX8(0x82, r->data[2]);
-    TEST_ASSERT_EQUAL_HEX8(0x81, r->data[3]);
-    TEST_ASSERT_EQUAL_HEX8(0x00, r->data[4]);
+    TEST_ASSERT_EQUAL_HEX8(0x81, r->data[2]);
+    TEST_ASSERT_EQUAL_HEX8(0x00, r->data[3]);
+    TEST_ASSERT_EQUAL_HEX8(0x02, r->data[4]);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0, r->data[7], "a square mounting is 0 deg off square");
+}
+
+static void test_a_left_handed_map_is_refused_not_silently_corrected(void)
+{
+    /* X = -sensor Y with Z = -sensor Z forces Y = -sensor X. Asking for +sensor X is a
+     * MIRRORED frame: it reads perfectly plausibly standing still and only shows up as
+     * the car yawing the wrong way through a corner. The old validator checked only that
+     * the three axes were distinct and let this through.
+     *
+     * Refused rather than corrected on purpose -- storing something other than what was
+     * typed would mean `get imu` disagreeing with the command that set it. */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_MAP, 0x81, 0x00, 0x82 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_EQUAL_HEX8_MESSAGE(0x00, cfg_map_byte(0),
+        "a left-handed map was accepted");
+    TEST_ASSERT_EQUAL_HEX8(0x01, cfg_map_byte(1));
+    TEST_ASSERT_EQUAL_HEX8(0x02, cfg_map_byte(2));
 }
 
 static void test_a_map_with_a_repeated_axis_is_refused(void)
@@ -742,16 +788,16 @@ static void test_a_map_with_a_repeated_axis_is_refused(void)
      * still, which is when anyone would check it. */
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_MAP, 0x00, 0x00, 0x02 });
     run_ms(TICK_MS * 2);
-    TEST_ASSERT_EQUAL_HEX8(0x00, cfg.imu_map[0]);   /* untouched defaults */
-    TEST_ASSERT_EQUAL_HEX8(0x01, cfg.imu_map[1]);
-    TEST_ASSERT_EQUAL_HEX8(0x02, cfg.imu_map[2]);
+    TEST_ASSERT_EQUAL_HEX8(0x00, cfg_map_byte(0));   /* untouched defaults */
+    TEST_ASSERT_EQUAL_HEX8(0x01, cfg_map_byte(1));
+    TEST_ASSERT_EQUAL_HEX8(0x02, cfg_map_byte(2));
 }
 
 static void test_a_map_naming_a_fourth_axis_is_refused(void)
 {
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_MAP, 0x00, 0x01, 0x03 });
     run_ms(TICK_MS * 2);
-    TEST_ASSERT_EQUAL_HEX8(0x02, cfg.imu_map[2]);   /* still the default */
+    TEST_ASSERT_EQUAL_HEX8(0x02, cfg_map_byte(2));   /* still the default */
 }
 
 static void test_a_short_imu_map_frame_is_refused(void)
@@ -759,8 +805,8 @@ static void test_a_short_imu_map_frame_is_refused(void)
     /* Two of the three axes is not a partial update, it is an undefined map. */
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IMU_MAP, 0x02, 0x01 });
     run_ms(TICK_MS * 2);
-    TEST_ASSERT_EQUAL_HEX8(0x00, cfg.imu_map[0]);
-    TEST_ASSERT_EQUAL_HEX8(0x02, cfg.imu_map[2]);
+    TEST_ASSERT_EQUAL_HEX8(0x00, cfg_map_byte(0));
+    TEST_ASSERT_EQUAL_HEX8(0x02, cfg_map_byte(2));
 }
 
 static void test_auto_level_needs_its_magic_byte(void)
@@ -947,6 +993,55 @@ static void test_but_it_works_once_released_and_pressed_properly(void)
     aux_hold(1, 2500);
     TEST_ASSERT_EQUAL_INT_MESSAGE(before + 1, AUTOLEVEL_CALLS,
         "the pin stayed dead after being released");
+}
+
+static void test_the_forward_pin_aims_the_board(void)
+{
+    /* Gravity cannot see yaw, so levelling alone can never tell a board which way it
+     * faces. This is the other half: hold the edge you want at the REAR at the ground. */
+    cfg.aux_func[0] = FN_IN_IMU_FWD;
+    const int before = FORWARD_CALLS;
+    aux_hold(0, 2500);
+    TEST_ASSERT_EQUAL_INT(before + 1, FORWARD_CALLS);
+}
+
+static void test_the_two_calibration_pins_do_different_jobs(void)
+{
+    /* If these ever crossed, holding one switch would silently do the other, and both
+     * answers look identical on the LEDs. */
+    cfg.aux_func[0] = FN_IN_IMU_FWD;
+    cfg.aux_func[1] = FN_IN_IMU_LEVEL;
+    const int lvl = AUTOLEVEL_CALLS, fwd = FORWARD_CALLS;
+    aux_hold(0, 2500);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(lvl, AUTOLEVEL_CALLS, "the forward pin levelled");
+    TEST_ASSERT_EQUAL_INT(fwd + 1, FORWARD_CALLS);
+    aux_hold(1, 2500);
+    TEST_ASSERT_EQUAL_INT(lvl + 1, AUTOLEVEL_CALLS);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(fwd + 1, FORWARD_CALLS, "the level pin aimed");
+}
+
+static void test_the_save_pin_commits_to_eeprom(void)
+{
+    /* Calibration is never auto-saved, so without this the switches can level and aim a
+     * board but not finish the job -- the whole procedure would still need a laptop. */
+    cfg.aux_func[2] = FN_IN_CFG_SAVE;
+    cfg.ign_crank_max_ms = 4321;                 /* something to look for afterwards */
+    aux_hold(2, 2500);
+    TEST_ASSERT_TRUE_MESSAGE(proto_saved_when() != 0, "no save was recorded");
+    TEST_ASSERT_TRUE_MESSAGE(proto_saved_ok(), "the save failed");
+
+    memset(&cfg, 0, sizeof(cfg));
+    cfg_load();
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(4321, cfg.ign_crank_max_ms,
+        "the config did not survive a reload, so nothing was really committed");
+}
+
+static void test_a_tap_on_the_save_pin_does_nothing(void)
+{
+    cfg.aux_func[2] = FN_IN_CFG_SAVE;
+    aux_hold(2, 300);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, proto_saved_when(),
+        "a brief tap committed the config");
 }
 
 static void test_the_aux_labels_read_back(void)
@@ -1572,6 +1667,7 @@ int main(void)
     RUN_TEST(test_a_second_slot_sends_its_own_command);
     RUN_TEST(test_setting_the_imu_map_takes);
     RUN_TEST(test_the_imu_map_reads_back);
+    RUN_TEST(test_a_left_handed_map_is_refused_not_silently_corrected);
     RUN_TEST(test_a_map_with_a_repeated_axis_is_refused);
     RUN_TEST(test_a_map_naming_a_fourth_axis_is_refused);
     RUN_TEST(test_a_short_imu_map_frame_is_refused);
@@ -1587,6 +1683,10 @@ int main(void)
     RUN_TEST(test_releasing_and_holding_again_levels_again);
     RUN_TEST(test_a_switch_closed_at_boot_does_not_level);
     RUN_TEST(test_but_it_works_once_released_and_pressed_properly);
+    RUN_TEST(test_the_forward_pin_aims_the_board);
+    RUN_TEST(test_the_two_calibration_pins_do_different_jobs);
+    RUN_TEST(test_the_save_pin_commits_to_eeprom);
+    RUN_TEST(test_a_tap_on_the_save_pin_does_nothing);
     RUN_TEST(test_the_aux_labels_read_back);
     RUN_TEST(test_a_bad_aux_pin_is_refused);
     RUN_TEST(test_config_read_back_returns_what_was_set);

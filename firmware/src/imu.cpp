@@ -55,6 +55,7 @@ static float gyr_r[3];   /* sensor axes, deg/s -- remap is what everything else 
 static uint8_t level_res  = RCM_IMU_LEVEL_NONE;
 static uint8_t level_tilt = 90;
 static uint32_t level_at;
+static void rebuild_basis(void);
 
 /* --- Bosch API interface shims --------------------------------------------- */
 
@@ -131,6 +132,7 @@ bool imu_begin(void)
 
     if (bmi2_set_sensor_config(sc, 2, &dev) != BMI2_OK) return false;
 
+    rebuild_basis();
     ready = true;
     return true;
 }
@@ -139,18 +141,22 @@ bool imu_ok(void) { return ready; }
 
 /* --- read ------------------------------------------------------------------ */
 
-/* imu_map[i] = source axis for vehicle axis i, bit 7 = negate.
- *
- * The axis is masked to 0..2 rather than 0..3: the low two bits can hold a 3, and a 3
- * would index one float past the end of a three-float array. Nothing should ever store
- * one -- imu_map_valid() rejects it on the way in -- but this reads whatever survived
- * in EEPROM, so it does not get to assume that. */
-static inline float remap(const float *src, uint8_t axis)
+/* The rotation is rebuilt whenever the stored vectors change rather than every sample:
+ * it is the same answer each time, and imu_tick() runs at the sensor rate. */
+static float basis[3][3];
+static bool  basis_ok;
+
+static void rebuild_basis(void)
 {
-    const uint8_t m = cfg.imu_map[axis];
-    uint8_t s = m & 0x03;
-    if (s > 2) s = 0;
-    return (m & 0x80) ? -src[s] : src[s];
+    basis_ok = imu_basis(cfg.imu_up, cfg.imu_fwd, basis);
+    if (!basis_ok) {
+        /* Whatever is stored cannot define a frame -- a corrupt record, or vectors that
+         * ended up parallel. Fall back to identity rather than publishing noise: wrong
+         * but coherent beats a NaN going out on the bus as the car's motion. */
+        float u[3], f[3];
+        imu_identity(u, f);
+        (void)imu_basis(u, f, basis);
+    }
 }
 
 void imu_tick(void)
@@ -167,11 +173,10 @@ void imu_tick(void)
                          (float)d.gyr.y * GYR_RANGE_DPS / 32768.0f,
                          (float)d.gyr.z * GYR_RANGE_DPS / 32768.0f };
 
+    for (uint8_t i = 0; i < 3; i++) { acc_r[i] = a[i]; gyr_r[i] = g[i]; }
     for (uint8_t i = 0; i < 3; i++) {
-        acc_r[i] = a[i];
-        gyr_r[i] = g[i];
-        acc_v[i] = remap(a, i);
-        gyr_v[i] = remap(g, i);
+        acc_v[i] = basis[i][0] * a[0] + basis[i][1] * a[1] + basis[i][2] * a[2];
+        gyr_v[i] = basis[i][0] * g[0] + basis[i][1] * g[1] + basis[i][2] * g[2];
     }
 }
 
@@ -184,32 +189,96 @@ uint8_t imu_level_result(void)   { return level_res; }
 uint8_t imu_level_tilt_deg(void) { return level_tilt; }
 uint32_t imu_level_when(void)    { return level_at; }
 
+/* Shared by both calibration steps: take a fresh sample, insist the board is actually
+ * still, and hand back the gravity direction. Whether that direction means "up" or
+ * "forward" is the caller's business -- it is the same measurement either way, which is
+ * why one switch can level a board and another can aim it. */
+static uint8_t measure(float out[3])
+{
+    if (!ready) return RCM_IMU_LEVEL_NO_IMU;
+    imu_tick();                     /* describe the board NOW, not a second ago */
+    return imu_solve_gravity(acc_r, gyr_r, out);
+}
+
+static void stamp(uint8_t r, float off_deg)
+{
+    level_at   = millis() ? millis() : 1;
+    level_res  = r;
+    level_tilt = (uint8_t)(off_deg < 0.0f ? 0 : (off_deg > 90.0f ? 90 : (uint8_t)(off_deg + 0.5f)));
+}
+
+/* UP, from gravity, keeping whatever forward direction is already stored. Preserving
+ * forward is the whole point: gravity cannot see yaw, so re-levelling a board must not
+ * be allowed to guess at a direction somebody already established. */
 uint8_t imu_autolevel(void)
 {
-    /* Stamped for every attempt including the refusals -- the LED has to report a
-     * refusal just as clearly as a success, or a press that did nothing looks the same
-     * as a press that was not seen. */
-    level_at = millis() ? millis() : 1;
-    if (!ready) { level_res = RCM_IMU_LEVEL_NO_IMU; level_tilt = 90; return level_res; }
+    float up[3];
+    const uint8_t r = measure(up);
+    if (r != RCM_IMU_LEVEL_OK) { stamp(r, 90.0f); return r; }
 
-    /* Solve from a fresh sample rather than whatever imu_tick() last left behind, so
-     * the answer describes the board now and not a second ago. */
-    imu_tick();
+    /* If the new up is parallel to the stored forward, that forward is meaningless for
+     * this mounting -- the board has been turned onto a different face. Fall back to a
+     * right-handed guess rather than refuse, because UP is the half actually measured
+     * and is worth keeping; the installer then aims it with the forward switch. */
+    float fwd[3] = { cfg.imu_fwd[0], cfg.imu_fwd[1], cfg.imu_fwd[2] };
+    if (!imu_separated_enough(up, fwd)) {
+        static const float cand[3][3] = { {1,0,0}, {0,1,0}, {0,0,1} };
+        for (uint8_t i = 0; i < 3; i++)
+            if (imu_separated_enough(up, cand[i])) {
+                fwd[0] = cand[i][0]; fwd[1] = cand[i][1]; fwd[2] = cand[i][2];
+                break;
+            }
+    }
 
-    uint8_t map[3];
-    float   tilt = 90.0f;
-    const uint8_t r = imu_solve_level(acc_r, gyr_r, map, &tilt);
+    float R[3][3];
+    if (!imu_basis(up, fwd, R)) { stamp(RCM_IMU_LEVEL_TILTED, 90.0f); return RCM_IMU_LEVEL_TILTED; }
 
-    level_tilt = (uint8_t)(tilt < 0.0f ? 0 : (tilt > 90.0f ? 90 : (uint8_t)(tilt + 0.5f)));
-    level_res  = r;
-    if (r != RCM_IMU_LEVEL_OK) return r;   /* refused: leave the old map alone */
+    memcpy(cfg.imu_up,  up,  sizeof up);
+    memcpy(cfg.imu_fwd, fwd, sizeof fwd);
+    rebuild_basis();
+    imu_tick();                     /* so the next reader sees the new axes, not a
+                                     * stale sample in the old ones */
 
-    for (uint8_t i = 0; i < 3; i++) cfg.imu_map[i] = map[i];
-    /* Re-run the remap so a reader immediately after this sees the new axes rather
-     * than one stale sample in the old ones. */
-    imu_tick();
-    return r;
+    uint8_t m[3]; float off = 0.0f;
+    imu_nearest_map(basis, m, &off);
+    stamp(RCM_IMU_LEVEL_OK, off);   /* reported as "how far off square", not a refusal --
+                                     * a leaning mount is now corrected, not rejected */
+    return RCM_IMU_LEVEL_OK;
 }
+
+/* FORWARD. Hold the board so the edge you want at the REAR of the car points at the
+ * ground: the axis reading +1 g is then the one that will face forward. Keeps up. */
+uint8_t imu_set_forward(void)
+{
+    float fwd[3];
+    const uint8_t r = measure(fwd);
+    if (r != RCM_IMU_LEVEL_OK) { stamp(r, 90.0f); return r; }
+
+    /* Held flat instead of on edge: the answer would be the board normal, which is not a
+     * direction a car travels in. Refuse rather than store it. */
+    if (!imu_separated_enough(cfg.imu_up, fwd)) {
+        stamp(RCM_IMU_LEVEL_TILTED, imu_angle_deg(cfg.imu_up, fwd));
+        return RCM_IMU_LEVEL_TILTED;
+    }
+
+    float R[3][3];
+    if (!imu_basis(cfg.imu_up, fwd, R)) { stamp(RCM_IMU_LEVEL_TILTED, 90.0f); return RCM_IMU_LEVEL_TILTED; }
+
+    memcpy(cfg.imu_fwd, fwd, sizeof fwd);
+    rebuild_basis();
+    imu_tick();
+
+    uint8_t m[3]; float off = 0.0f;
+    imu_nearest_map(basis, m, &off);
+    stamp(RCM_IMU_LEVEL_OK, off);
+    return RCM_IMU_LEVEL_OK;
+}
+
+/* The live rotation, for whoever has to report it. */
+void imu_current_basis(float R[3][3]) { memcpy(R, basis, sizeof basis); }
+
+/* Adopt vectors that someone else wrote straight into cfg. */
+void imu_reload_basis(void) { rebuild_basis(); }
 
 /* --- publish --------------------------------------------------------------- */
 

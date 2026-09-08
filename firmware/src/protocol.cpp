@@ -68,6 +68,10 @@ static uint32_t aux_since[RCM_AUX_INPUTS];
 static uint8_t  aux_fired;
 static bool     aux_primed;
 static uint32_t aux_begin_ms;
+/* A save has no other way to announce itself -- nothing about the board looks different
+ * afterwards -- so the LEDs report it, and therefore so must this. */
+static uint32_t aux_saved_at;
+static bool     aux_save_ok;
 static bool     reboot_pending;
 
 /* Peer mirroring keeps an edge memory so toggle channels fire once per press
@@ -118,6 +122,10 @@ void proto_begin(void)
     ever_addressed = false;
     aux_prev = 0; aux_fired = 0; aux_primed = false;
     aux_begin_ms = millis();
+    /* A fresh start has not just saved anything. Harmless on real hardware, where these
+     * begin zeroed, but a reset must not leave the LEDs claiming a save that happened
+     * before it. */
+    aux_saved_at = 0; aux_save_ok = false;
     memset(aux_since, 0, sizeof(aux_since));
     reboot_pending = false;
     filters_dirty = false;
@@ -311,11 +319,20 @@ static void send_cfg_reply(uint8_t sel, uint8_t idx)
     case RCM_CFG_SEL_AUX:
         p[0] = cfg.aux_func[0]; p[1] = cfg.aux_func[1]; p[2] = cfg.aux_func[2];
         break;
-    case RCM_CFG_SEL_IMU:
-        p[0] = cfg.imu_map[0]; p[1] = cfg.imu_map[1]; p[2] = cfg.imu_map[2];
+    case RCM_CFG_SEL_IMU: {
+        /* Reported as the NEAREST square mounting plus how far off square it really is.
+         * The stored orientation is a rotation now, so "the map" is a readable summary
+         * rather than the truth -- and the off-square figure is the part that matters,
+         * because it is the lean that used to be silently ignored. */
+        float R[3][3]; uint8_t m[3]; float off = 0.0f;
+        imu_current_basis(R);
+        imu_nearest_map(R, m, &off);
+        p[0] = m[0]; p[1] = m[1]; p[2] = m[2];
         p[3] = imu_level_result();
         p[4] = imu_level_tilt_deg();
+        p[5] = (uint8_t)(off > 90.0f ? 90 : (uint8_t)(off + 0.5f));
         break;
+    }
     case RCM_CFG_SEL_FOLLOW:
         if (idx >= RCM_ECU_FOLLOWS) return;
         p[0] = cfg.ecu_follow[idx].ch;
@@ -417,8 +434,27 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
         /* All three or none. A map with a repeated axis is not a rotation -- it folds
          * two vehicle axes onto one sensor axis, leaving a third that no reading can
          * ever reach, so the board would report a car incapable of yawing. */
-        if (f->len >= 4 && imu_map_valid(&f->data[1]))
-            for (uint8_t i = 0; i < 3; i++) cfg.imu_map[i] = f->data[1 + i];
+        /* Byte-oriented on the wire, exact vectors in the store: a square mounting
+         * still lands on exactly +/-1, so nothing is lost by describing it this way. */
+        if (f->len >= 4 && imu_map_valid(&f->data[1])) {
+            float fwd[3], up[3], R[3][3];
+            if (imu_vec_from_axis(f->data[1], fwd) && imu_vec_from_axis(f->data[3], up)
+                && imu_basis(up, fwd, R)) {
+                /* X and Z are taken as given; Y is fully determined by them. If the Y
+                 * that was ASKED for is not the Y that falls out, the map is left-handed
+                 * (or simply inconsistent) and is refused rather than quietly corrected
+                 * -- a tool that silently stores something other than what you typed is
+                 * worse than one that says no. A left-handed frame reads perfectly
+                 * plausibly standing still and only shows as the car yawing backwards. */
+                uint8_t m[3]; float off;
+                imu_nearest_map(R, m, &off);
+                if (m[1] == f->data[2]) {
+                    memcpy(cfg.imu_fwd, fwd, sizeof fwd);
+                    memcpy(cfg.imu_up,  up,  sizeof up);
+                    imu_reload_basis();
+                }
+            }
+        }
         break;
 
     case RCM_OP_SET_AUX_FUNC:
@@ -697,7 +733,12 @@ void proto_poll(uint32_t now_ms)
             if ((uint32_t)(now_ms - aux_since[a]) < AUX_HOLD_MS) continue;
 
             aux_fired |= (uint8_t)(1u << a);
-            if (cfg.aux_func[a] == FN_IN_IMU_LEVEL) imu_autolevel();
+            switch (cfg.aux_func[a]) {
+            case FN_IN_IMU_LEVEL: imu_autolevel();   break;
+            case FN_IN_IMU_FWD:   imu_set_forward(); break;
+            case FN_IN_CFG_SAVE:  aux_save_ok = cfg_save(); aux_saved_at = now_ms ? now_ms : 1; break;
+            default: break;
+            }
         }
         aux_prev = now_aux;
     aux_done: ;
@@ -753,10 +794,15 @@ bool proto_ever_addressed(void) { return ever_addressed; }
  * exactly like one still waiting. Releasing early therefore aborts, visibly. */
 bool proto_aux_level_holding(void)
 {
-    for (uint8_t a = 0; a < RCM_AUX_INPUTS; a++)
-        if (cfg.aux_func[a] == FN_IN_IMU_LEVEL
+    for (uint8_t a = 0; a < RCM_AUX_INPUTS; a++) {
+        const uint8_t fn = cfg.aux_func[a];
+        if ((fn == FN_IN_IMU_LEVEL || fn == FN_IN_IMU_FWD || fn == FN_IN_CFG_SAVE)
             && ((ch_aux() >> a) & 1u) && !(aux_fired & (1u << a)))
             return true;
+    }
     return false;
 }
+
+uint32_t proto_saved_when(void) { return aux_saved_at; }
+bool     proto_saved_ok(void)   { return aux_save_ok; }
 uint32_t proto_last_rx(void) { return last_rx_ms; }

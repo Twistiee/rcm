@@ -114,17 +114,17 @@ Things worth knowing before touching it:
   *means* — down is always a start attempt, up is always "switch off" — so the two halves
   cannot be configured apart. `GET_CFG`'s ignition selector deliberately reports the pedal
   that actually gates, not `FN_IN_BRAKE`.
-- **The IMU's mounting orientation is configuration, not a constraint** — `cfg.imu_map`
-  names the sensor axis (and sign) feeding each vehicle axis, so the board can be bolted
-  in any of the 24 square orientations. Set it with `rcm_bench ctl imumap x y z` (a
-  negated axis is `ny`, never `-y` — argparse takes a leading dash for an option), or
-  solve it from gravity with `ctl imulevel` / the self-test's `L`. Two things not to
-  quietly "fix": the setter **rejects a map that repeats an axis**, because that is a
-  fold rather than a rotation and would leave one axis permanently unread while still
-  looking correct at a standstill; and auto-level **refuses a mount more than 15 deg off
-  square** rather than rounding to the nearest axis, because an axis map cannot express
-  a tilt and rounding would bake gravity into the forward reading forever. The solver
-  lives in its own `imu_level.cpp` purely so the host suite can test it without a BMI270.
+- **IMU orientation is two MEASURED unit vectors (up, forward), NOT an axis map.** Stored
+  in `cfg.imu_up` / `cfg.imu_fwd`, orthonormalised by `imu_basis()` into a rotation. The
+  axis-permutation version could only snap to 90 deg, and a real bracket is never square:
+  measured on the bench, a 12 deg tilt put **-0.217 g of phantom lateral** into a
+  stationary board, and because 12 < the old 15 deg limit it was ACCEPTED, not refused.
+  After correction the same board read -0.001 g. Do not "simplify" this back to a
+  permutation, and do not add a tilt limit -- any angle is representable now.
+  Three J_AUX labels drive it with no laptop: `FN_IN_IMU_FWD` (hold the rear edge at the
+  ground -- gravity cannot see yaw, so aiming MUST be its own step), `FN_IN_IMU_LEVEL`
+  (re-measure up, preserving forward), `FN_IN_CFG_SAVE`. `SET_IMU_MAP` still takes three
+  bytes and now REFUSES a left-handed map rather than silently correcting it.
 - **Auto-level gates on the GYRO as well as the accelerometer, and that is not
   redundant** — proven on the bench 2026-09-07. `|a|` only responds to linear
   acceleration, so a board being turned still reads a flawless 1 g: spun flat on a desk

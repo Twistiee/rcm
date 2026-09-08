@@ -1,28 +1,29 @@
 /*
- * imu_level.cpp -- work out imu_map from a single gravity reading.
+ * imu_level.cpp -- where the IMU thinks "up" and "forward" are.
  *
  * Split out of imu.cpp deliberately: imu.cpp cannot be built on a PC because it drags
- * in Bosch's BMI270 driver, and this is the only part worth testing exhaustively. It
- * touches no hardware and no config -- it is handed three numbers and returns three
- * bytes, so the host suite can walk every mounting orientation there is.
+ * in Bosch's BMI270 driver, and this is the part worth testing exhaustively. It touches
+ * no hardware and no config -- handed vectors, it returns vectors -- so the host suite
+ * can walk orientations no one would bother to build on a bench.
  *
- * WHAT IT CAN AND CANNOT DO
- * Standing still, the only acceleration is gravity, so the accelerometer points at the
- * sky. That fixes ONE vehicle axis: Z. It says nothing whatever about the other two --
- * spin the board on a level bench and gravity never changes -- so forward and left
- * cannot be solved this way and are not guessed at. They are filled in with a
- * right-handed pair and left for the installer to correct, because a wrong-handed set
- * would report the car yawing the wrong way, which is far worse than a swapped X/Y.
+ * WHY VECTORS AND NOT AN AXIS MAP
+ * The first version stored a signed axis permutation: each vehicle axis was +/-1 times a
+ * sensor axis. That is exact and cheap, and it cannot describe a mounting that is not
+ * square. A real bracket in a real car is never square, and the error does not announce
+ * itself -- a 10 degree lean silently puts 0.17g of gravity into the longitudinal
+ * reading, permanently, which is most of a moderate braking event. The board reports it
+ * as confident, plausible, wrong motion forever.
+ *
+ * So the orientation is two MEASURED unit vectors in sensor axes -- where UP is, and
+ * where FORWARD is -- orthonormalised into a rotation matrix. Any angle is representable,
+ * there is no tolerance to fall outside, and the axis-aligned case still comes out exact
+ * because the vectors are then exactly +/-1.
+ *
+ * Vehicle axes are the automotive convention: X forward, Y left, Z up.
  */
 #include <math.h>
+#include <string.h>
 #include "imu.h"
-
-/* Tilt beyond this and we refuse. An axis swap can only ever describe a square mount,
- * so a board on a raked dash cannot be corrected here -- reporting that is the honest
- * answer, and silently rounding to the nearest axis would bake gravity into the
- * forward reading as a permanent phantom acceleration. 15 degrees is loose enough to
- * survive a sloped driveway and tight enough that a real dash rake fails it. */
-#define LEVEL_MAX_TILT_DEG   15.0f
 
 /* Standing still, |a| is 1 g. Anything else means the reading is not just gravity:
  * engine shaking the car, someone leaning on it, or a scaling fault. */
@@ -40,46 +41,131 @@
  * noise and well below anything a person does, so it separates the two cleanly. */
 #define LEVEL_MAX_RATE_DPS   2.0f
 
-uint8_t imu_solve_level(const float a[3], const float g[3], uint8_t map_out[3],
-                        float *tilt_deg)
-{
-    const float mag = sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
-    if (tilt_deg) *tilt_deg = 90.0f;
+/* Two directions that are nearly the same direction cannot define a frame: the cross
+ * product collapses and the maths turns to noise. This is what catches "held the board
+ * flat while doing the FORWARD step" -- the answer would otherwise be the board normal,
+ * which is not a direction the car can travel in. 20 degrees is far outside anything a
+ * person aiming for perpendicular would produce. */
+#define BASIS_MIN_SEP_DEG    20.0f
 
+static float dot3(const float a[3], const float b[3])
+{
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+static void cross3(const float a[3], const float b[3], float out[3])
+{
+    out[0] = a[1] * b[2] - a[2] * b[1];
+    out[1] = a[2] * b[0] - a[0] * b[2];
+    out[2] = a[0] * b[1] - a[1] * b[0];
+}
+
+static bool norm3(float v[3])
+{
+    const float m = sqrtf(dot3(v, v));
+    if (m < 1e-4f) return false;              /* degenerate: no direction at all */
+    v[0] /= m; v[1] /= m; v[2] /= m;
+    return true;
+}
+
+/* Rows of R are the vehicle axes expressed in sensor axes, so vehicle = R * sensor.
+ *
+ * FORWARD is orthogonalised against UP rather than the other way round: up is measured
+ * against gravity and is the more trustworthy of the two, while forward is whatever
+ * angle someone managed to hold a board at. Any component of forward along up is
+ * therefore the error, and is removed. */
+bool imu_basis(const float up[3], const float fwd[3], float R[3][3])
+{
+    float u[3] = { up[0], up[1], up[2] };
+    float f[3] = { fwd[0], fwd[1], fwd[2] };
+    if (!norm3(u) || !norm3(f)) return false;
+
+    const float along = dot3(f, u);
+    f[0] -= along * u[0];
+    f[1] -= along * u[1];
+    f[2] -= along * u[2];
+    if (!norm3(f)) return false;              /* forward was parallel to up */
+
+    float y[3];
+    cross3(u, f, y);                          /* Y = Z x X, which is what makes it
+                                               * right-handed rather than a mirror */
+    if (!norm3(y)) return false;
+
+    R[0][0] = f[0]; R[0][1] = f[1]; R[0][2] = f[2];   /* vehicle X = forward */
+    R[1][0] = y[0]; R[1][1] = y[1]; R[1][2] = y[2];   /* vehicle Y = left    */
+    R[2][0] = u[0]; R[2][1] = u[1]; R[2][2] = u[2];   /* vehicle Z = up      */
+    return true;
+}
+
+void imu_identity(float up[3], float fwd[3])
+{
+    up[0]  = 0.0f; up[1]  = 0.0f; up[2]  = 1.0f;
+    fwd[0] = 1.0f; fwd[1] = 0.0f; fwd[2] = 0.0f;
+}
+
+/* Turn one gravity reading into a unit vector, or say why not.
+ *
+ * There is deliberately NO tilt limit any more. The old solver refused past 15 degrees
+ * because an axis map could not express the remainder; a rotation matrix can express
+ * any angle, so a raked dash is now just another mounting rather than a refusal. */
+uint8_t imu_solve_gravity(const float a[3], const float g[3], float out[3])
+{
+    const float mag = sqrtf(dot3(a, a));
     if (mag < LEVEL_G_MIN || mag > LEVEL_G_MAX) return RCM_IMU_LEVEL_MOVING;
 
     /* Turning counts as moving even when gravity still adds up to 1 g. */
-    const float rate = sqrtf(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]);
-    if (rate > LEVEL_MAX_RATE_DPS) return RCM_IMU_LEVEL_MOVING;
+    if (sqrtf(dot3(g, g)) > LEVEL_MAX_RATE_DPS) return RCM_IMU_LEVEL_MOVING;
 
-    /* Whichever sensor axis carries most of gravity is the vertical one. */
-    uint8_t k = 0;
-    for (uint8_t i = 1; i < 3; i++)
-        if (fabsf(a[i]) > fabsf(a[k])) k = i;
-
-    /* How far off vertical that axis actually is. acosf is clamped because rounding can
-     * push the ratio a hair past 1.0 and acosf(1.0000001) is NaN, which would compare
-     * false against the limit and let a bad mount through. */
-    float c = fabsf(a[k]) / mag;
-    if (c > 1.0f) c = 1.0f;
-    const float tilt = acosf(c) * 57.29578f;
-    if (tilt_deg) *tilt_deg = tilt;
-    if (tilt > LEVEL_MAX_TILT_DEG) return RCM_IMU_LEVEL_TILTED;
-
-    /* At rest an accelerometer reads +1 g along whichever axis points UP, so vehicle Z
-     * (up) is +k when a[k] is positive and -k when it is negative. */
-    const bool neg_z = (a[k] < 0.0f);
-    map_out[2] = (uint8_t)(k | (neg_z ? 0x80 : 0x00));
-
-    /* X and Y are unknowable from gravity. Taking them in cyclic order after k makes
-     * the bare permutation even, so the whole set is right-handed exactly when Z was
-     * not negated -- and when it was, negating Y (which is already a guess) restores
-     * it without touching the one axis we actually solved. */
-    map_out[0] = (uint8_t)((k + 1) % 3);
-    map_out[1] = (uint8_t)((k + 2) % 3);
-    if (neg_z) map_out[1] |= 0x80;
-
+    out[0] = a[0]; out[1] = a[1]; out[2] = a[2];
+    if (!norm3(out)) return RCM_IMU_LEVEL_MOVING;
     return RCM_IMU_LEVEL_OK;
+}
+
+/* Angle between two unit vectors, degrees. */
+float imu_angle_deg(const float a[3], const float b[3])
+{
+    float c = dot3(a, b);
+    if (c >  1.0f) c =  1.0f;                 /* rounding can push acosf to NaN, and a
+                                               * NaN compares false against every limit */
+    if (c < -1.0f) c = -1.0f;
+    return acosf(c) * 57.29578f;
+}
+
+bool imu_separated_enough(const float a[3], const float b[3])
+{
+    const float d = imu_angle_deg(a, b);
+    return d > BASIS_MIN_SEP_DEG && d < (180.0f - BASIS_MIN_SEP_DEG);
+}
+
+/* Describe an orientation the way a person reads it: the nearest square mounting, plus
+ * how far off square it actually is. Purely for reporting -- nothing steers by it. */
+void imu_nearest_map(const float R[3][3], uint8_t map_out[3], float *off_deg)
+{
+    float worst = 0.0f;
+    for (uint8_t i = 0; i < 3; i++) {
+        uint8_t k = 0;
+        for (uint8_t j = 1; j < 3; j++)
+            if (fabsf(R[i][j]) > fabsf(R[i][k])) k = j;
+        map_out[i] = (uint8_t)(k | ((R[i][k] < 0.0f) ? 0x80 : 0x00));
+
+        float c = fabsf(R[i][k]);
+        if (c > 1.0f) c = 1.0f;
+        const float d = acosf(c) * 57.29578f;
+        if (d > worst) worst = d;
+    }
+    if (off_deg) *off_deg = worst;
+}
+
+/* Exact unit vectors for an axis map byte (axis in the low bits, bit 7 negates). Lets
+ * the byte-oriented SET_IMU_MAP keep working against a vector store, and it lands on
+ * exactly +/-1 so a square mounting stays exact. */
+bool imu_vec_from_axis(uint8_t b, float out[3])
+{
+    const uint8_t ax = b & 0x7F;
+    if (ax > 2) return false;
+    out[0] = out[1] = out[2] = 0.0f;
+    out[ax] = (b & 0x80) ? -1.0f : 1.0f;
+    return true;
 }
 
 bool imu_map_valid(const uint8_t map[3])

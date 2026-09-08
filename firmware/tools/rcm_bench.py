@@ -117,11 +117,13 @@ IN_BEH = {"momentary": 0, "toggle": 1, "holdarm": 2}
 # text that lives in the firmware's chnames.cpp, and duplicating them would just create
 # something to drift. These four are derived from the ignition block, never set by hand.
 IGN_FUNCS = {1: "IGNITION", 2: "STARTER", 128: "IN_BRAKE", 129: "IN_ENGINE_RUN",
-             130: "IN_CLUTCH", 136: "IN_IMU_LEVEL"}
+             130: "IN_CLUTCH", 136: "IN_IMU_LEVEL", 137: "IN_IMU_FWD",
+             138: "IN_CFG_SAVE"}
 # The roles the firmware LOOKS UP. Labelling a channel with one is how it is given that
 # job -- there is no separate channel-number setting to keep in step.
 FUNC_NAMES = {"ignition": 1, "starter": 2, "brake": 128, "enginerun": 129,
-              "clutch": 130, "imulevel": 136, "none": 0}
+              "clutch": 130, "imulevel": 136, "imufwd": 137, "cfgsave": 138,
+              "none": 0}
 
 # Named (subsystem, index) pairs for the ECU command table. EVERY TunerStudio command is
 # that shape -- see the cmd_* lines in rusefi's tunerstudio.template.ini -- so the
@@ -442,10 +444,10 @@ CFG_SEL = {
            % (_ch(d[2]), _u16(d, 3), _u16(d, 5), _cmd_name(_u16(d, 3), _u16(d, 5)))),
     0x0D: ("aux", 1, lambda d: "J_AUX 1=%s 2=%s 3=%s"
            % (_func_name(d[2]), _func_name(d[3]), _func_name(d[4]))),
-    0x0C: ("imu", 1, lambda d: "vehicle X=%s Y=%s Z=%s   (last auto-level: %s%s)"
-           % (_axis(d[2]), _axis(d[3]), _axis(d[4]),
-              IMU_LEVEL_RESULT.get(d[5], "?"),
-              "" if d[5] in (0, 1) else ", %d deg off square" % d[6])),
+    0x0C: ("imu", 1, lambda d: "nearest square X=%s Y=%s Z=%s, %d deg off square"
+           "   (last calibration: %s)"
+           % (_axis(d[2]), _axis(d[3]), _axis(d[4]), d[7],
+              IMU_LEVEL_RESULT.get(d[5], "?"))),
     0x0B: ("timing2", 1, lambda d: "ECU follow goes stale after %dms"
            % _u16(d, 2)),
     0x0A: ("follow", 12, lambda d: "channel %s <- frame 0x%03X bit %d%s"

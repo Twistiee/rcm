@@ -198,6 +198,11 @@ bool proto_ever_addressed(void);
 /* True while an IMU auto-level switch is held and has not yet fired. */
 bool proto_aux_level_holding(void);
 
+/* When a J_AUX save last happened, and whether it worked. A save changes nothing
+ * observable about the board, so the LEDs are the only confirmation there is. */
+uint32_t proto_saved_when(void);
+bool     proto_saved_ok(void);
+
 /* Send one TunerStudio command to the ECU. */
 void proto_send_ecu_cmd(uint16_t subsystem, uint16_t index);
 

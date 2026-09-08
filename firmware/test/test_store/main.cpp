@@ -11,6 +11,7 @@
 
 #include "../stubs/simboard.cpp"
 #include "../../src/store.cpp"
+#include "../../src/imu_level.cpp"   /* cfg_defaults() needs imu_identity() */
 #include "../../src/config.cpp"
 
 void setUp(void)
@@ -135,7 +136,9 @@ static void test_save_and_load_round_trip(void)
     cfg.ch[4].flags  = CH_F_INVERT;
     cfg.peer_node    = 5;
     cfg.peer_mask    = 0x0000FF;
-    cfg.imu_map[0]   = 0x81;                 /* vehicle X = -sensor Y */
+    cfg.imu_fwd[0]   = 0.0f;                 /* vehicle X = -sensor Y */
+    cfg.imu_fwd[1]   = -1.0f;
+    cfg.imu_fwd[2]   = 0.0f;
     TEST_ASSERT_TRUE(cfg_save());
 
     memset(&cfg, 0, sizeof(cfg));
@@ -146,7 +149,10 @@ static void test_save_and_load_round_trip(void)
     TEST_ASSERT_EQUAL_HEX8(CH_F_INVERT, cfg.ch[4].flags);
     TEST_ASSERT_EQUAL_UINT8(5, cfg.peer_node);
     TEST_ASSERT_EQUAL_HEX32(0x0000FF, cfg.peer_mask);
-    TEST_ASSERT_EQUAL_HEX8(0x81, cfg.imu_map[0]);
+    /* Floats now, so the record has to carry them bit-exactly through the EEPROM. */
+    TEST_ASSERT_EQUAL_FLOAT(0.0f,  cfg.imu_fwd[0]);
+    TEST_ASSERT_EQUAL_FLOAT(-1.0f, cfg.imu_fwd[1]);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f,  cfg.imu_fwd[2]);
 }
 
 static void test_a_blank_eeprom_gives_defaults(void)

@@ -115,6 +115,20 @@ static void leds(uint32_t now)
      * The refusals are counted separately on purpose. Collapsing them to one pattern
      * would make a raked mount look like someone leaning on the car, and you would
      * retry forever at something no amount of retrying can fix. */
+    /* A save shows as a quick double-blink of BOTH lamps -- deliberately unlike the
+     * calibration answers, because it is a different kind of event and nothing else
+     * about the board changes to confirm it happened. */
+    const uint32_t sv_at = proto_saved_when();
+    if (sv_at && (uint32_t)(now - sv_at) < LEVEL_SHOW_MS) {
+        const uint32_t t = now - sv_at;
+        const bool on = (t / 300) < 2 && (t % 300) < 150;
+        const bool ok = proto_saved_ok();
+        digitalWrite(PIN_LED1, (on && ok) ? HIGH : LOW);
+        digitalWrite(PIN_LED2, (on && !ok) ? HIGH : LOW);
+        if (!ok) digitalWrite(PIN_LED2, ((t / 300) < 5 && (t % 300) < 150) ? HIGH : LOW);
+        return;
+    }
+
     const uint32_t lvl_at = imu_level_when();
     if (lvl_at && (uint32_t)(now - lvl_at) < LEVEL_SHOW_MS) {
         const uint32_t age = now - lvl_at;

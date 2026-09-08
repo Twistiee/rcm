@@ -11,7 +11,7 @@ unit-tested against a model of the board. None of it has seen a relay.
 pio run                          build for the board
 pio run -t upload                flash over J_SWD with an ST-Link
 pio run -e selftest -t upload    bring-up console on the USB-C port
-pio test -e native               247 host unit tests
+pio test -e native               259 host unit tests
 python tools/gen_dbc.py          regenerate ../docs/rcm.dbc
 python tools/test_rcm_bench.py   self-test the bench tool, no hardware needed
 python tools/rcm_bench.py --help talk to a board over CAN
@@ -165,131 +165,91 @@ Two honest caveats:
   spin, and the encoders clamp rather than wrap — a wrapped yaw rate would tell the ECU
   the car had suddenly turned the other way.
 
-### Which way up the board is mounted
+### Which way up the board is mounted, and which way it faces
 
-The IMU does not have to face any particular direction, but the board has to be **told**
-which way it is facing, because a wrong axis map reports confident, plausible, wrong
-motion to an ECU that may act on it. `cfg.imu_map` names, for each vehicle axis, the
-sensor axis that feeds it and whether to negate it. Vehicle axes are the automotive
-convention: **X forward, Y left, Z up**.
+The IMU can be bolted in at **any angle at all**. The orientation is stored as two
+measured unit vectors -- where UP is and where FORWARD is -- orthonormalised into a
+rotation matrix, not as an axis permutation.
+
+That distinction is the whole point. A permutation can only snap to 90 degrees, and a
+real bracket is never square. The error is silent and permanent:
+
+| Lean | Gravity leaked into the horizontal axes |
+|---|---|
+| 5 deg | 0.087 g |
+| 10 deg | 0.174 g |
+| 15 deg | 0.259 g |
+
+Moderate braking is about 0.3 g, so even a 5 degree mount biases longitudinal G by a
+third of a real event, always, with nothing to indicate it. Measured on a real board
+sitting on a slightly tilted bench: **lateral read -0.217 g while completely still**.
+After levelling, the same board read -0.001 g. It was 12 degrees off square -- inside the
+old 15 degree tolerance, so the previous axis-map version would have *accepted* that
+reading and ignored the error rather than refusing it.
+
+#### Calibrating from three switches, with no laptop
+
+Give the J_AUX pins jobs. Each is **held for 2 seconds**, never tapped, and J_AUX inputs
+are active-high like the channels -- feed 12 V through a momentary.
+
+| Label | Hold it to |
+|---|---|
+| `imufwd` | Set **FORWARD**. Hold the board with the edge you want at the REAR of the car pointing at the ground |
+| `imulevel` | Set **UP**, in the final mounted position. Keeps the forward direction |
+| `cfgsave` | Commit to EEPROM. Calibration is never auto-saved |
+
+```
+rcm_bench.py ctl auxfunc 1 imufwd
+rcm_bench.py ctl auxfunc 2 imulevel
+rcm_bench.py ctl auxfunc 3 cfgsave
+rcm_bench.py get imu          # nearest square mounting + how far off square it is
+```
+
+Together those cover **all 24 orthogonal mountings and everything in between**: levelling
+picks which way is up, aiming picks which of the four remaining rotations is forward.
+Gravity alone can never do the second -- rotate a board on a level bench and gravity does
+not change -- which is why aiming is a separate step rather than something levelling
+guesses at.
+
+**Why forward is measured by pointing the rear edge down:** an accelerometer at rest
+reads +1 g along whichever axis points up. Hold the rear edge at the ground and the axis
+pointing up is the one that will face forward. It is the same measurement levelling
+makes, read differently.
+
+**The LEDs answer**, because two of the outcomes are refusals and a refusal otherwise
+looks identical to a press the board never saw:
+
+| While held | green/red alternate at 2 Hz -- seen, keep holding. Release early to abort |
+|---|---|
+| **green x4** | done |
+| **red x2** | moving -- the board must be still, and *turning* counts even though gravity still totals 1 g |
+| **red x3** | the two directions are within 20 degrees of parallel; you held it flat during the FORWARD step |
+| **red x4** | no IMU, or the `CFG_IMU_EN` strap is open |
+| **both x2** | config saved |
+
+Deliberate awkwardnesses, each with a test: held not tapped, since re-levelling rewrites
+how the board reports the car's motion; once per press, so a stuck switch levels once
+rather than forever; and **a switch already closed at boot is a baseline, not a press** --
+otherwise a shorted pin re-calibrates two seconds into every power-up.
+
+#### Setting it by hand instead
 
 ```
 rcm_bench.py ctl imumap x y z       # board flat, +X edge pointing down the car
 rcm_bench.py ctl imumap ny x z      # the same board rotated 90 deg clockwise
-rcm_bench.py ctl imumap x ny nz     # board mounted upside down
-rcm_bench.py ctl imulevel           # or solve it from gravity, standing still
-rcm_bench.py get imu                # read back what it settled on
-rcm_bench.py ctl save
 ```
 
-Write a negated axis as `ny`, not `-y` — a leading dash is taken for a command-line
-option before the tool ever sees it.
+Write a negated axis as `ny`, not `-y` -- a leading dash is taken for a command-line
+option. A square mounting set this way lands on exactly +/-1, so nothing is lost.
 
-**Auto-level solves one axis, not three.** Standing still, the only acceleration is
-gravity, so the reading fixes which way is **up** and nothing else — spin the board on a
-level bench and gravity never changes. Forward and left are not guessable this way, so
-they are filled in as a right-handed pair and left for you to confirm on a drive: braking
-should read **negative vehicle X**. Handedness is preserved rather than left to chance
-because a left-handed map reads perfectly plausibly at a standstill and only shows up as
-the car yawing the wrong way in a corner.
+**A left-handed map is refused, not corrected.** X and Z determine Y completely; if the Y
+you asked for is not the one that falls out, the frame is mirrored and the command is
+rejected. A mirrored frame reads perfectly plausibly standing still and only shows up as
+the car yawing the wrong way through a corner. (The earlier validator checked only that
+the three axes were distinct, and let this through.)
 
-**It refuses more often than it succeeds, on purpose.** `imu_solve_level()` returns
-`MOVING` if the vector is not ~1 g (engine running, someone leaning on the car), `MOVING`
-again if the **gyro** shows more than 2 °/s, and `TILTED` if no axis is within 15° of
-vertical.
-
-The gyro check is there because the accelerometer alone cannot see rotation, and that
-was a real bug caught on the bench rather than a theoretical one. Magnitude only responds
-to *linear* acceleration: turn the board slowly and gravity still totals exactly 1 g, it
-just points somewhere else. Spinning the board flat on a desk measured `|a|` = 0.991,
-1.005 and 0.995 g — perfect, square, and completely wrong — while the gyro read 46–68 °/s.
-The first version solved happily all three times. Sitting still the same board reads
-0.17 °/s, so 2 °/s sits an order of magnitude above the noise and an order below anything
-a person does. That second one is the important refusal:
-an axis map can only ever describe a **square** mount, so a board on a raked dash cannot
-be corrected by any map at all. Rounding it to the nearest axis would bake a component of
-gravity into the forward reading as a permanent phantom acceleration. If you need the
-board at an angle, that needs real angle correction, which this firmware does not have.
-
-All of this is hardware-verified over both transports (2026-09-07): solving flat and on
-its side, refusing a 34 deg tilt, refusing a flat spin, setting and reading a map over
-CAN, and refusing a repeated axis, a fourth axis, a short frame and a missing magic byte
-sent as raw frames — so the guards are the firmware's, not just the tool's.
-
-### Re-levelling from a switch, with no laptop
-
-A J_AUX pin labelled `FN_IN_IMU_LEVEL` re-levels the IMU when **held for 2 seconds**. That
-is the point of it: a board bolted under a dash can be squared up with a switch instead of
-a CAN adapter and a laptop.
-
-```
-rcm_bench.py ctl auxfunc 2 imulevel     # J_AUX pin 2 becomes the level switch
-rcm_bench.py get aux                    # what the three pins are set to
-```
-
-J_AUX inputs are active-high, same as the channels — feed the pin 12 V through a momentary.
-Until this existed the three J_AUX pins were read, debounced and broadcast, and drove
-nothing at all.
-
-**The LEDs answer you**, because two of the three outcomes are refusals and a refusal
-otherwise looks identical to a press the board never saw:
-
-| While held | green/red alternate at 2 Hz — seen, keep holding. Release early to abort |
-|---|---|
-| **green ×4** | levelled |
-| **red ×2** | moving — stop moving and try again |
-| **red ×3** | not square — retrying will not help, the **mount** is wrong |
-| **red ×4** | no IMU, or the `CFG_IMU_EN` strap is open |
-
-Three deliberate awkwardnesses, each with a test:
-
-- **Held, not tapped.** Re-levelling rewrites how this board reports the car's motion to
-  an ECU; a knock must not do it.
-- **Once per press.** Holding longer does not level repeatedly, and a switch that sticks
-  closed levels once, not forever.
-- **A switch already closed at boot is a baseline, not a press.** Without that, a stuck or
-  shorted pin would re-level two seconds into *every* power-up — and since gravity cannot
-  see yaw, on a board whose map was set by hand that silently replaces a correct map with
-  a wrong one, on every start, with nobody pressing anything.
-
-The result is **never auto-saved**, so even a deliberate press evaporates on the next power
-cycle unless someone commits it with `ctl save`. On a board whose map was set by hand —
-like a keypad mounted with its terminal edge to the side — that is the difference between a
-stray press being an annoyance and being a wrong map baked into EEPROM.
-
-Mount it **rigidly** either way — on a compliant bracket you measure the bracket
+Mount it **rigidly** either way -- on a compliant bracket you measure the bracket
 resonating, not the car.
-
-### What the status LEDs mean
-
-**Green is SOLID when all is well.** It only flashes to tell you something, so a glance
-separates "fine" from "look at me" without counting blink rates.
-
-| Green | Meaning |
-|---|---|
-| **Solid** | Running normally |
-| 1 Hz | Was being commanded over CAN, and the master went away |
-| 6.7 Hz | The CAN controller never started at all — wrong bitrate, or worse |
-
-**Red is off unless an output that has a job is faulty.**
-
-Both rules exist because the first version cried wolf, and an indicator that is always on
-tells you nothing:
-
-- Green went frantic whenever the bus was quiet. But **a keypad is never commanded** — it
-  *reports* button presses — so a quiet bus is its normal condition and it flashed fast
-  forever. `proto_ever_addressed()` is what separates "nobody has ever commanded this
-  board" from "this board lost its master", and only the second is a fault. Note this is
-  independent of the CAN timeout: the failsafe still fires and is still reported over the
-  bus, the LED just stops treating a keypad's normal life as an emergency.
-- Red lit for an open circuit on **any** channel, including the eighteen nobody has wired
-  yet, so every board on a bench sat with a fault lamp on.
-
-The fault rule lives in **one** function, `ch_fault_actionable()`, used by both the LED and
-the `RCM_ST_ANY_FAULT` status flag, with a test asserting the two agree — a dark lamp while
-`rcm_bench scan` reports `FAULT` is exactly the sort of contradiction that costs an
-evening. The per-channel `FAULTS` frame is **not** filtered: that detail is what you want
-while diagnosing, and only the summary is a lamp.
 
 ### Bitrate
 
@@ -491,7 +451,7 @@ and also cross-checks the tool's byte packing against the DBC — so bench tool,
 
 ## Testing
 
-247 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
+259 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
 `.cpp` files against a model of the board in `test/stubs/`, so they test the code that
 ships rather than a transcription of it.
 
