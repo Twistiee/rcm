@@ -132,6 +132,11 @@
                                       * right-handed so yaw comes out the right way round.
                                       * Confirm the result with GET_CFG; it is held in RAM
                                       * like every other setter, so SAVE_CONFIG to keep it. */
+#define RCM_OP_IMU_FORWARD    0x21   /* b1 must be 0x5A. The FORWARD half of calibration,
+                                      * as IMU_LEVEL is the up half. Exists so the same
+                                      * work a J_AUX switch does can be triggered over the
+                                      * bus -- which is what separates a firmware fault
+                                      * from a wiring one when a switch misbehaves. */
 #define RCM_OP_SET_IMU_RATE   0x20   /* b1..b2 LE publish period ms. The sensor ODR
                                       * follows automatically -- publishing faster than
                                       * the ODR would resend one sample and look like

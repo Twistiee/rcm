@@ -459,6 +459,10 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
         }
         break;
 
+    case RCM_OP_IMU_FORWARD:
+        if (f->len >= 2 && f->data[1] == 0x5A) imu_set_forward();
+        break;
+
     case RCM_OP_SET_IMU_RATE:
         /* 1ms floor: a period of zero would divide by zero picking an ODR, and would
          * ask the loop to publish as fast as it can go. */

@@ -98,6 +98,8 @@ OP = {
     # IMU publish period in ms. The sensor ODR follows automatically.
     #   imurate <ms>     10 = 100Hz, 5 = 200Hz, 3 = 333Hz, 2 = 500Hz
     "imurate":      0x20,
+    # the FORWARD half of calibration, over the bus instead of the J_AUX switch.
+    "imufwd":       0x21,
 }
 # Vehicle axis <- sensor axis. Spelled as axis names because "0x82" is unreadable and
 # getting it wrong is not something the board can detect for you.
@@ -663,7 +665,7 @@ def cmd_ctl(bus, args):
             fn = int(args.args[1], 0)
         extra = [pin - 1, fn]
 
-    elif args.op == "imulevel":
+    elif args.op in ("imulevel", "imufwd"):
         extra = [0x5A]
 
     elif args.op == "ecufollow":

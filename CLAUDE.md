@@ -114,6 +114,15 @@ Things worth knowing before touching it:
   *means* — down is always a start attempt, up is always "switch off" — so the two halves
   cannot be configured apart. `GET_CFG`'s ignition selector deliberately reports the pedal
   that actually gates, not `FN_IN_BRAKE`.
+- **`rcm_config_t` is `packed, aligned(4)` and BOTH attributes matter.** packed pins the
+  EEPROM byte layout; without `aligned(4)` the type has alignment 1, the linker puts the
+  instance anywhere, and it did -- `cfg` landed at `0x200006a9`, odd. Every float member
+  was then misaligned, and Cortex-M4 `VLDR`/`VSTR` fault on unaligned addresses where
+  integer loads silently fix themselves up, so reading `cfg.imu_up` HardFaulted instantly
+  (CFSR `0x01000000`, UsageFault UNALIGNED). Latent from the moment floats entered the
+  record. **The host suite cannot catch this** -- x86 tolerates unaligned float access --
+  so `static_assert`s pin the float offsets instead; do not remove them, and never add a
+  float to a packed struct without checking its offset.
 - **IMU publishes at 100 Hz, and the reason is at the ECU end.** Measured ceiling on this
   hardware is ~250 Hz (main loop ~4 ms, blocking I2C read), so this is not a hardware
   limit. rusEFI consumes MM5.10 **event-driven** -- no sampling rate, no decimation, no

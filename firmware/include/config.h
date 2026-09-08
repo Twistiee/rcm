@@ -17,6 +17,7 @@
 #define RCM_CONFIG_H
 
 #include <stdint.h>
+#include <stddef.h>
 #include <stdbool.h>
 #include "board.h"
 #include "ignition.h"
@@ -349,7 +350,33 @@ struct rcm_config_t {
 
     uint8_t  reserved[2];
     uint16_t crc;                  /* CRC-16/CCITT over every byte before this */
-} __attribute__((packed));
+} __attribute__((packed, aligned(4)));
+
+/* WHY aligned(4) AND packed.
+ *
+ * packed pins the byte layout, because this record is written to an EEPROM and read
+ * back by other builds. But packed also sets the TYPE alignment to 1, which lets the
+ * linker put the instance anywhere -- and it did: `cfg` landed at 0x200006a9, an odd
+ * address. Every float member was therefore misaligned, and on Cortex-M4 VLDR/VSTR
+ * fault on unaligned addresses where integer loads quietly fix themselves up. The
+ * result was an instant HardFault (CFSR 0x01000000, UsageFault UNALIGNED) the moment
+ * anything read cfg.imu_up as a float -- diagnosed by breakpointing the fault handler
+ * and reading R0 out of the stacked frame.
+ *
+ * It only appeared when floats were added to this record. It never showed on the host
+ * suite either, because x86 tolerates unaligned float access; this is precisely the
+ * class of bug those tests cannot catch.
+ *
+ * aligned(4) forces the instance to a 4-byte boundary without adding internal padding,
+ * so the layout and size are unchanged and no config version bump is needed. The
+ * assertions below then pin the two float members to 4-aligned offsets, so a future
+ * member added above them cannot quietly reintroduce this. */
+static_assert(offsetof(struct rcm_config_t, imu_up)  % 4 == 0,
+              "imu_up must be 4-aligned: floats in a packed struct fault on ARM");
+static_assert(offsetof(struct rcm_config_t, imu_fwd) % 4 == 0,
+              "imu_fwd must be 4-aligned: floats in a packed struct fault on ARM");
+static_assert(sizeof(struct rcm_config_t) % 4 == 0,
+              "config record size must stay a multiple of 4");
 
 /* ---- straps (read once, at boot) ------------------------------------------ */
 struct rcm_straps_t {
