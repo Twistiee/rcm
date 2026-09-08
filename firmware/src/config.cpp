@@ -76,12 +76,22 @@ void cfg_defaults(struct rcm_config_t *c)
     c->output_settle_ms  = 100;   /* a relay coil's flyback needs time to collapse
                                    * before the sense node means anything */
     c->fault_confirm_ms  = 500;
-    /* 200Hz. Measured ceiling on this hardware is ~250Hz -- the main loop iterates in
-     * about 4ms, dominated by the blocking I2C read -- and at 4ms it already misses
-     * deadlines (246Hz measured against 250 nominal). 5ms is met with margin (202.6Hz
-     * measured) and costs 18% of a 500k bus. A consistent interval matters more to an
-     * IMU consumer than a faster but jittery one. */
-    c->imu_rate_ms       = 5;
+    /* 100Hz. The measured ceiling on this hardware is ~250Hz (the main loop iterates
+     * in about 4ms, dominated by the blocking I2C read), so this is not a hardware
+     * limit -- it is chosen for what happens at the OTHER end.
+     *
+     * rusEFI consumes MM5.10 event-driven, with no sampling rate and no decimation:
+     * CanRead blocks on receive and every frame goes straight to processCanRxImu().
+     * So nothing we send is wasted -- but every frame also hits an UNCONDITIONAL
+     * efiPrintf in all three handlers, not gated behind verboseCan. At 200Hz that is
+     * 600 console prints per second on the ECU, forever, purely because this board
+     * exists. The cost scales with our rate and lands on the ECU rather than the bus,
+     * which is a worse place for it than arbitration delay.
+     *
+     * 100Hz is also what the ESP-family sensor this emulates is usually quoted at, so
+     * it is the rate rusEFI was written against. Raise it with SET_IMU_RATE if a
+     * strategy is ever shown to need fresher data than 10ms. */
+    c->imu_rate_ms       = 10;
 
     for (uint8_t i = 0; i < RCM_CHANNELS; i++) {
         c->ch[i].mode      = straps.keypad ? CH_INPUT : CH_OUTPUT;

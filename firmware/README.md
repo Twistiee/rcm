@@ -267,8 +267,8 @@ Measured on real hardware over the bus, not calculated:
 | Setting | Nominal | Measured | Bus load |
 |---|---|---|---|
 | 20 ms | 50 Hz | 50.5 Hz | 6.1% |
-| 10 ms | 100 Hz | 101.3 Hz | 10.1% |
-| **5 ms** | **200 Hz** | **202.6 Hz** | **18.0%** |
+| **10 ms** | **100 Hz** | **101.3 Hz** | **10.1%** |
+| 5 ms | 200 Hz | 202.6 Hz | 18.0% |
 | 4 ms | 250 Hz | 246.4 Hz | 21.4% |
 | 3 ms | 333 Hz | 249.5 Hz | 21.7% |
 | 2 ms | 500 Hz | 253.1 Hz | 22.0% |
@@ -278,14 +278,35 @@ is the main loop, which iterates in roughly 4 ms -- the blocking I2C read of the
 plus the shift-register I/O and the CAN work -- not the sensor (which reaches 800 Hz) and
 not the bus.
 
-**5 ms is the default rather than 4** because at 4 ms the board already misses deadlines:
-246 Hz measured against 250 nominal, so the interval is irregular. At 5 ms it exceeds
-nominal (202.6 against 200), meaning every deadline is met with room to spare. A
-consistent interval is worth more to whatever consumes the data than 20% more samples
-arriving unevenly.
+**But the default is 100 Hz, and the reason is at the far end, not this one.**
 
-Raising the ceiling would mean a non-blocking or DMA I2C read. Worth doing only if
-something downstream is provably sampling faster than 200 Hz.
+rusEFI consumes MM5.10 **event-driven** -- `CanRead` blocks on receive and every frame
+goes straight to `processCanRxImu()`. There is no sampling rate, no decimation and no
+staleness check. So nothing we send is discarded, and sending faster genuinely does
+deliver fresher data.
+
+The catch is that all three handlers call `efiPrintf` **unconditionally**, not gated
+behind `verboseCan`. At 200 Hz that is 600 console prints per second on the ECU, forever,
+purely because this board is on the bus. That cost scales linearly with our rate and
+lands on the *ECU* rather than the bus, which is a worse place for it than an arbitration
+delay -- and it will bury the rusEFI console.
+
+100 Hz is also the rate this sensor family is usually quoted at, so it is what rusEFI was
+written against.
+
+Two things worth knowing about that consumer, neither of which we control:
+
+- **No staleness detection.** If this board drops off the bus, the last G values sit in
+  `engine->sensors.accelerometer` indefinitely and nothing flags it. The wideband path
+  uses `CanSensorBase`, which does have timeouts; the IMU path predates it and carries a
+  `// TODO: convert to CanListener`. Our own ECU-follow inputs *do* have a staleness
+  timeout, so the asymmetry is worth remembering: we distrust the ECU going quiet, and
+  the ECU does not distrust us.
+- **A 50 Hz figure in rusEFI is the SPI accelerometer**, not this path -- that is
+  `useSpiImu = true`, a 20 ms periodic thread. Do not take it as the CAN rate.
+
+Raising the ceiling here would mean a non-blocking or DMA I2C read. Not worth it unless a
+strategy is ever shown to need fresher than 10 ms.
 
 ### Bitrate
 

@@ -114,6 +114,16 @@ Things worth knowing before touching it:
   *means* — down is always a start attempt, up is always "switch off" — so the two halves
   cannot be configured apart. `GET_CFG`'s ignition selector deliberately reports the pedal
   that actually gates, not `FN_IN_BRAKE`.
+- **IMU publishes at 100 Hz, and the reason is at the ECU end.** Measured ceiling on this
+  hardware is ~250 Hz (main loop ~4 ms, blocking I2C read), so this is not a hardware
+  limit. rusEFI consumes MM5.10 **event-driven** -- no sampling rate, no decimation, no
+  staleness check -- so nothing sent is wasted; but all three handlers call `efiPrintf`
+  **unconditionally**, not behind `verboseCan`, so every frame costs the ECU a console
+  print. 200 Hz = 600 prints/s on the ECU forever. Do not raise the rate without a
+  strategy that provably needs fresher than 10 ms. Note a 50 Hz figure in rusEFI is the
+  SPI accelerometer (`useSpiImu = true`), NOT this path. Also note rusEFI does not detect
+  our IMU going stale, while we DO detect its ECU-follow frames going stale -- the
+  distrust is one-way.
 - **IMU orientation is two MEASURED unit vectors (up, forward), NOT an axis map.** Stored
   in `cfg.imu_up` / `cfg.imu_fwd`, orthonormalised by `imu_basis()` into a rotation. The
   axis-permutation version could only snap to 90 deg, and a real bracket is never square:
