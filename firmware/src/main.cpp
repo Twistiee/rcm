@@ -120,12 +120,17 @@ static void leds(uint32_t now)
      * about the board changes to confirm it happened. */
     const uint32_t sv_at = proto_saved_when();
     if (sv_at && (uint32_t)(now - sv_at) < LEVEL_SHOW_MS) {
-        const uint32_t t = now - sv_at;
-        const bool on = (t / 300) < 2 && (t % 300) < 150;
-        const bool ok = proto_saved_ok();
+        const uint32_t t  = now - sv_at;
+        const bool     ok = proto_saved_ok();
+        /* BOTH lamps together, twice. Deliberately unlike every calibration answer,
+         * which are single-colour counts: a save is a different KIND of event, and a
+         * green x2 would sit one blink away from the green x4 of a good calibration --
+         * a difference nobody should have to count carefully under a dash. A FAILED
+         * save is red x5, a count no other pattern uses. */
+        const uint8_t n  = ok ? 2 : 5;
+        const bool    on = (t / 300) < n && (t % 300) < 150;
         digitalWrite(PIN_LED1, (on && ok) ? HIGH : LOW);
-        digitalWrite(PIN_LED2, (on && !ok) ? HIGH : LOW);
-        if (!ok) digitalWrite(PIN_LED2, ((t / 300) < 5 && (t % 300) < 150) ? HIGH : LOW);
+        digitalWrite(PIN_LED2, on ? HIGH : LOW);
         return;
     }
 

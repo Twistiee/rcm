@@ -64,6 +64,8 @@ OP = {
     "ignition":     0x15,
     # hold-to-stop ms, crank max ms, shutdown hold ms -- each a 16-bit LE pair.
     "igntimes":     0x16,
+    # hold-off ms, idle timeout SECONDS, wake-start ms -- each a 16-bit LE pair.
+    "igntimes2":    0x16,
     # ECU RPM frame id (0 = none) then the rpm at or above which the engine counts as
     # running. rusEFI publishes RPM at base+1, so 0x201 for a stock base. This is what
     # makes hold-to-stop work: with no run source the board cannot tell a running
@@ -646,6 +648,23 @@ def cmd_ctl(bus, args):
                      "is a fold, not a rotation: one axis would never be read at all."
                      % " ".join(args.args))
 
+    elif args.op in ("igntimes", "igntimes2"):
+        # These take 16-bit values. Without a branch they fell through to the generic
+        # byte-wise parser below, which silently mangles anything over 255 -- "igntimes
+        # 1000 7777 3000" produced a malformed frame the board ignored, and the only
+        # clue was an error on stderr.
+        if not 2 <= len(args.args) <= 3:
+            sys.exit("%s <a-ms> <b-ms> [c-ms] -- three 16-bit values.\n"
+                     "  igntimes  <hold-to-stop> <crank-max> [shutdown-hold]\n"
+                     "  igntimes2 <ign-off-hold> <idle-timeout-s> [wake-start]"
+                     % args.op)
+        extra = []
+        for a in args.args:
+            v = int(a, 0)
+            if not 0 <= v <= 0xFFFF:
+                sys.exit("%r does not fit in 16 bits" % a)
+            extra += [v & 0xFF, v >> 8]
+
     elif args.op == "imurate":
         if len(args.args) != 1:
             sys.exit("imurate <ms> -- publish period. 10=100Hz, 5=200Hz, 3=333Hz, 2=500Hz")
@@ -732,7 +751,15 @@ def cmd_ctl(bus, args):
         flags = int(args.args[2], 0) if len(args.args) > 2 else 0
         extra = [ch - 1, MODES[args.args[1]], flags]
     else:
-        extra = [int(a, 0) for a in args.args]
+        # Anything without its own branch above is byte-wise. Refuse values that do not
+        # fit, instead of silently truncating them into a frame the board will ignore.
+        extra = []
+        for a in args.args:
+            v = int(a, 0)
+            if not 0 <= v <= 0xFF:
+                sys.exit("%r does not fit in a byte, and '%s' has no 16-bit parser. "
+                         "Give raw LE byte pairs, or add a branch for it." % (a, args.op))
+            extra.append(v)
     (rcm.global_ctl if args.glob else rcm.ctl)(op, *extra)
     print("%s%s %s" % ("global " if args.glob else "", args.op,
                        " ".join(str(e) for e in extra)))

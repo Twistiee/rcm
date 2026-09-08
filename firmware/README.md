@@ -225,7 +225,8 @@ looks identical to a press the board never saw:
 | **red x2** | moving -- the board must be still, and *turning* counts even though gravity still totals 1 g |
 | **red x3** | the two directions are within 20 degrees of parallel; you held it flat during the FORWARD step |
 | **red x4** | no IMU, or the `CFG_IMU_EN` strap is open |
-| **both x2** | config saved |
+| **both together x2** | config saved |
+| **red x5** | the save FAILED |
 
 Deliberate awkwardnesses, each with a test: held not tapped, since re-levelling rewrites
 how the board reports the car's motion; once per press, so a stuck switch levels once
