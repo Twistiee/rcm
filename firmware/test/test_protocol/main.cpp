@@ -819,6 +819,155 @@ static void test_being_commanded_sets_it_and_it_stays_set(void)
         "forgot it had ever been commanded, so a lost master looks like a quiet keypad");
 }
 
+/* --- a J_AUX switch that re-levels the IMU ------------------------------------
+ * Until this existed the three J_AUX pins were read, debounced, broadcast and used for
+ * nothing. The point is squaring up a board bolted under a dash without a laptop.
+ *
+ * It is a HOLD, not a tap, and it is deliberately awkward: re-levelling rewrites how
+ * this board reports the car's motion to an ECU, so a knock must not do it. */
+
+/* Let the boot priming window pass before pressing anything. A switch that is already
+ * down when the board wakes is treated as a baseline, not a press -- so a test that
+ * presses 20ms after proto_begin() is indistinguishable from a stuck switch, and is
+ * correctly ignored. A person cannot press one that fast; a test can. */
+static void aux_settle(void)
+{
+    run_ms(cfg.input_debounce_ms + 100);
+}
+
+static void aux_hold(uint8_t pin, uint32_t ms)
+{
+    aux_settle();
+    SIM.aux[pin] = 1;
+    run_ms(ms);
+    SIM.aux[pin] = 0;
+    /* The release has to outlast the DEBOUNCE, not just a tick, or the pin never reads
+     * as open and the next hold sees no fresh edge. Caught by
+     * test_releasing_and_holding_again_levels_again, which failed with a 20ms release
+     * against a 25ms debounce. */
+    run_ms(cfg.input_debounce_ms + TICK_MS * 6);
+}
+
+static void test_holding_a_labelled_aux_pin_levels_the_imu(void)
+{
+    cfg.aux_func[1] = FN_IN_IMU_LEVEL;
+    const int before = AUTOLEVEL_CALLS;
+    aux_hold(1, 2500);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(before + 1, AUTOLEVEL_CALLS,
+        "a 2.5s hold on a pin labelled IMU_LEVEL did not re-level");
+}
+
+static void test_a_tap_is_not_enough(void)
+{
+    /* The whole reason for the hold. A brushed switch, or a knock, must do nothing. */
+    cfg.aux_func[1] = FN_IN_IMU_LEVEL;
+    const int before = AUTOLEVEL_CALLS;
+    aux_hold(1, 300);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(before, AUTOLEVEL_CALLS,
+        "a brief tap re-levelled the IMU");
+}
+
+static void test_an_unlabelled_aux_pin_does_nothing(void)
+{
+    cfg.aux_func[0] = FN_NONE;
+    cfg.aux_func[1] = FN_NONE;
+    cfg.aux_func[2] = FN_NONE;
+    const int before = AUTOLEVEL_CALLS;
+    aux_hold(0, 2500);
+    aux_hold(2, 2500);
+    TEST_ASSERT_EQUAL_INT(before, AUTOLEVEL_CALLS);
+}
+
+static void test_only_the_labelled_pin_acts(void)
+{
+    /* Three pins, one job. If the label were ignored, any J_AUX input would re-level
+     * the board -- including whatever else someone wired to the other two. */
+    cfg.aux_func[0] = FN_NONE;
+    cfg.aux_func[1] = FN_IN_IMU_LEVEL;
+    cfg.aux_func[2] = FN_NONE;
+    const int before = AUTOLEVEL_CALLS;
+    aux_hold(0, 2500);
+    aux_hold(2, 2500);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(before, AUTOLEVEL_CALLS, "an unlabelled pin acted");
+    aux_hold(1, 2500);
+    TEST_ASSERT_EQUAL_INT(before + 1, AUTOLEVEL_CALLS);
+}
+
+static void test_a_held_switch_levels_once_not_continuously(void)
+{
+    /* A switch left closed -- or one that sticks -- must not re-level on every poll for
+     * as long as it is down. */
+    cfg.aux_func[1] = FN_IN_IMU_LEVEL;
+    aux_settle();
+    const int before = AUTOLEVEL_CALLS;
+    SIM.aux[1] = 1;
+    run_ms(9000);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(before + 1, AUTOLEVEL_CALLS,
+        "a switch held down kept re-levelling");
+    SIM.aux[1] = 0;
+    run_ms(TICK_MS * 4);
+}
+
+static void test_releasing_and_holding_again_levels_again(void)
+{
+    /* The other half: it must still work the second time. */
+    cfg.aux_func[1] = FN_IN_IMU_LEVEL;
+    const int before = AUTOLEVEL_CALLS;
+    aux_hold(1, 2500);
+    aux_hold(1, 2500);
+    TEST_ASSERT_EQUAL_INT(before + 2, AUTOLEVEL_CALLS);
+}
+
+static void test_a_switch_closed_at_boot_does_not_level(void)
+{
+    /* A stuck or shorted pin would otherwise re-level two seconds into EVERY power-up.
+     * On a board whose map was set by hand that is the worst possible failure: gravity
+     * cannot see yaw, so auto-level silently replaces a correct map with a wrong one,
+     * on every start, with nobody pressing anything. */
+    cfg.aux_func[1] = FN_IN_IMU_LEVEL;
+    SIM.aux[1] = 1;                       /* already closed before we begin */
+    proto_begin();
+    const int before = AUTOLEVEL_CALLS;
+    run_ms(9000);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(before, AUTOLEVEL_CALLS,
+        "a switch closed at boot re-levelled without anyone pressing it");
+}
+
+static void test_but_it_works_once_released_and_pressed_properly(void)
+{
+    /* The priming must not disable the pin forever -- a real press after a real release
+     * still has to work, or a car with a sticky switch would never level again. */
+    cfg.aux_func[1] = FN_IN_IMU_LEVEL;
+    SIM.aux[1] = 1;
+    proto_begin();
+    run_ms(3000);
+    const int before = AUTOLEVEL_CALLS;
+    SIM.aux[1] = 0;
+    run_ms(cfg.input_debounce_ms + TICK_MS * 6);
+    aux_hold(1, 2500);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(before + 1, AUTOLEVEL_CALLS,
+        "the pin stayed dead after being released");
+}
+
+static void test_the_aux_labels_read_back(void)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_AUX_FUNC, 2, FN_IN_IMU_LEVEL });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_EQUAL_UINT8(FN_IN_IMU_LEVEL, cfg.aux_func[2]);
+    const can_frame_t *r = ask(RCM_CFG_SEL_AUX);
+    TEST_ASSERT_NOT_NULL(r);
+    TEST_ASSERT_EQUAL_UINT8(FN_IN_IMU_LEVEL, r->data[4]);
+}
+
+static void test_a_bad_aux_pin_is_refused(void)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_AUX_FUNC, 3, FN_IN_IMU_LEVEL });
+    run_ms(TICK_MS * 2);
+    /* Nothing to assert but the absence of a crash and of a fourth pin -- the point is
+     * that a pin index past the end of a three-entry array is rejected, not clamped. */
+    TEST_ASSERT_EQUAL_UINT8(FN_NONE, cfg.aux_func[0]);
+}
+
 static void test_config_read_back_returns_what_was_set(void)
 {
     inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_IGNITION, IGN_MOMENTARY });
@@ -1430,6 +1579,16 @@ int main(void)
     RUN_TEST(test_a_board_starts_out_never_addressed);
     RUN_TEST(test_ecu_broadcasts_do_not_count_as_being_addressed);
     RUN_TEST(test_being_commanded_sets_it_and_it_stays_set);
+    RUN_TEST(test_holding_a_labelled_aux_pin_levels_the_imu);
+    RUN_TEST(test_a_tap_is_not_enough);
+    RUN_TEST(test_an_unlabelled_aux_pin_does_nothing);
+    RUN_TEST(test_only_the_labelled_pin_acts);
+    RUN_TEST(test_a_held_switch_levels_once_not_continuously);
+    RUN_TEST(test_releasing_and_holding_again_levels_again);
+    RUN_TEST(test_a_switch_closed_at_boot_does_not_level);
+    RUN_TEST(test_but_it_works_once_released_and_pressed_properly);
+    RUN_TEST(test_the_aux_labels_read_back);
+    RUN_TEST(test_a_bad_aux_pin_is_refused);
     RUN_TEST(test_config_read_back_returns_what_was_set);
     RUN_TEST(test_config_read_back_is_indexed_for_tables);
     RUN_TEST(test_a_global_config_request_is_never_answered);

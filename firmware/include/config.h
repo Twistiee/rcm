@@ -123,6 +123,8 @@ enum ch_func_t {
     FN_IN_DOOR,
     FN_IN_BONNET,
     FN_IN_TRACTION_CTL,
+    FN_IN_IMU_LEVEL,    /* a momentary that re-levels the IMU -- see imu_level.cpp.
+                         * HELD, not tapped, and the result is never auto-saved. */
     FN_IN_LAUNCH_ARM,
     FN_IN_PIT_LIMITER,
     FN_IN_MAP_SELECT,
@@ -151,7 +153,7 @@ struct ch_cfg_t {
  * it -- which is the whole reason `version` and `size` are in there. Note `size` alone
  * would catch a struct that GREW; the version is what catches one that changed meaning
  * without changing length. */
-#define RCM_CFG_VERSION  5
+#define RCM_CFG_VERSION  6
 
 #define RCM_ECU_CMDS 6
 /* Twelve, not six, because a keypad is ten buttons and ten LAMPS -- and a lamp that
@@ -245,6 +247,11 @@ struct rcm_config_t {
      * obvious case. Default is identity, which is only right if the board is lying
      * flat with its +X edge pointing down the car. */
     uint8_t  imu_map[3];
+
+    /* What the three J_AUX pins do. Same function labels as a channel, for the same
+     * reason: the label IS the role, so there is one record of it. Until this existed
+     * J_AUX was read, debounced and broadcast, and drove nothing at all. */
+    uint8_t  aux_func[RCM_AUX_INPUTS];
 
     /* --- ignition (see ignition.h) ---
      * ign_mode picks between a level (a key, or a maintained switch) and a push button.

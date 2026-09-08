@@ -54,6 +54,7 @@ static float acc_r[3];   /* sensor axes, g     -- auto-level solves from these; 
 static float gyr_r[3];   /* sensor axes, deg/s -- remap is what everything else reads */
 static uint8_t level_res  = RCM_IMU_LEVEL_NONE;
 static uint8_t level_tilt = 90;
+static uint32_t level_at;
 
 /* --- Bosch API interface shims --------------------------------------------- */
 
@@ -181,9 +182,14 @@ float imu_gyro_raw(uint8_t axis)   { return axis < 3 ? gyr_r[axis] : 0.0f; }
 
 uint8_t imu_level_result(void)   { return level_res; }
 uint8_t imu_level_tilt_deg(void) { return level_tilt; }
+uint32_t imu_level_when(void)    { return level_at; }
 
 uint8_t imu_autolevel(void)
 {
+    /* Stamped for every attempt including the refusals -- the LED has to report a
+     * refusal just as clearly as a success, or a press that did nothing looks the same
+     * as a press that was not seen. */
+    level_at = millis() ? millis() : 1;
     if (!ready) { level_res = RCM_IMU_LEVEL_NO_IMU; level_tilt = 90; return level_res; }
 
     /* Solve from a fresh sample rather than whatever imu_tick() last left behind, so

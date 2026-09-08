@@ -47,5 +47,7 @@ bool imu_map_valid(const uint8_t map[3]);
 uint8_t imu_autolevel(void);
 uint8_t imu_level_result(void);   /* last imu_autolevel() code, NONE before any */
 uint8_t imu_level_tilt_deg(void); /* saturating, 90 if never attempted */
+uint32_t imu_level_when(void);    /* millis() of the last attempt, 0 if never -- the
+                                   * status LEDs use it to show the result briefly */
 
 #endif /* RCM_IMU_H */

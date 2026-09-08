@@ -93,6 +93,11 @@ Things worth knowing before touching it:
   clear of everything rusEFI uses. The IMU deliberately emits **Bosch MM5.10** frames at
   `0x174`/`0x178`/`0x17C` because rusEFI decodes those natively — set
   `imuType = IMU_MM5_10` and it just works.
+- **`cfg` grew `aux_func[3]` at version 6 (2026-09-08), which WIPES saved configs.**
+  `cfg_load()` rejects a mismatched version and falls back to defaults -- there is no
+  migration, by design. `imu_map` and `ign_mode` are packed at offsets 168-171 so there
+  was no padding to reuse. Anyone upgrading past v5 re-enters their config; dump it with
+  `rcm_bench get all` first.
 - **Status LEDs: green SOLID means well; it flashes only to report something.** 1 Hz = it
   lost a master it previously had (`proto_failsafe() && proto_ever_addressed()`), 6.7 Hz =
   the CAN controller never started. The `ever_addressed` half matters: a keypad is never

@@ -132,6 +132,10 @@
                                       * right-handed so yaw comes out the right way round.
                                       * Confirm the result with GET_CFG; it is held in RAM
                                       * like every other setter, so SAVE_CONFIG to keep it. */
+#define RCM_OP_SET_AUX_FUNC   0x1F   /* b1 pin 0..2, b2 function label. Gives a J_AUX pin
+                                      * a job, the same way SET_CH_FUNC does for a channel.
+                                      * The useful one today is FN_IN_IMU_LEVEL: a switch
+                                      * that re-levels the IMU without a laptop. */
 
 /* --- RCM_OP_GET_CFG selectors ----------------------------------------------
  * Reply layout is always: d0 selector, d1 index, d2..d7 payload. */
@@ -148,7 +152,8 @@
 #define RCM_CFG_SEL_FOLLOW    0x0A   /* index = slot: ch, bit, frame id (2)           */
 #define RCM_CFG_SEL_TIMING2   0x0B   /* ECU follow staleness ms (2)                   */
 #define RCM_CFG_SEL_IMU       0x0C   /* map X, Y, Z, last auto-level result, tilt deg  */
-#define RCM_CFG_SEL_MAX       0x0C
+#define RCM_CFG_SEL_AUX       0x0D   /* the three J_AUX function labels               */
+#define RCM_CFG_SEL_MAX       0x0D
 
 /* --- asking rusEFI to start or stop the engine ------------------------------
  * An EXTENDED frame from rusEFI's bench-test command block. Verified against rusEFI's
@@ -189,6 +194,9 @@
  * commanded this board", which is a keypad's normal life, from "this board was being
  * commanded and the master went away", which is a real fault. */
 bool proto_ever_addressed(void);
+
+/* True while an IMU auto-level switch is held and has not yet fired. */
+bool proto_aux_level_holding(void);
 
 /* Send one TunerStudio command to the ECU. */
 void proto_send_ecu_cmd(uint16_t subsystem, uint16_t index);

@@ -57,6 +57,17 @@ static bool     failsafe_active;
  * presses -- so for one of those a silent bus is the normal condition, not a fault, and
  * a board that alarms about its normal condition just teaches you to ignore the alarm. */
 static bool     ever_addressed;
+
+/* J_AUX press tracking. A HOLD, not a tap: re-levelling silently rewrites how this board
+ * reports the car's motion to an ECU, and a switch that does that on a knock is a switch
+ * nobody should fit. The result is never auto-saved either, so even a deliberate press
+ * evaporates on the next power cycle unless someone commits it. */
+#define AUX_HOLD_MS   2000u
+static uint8_t  aux_prev;
+static uint32_t aux_since[RCM_AUX_INPUTS];
+static uint8_t  aux_fired;
+static bool     aux_primed;
+static uint32_t aux_begin_ms;
 static bool     reboot_pending;
 
 /* Peer mirroring keeps an edge memory so toggle channels fire once per press
@@ -105,6 +116,9 @@ void proto_begin(void)
     last_rx_ms = millis();
     failsafe_active = false;
     ever_addressed = false;
+    aux_prev = 0; aux_fired = 0; aux_primed = false;
+    aux_begin_ms = millis();
+    memset(aux_since, 0, sizeof(aux_since));
     reboot_pending = false;
     filters_dirty = false;
     /* Seed from the CURRENT button states, not from zero. Otherwise a board that boots
@@ -294,6 +308,9 @@ static void send_cfg_reply(uint8_t sel, uint8_t idx)
         p[0] = (uint8_t)cfg.ecu_follow_stale_ms;
         p[1] = (uint8_t)(cfg.ecu_follow_stale_ms >> 8);
         break;
+    case RCM_CFG_SEL_AUX:
+        p[0] = cfg.aux_func[0]; p[1] = cfg.aux_func[1]; p[2] = cfg.aux_func[2];
+        break;
     case RCM_CFG_SEL_IMU:
         p[0] = cfg.imu_map[0]; p[1] = cfg.imu_map[1]; p[2] = cfg.imu_map[2];
         p[3] = imu_level_result();
@@ -402,6 +419,11 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
          * ever reach, so the board would report a car incapable of yawing. */
         if (f->len >= 4 && imu_map_valid(&f->data[1]))
             for (uint8_t i = 0; i < 3; i++) cfg.imu_map[i] = f->data[1 + i];
+        break;
+
+    case RCM_OP_SET_AUX_FUNC:
+        if (f->len >= 3 && f->data[1] < RCM_AUX_INPUTS)
+            cfg.aux_func[f->data[1]] = f->data[2];
         break;
 
     case RCM_OP_IMU_LEVEL:
@@ -638,6 +660,49 @@ void proto_poll(uint32_t now_ms)
         else         ecu_prev &= (uint8_t)~(1u << i);
     }
 
+    /* --- J_AUX jobs ---
+     * Only one label does anything today. Held for AUX_HOLD_MS, it re-levels the IMU,
+     * which is the whole point: a board bolted under a dash can be squared up with a
+     * switch instead of a laptop and a CAN adapter. */
+    {
+        const uint8_t now_aux = ch_aux();
+
+        /* A switch ALREADY CLOSED at boot is a baseline, not a press. Without this a
+         * stuck or shorted J_AUX pin re-levels the board two seconds into every single
+         * power-up -- and since gravity cannot see yaw, on a board whose map was set by
+         * hand that quietly replaces a correct map with a wrong one, on every start,
+         * with no press and nobody watching. It has to be released before it counts.
+         * Same reasoning as in_primed in channels.cpp and armed in ignition.cpp. */
+        if (!aux_primed) {
+            /* Wait for the DEBOUNCE to settle before taking the baseline. ch_aux() reads
+             * zero for the first few ticks whatever the pins are actually doing, so
+             * priming immediately would record "all open" and then see a stuck switch
+             * as a fresh press -- which is the exact failure this is here to prevent.
+             * Caught by test_a_switch_closed_at_boot_does_not_level. */
+            if ((uint32_t)(now_ms - aux_begin_ms) < (uint32_t)cfg.input_debounce_ms + 50u)
+                goto aux_done;
+            aux_primed = true;
+            aux_prev  = now_aux;
+            aux_fired = now_aux;          /* anything already down starts spent */
+            for (uint8_t a = 0; a < RCM_AUX_INPUTS; a++) aux_since[a] = now_ms;
+        }
+
+        for (uint8_t a = 0; a < RCM_AUX_INPUTS; a++) {
+            const bool down = (now_aux >> a) & 1u;
+            const bool was  = (aux_prev >> a) & 1u;
+
+            if (down && !was) { aux_since[a] = now_ms; aux_fired &= (uint8_t)~(1u << a); }
+            if (!down)        { aux_fired &= (uint8_t)~(1u << a); continue; }
+            if (aux_fired & (1u << a)) continue;      /* once per press, not per tick */
+            if ((uint32_t)(now_ms - aux_since[a]) < AUX_HOLD_MS) continue;
+
+            aux_fired |= (uint8_t)(1u << a);
+            if (cfg.aux_func[a] == FN_IN_IMU_LEVEL) imu_autolevel();
+        }
+        aux_prev = now_aux;
+    aux_done: ;
+    }
+
     /* A followed channel whose frame has stopped arriving falls back to its failsafe
      * bit. Holding the last value would leave a fuel pump running on the strength of a
      * frame that arrived before the ECU died. */
@@ -681,4 +746,17 @@ void proto_poll(uint32_t now_ms)
 bool proto_failsafe(void)   { return failsafe_active; }
 
 bool proto_ever_addressed(void) { return ever_addressed; }
+
+/* True while an IMU-level switch is held and has not yet fired. The status LEDs use it
+ * to acknowledge the press WHILE it is happening: without that you hold a switch for two
+ * seconds with no idea whether the board saw it, and a press that never registered looks
+ * exactly like one still waiting. Releasing early therefore aborts, visibly. */
+bool proto_aux_level_holding(void)
+{
+    for (uint8_t a = 0; a < RCM_AUX_INPUTS; a++)
+        if (cfg.aux_func[a] == FN_IN_IMU_LEVEL
+            && ((ch_aux() >> a) & 1u) && !(aux_fired & (1u << a)))
+            return true;
+    return false;
+}
 uint32_t proto_last_rx(void) { return last_rx_ms; }

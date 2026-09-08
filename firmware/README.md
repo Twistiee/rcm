@@ -11,7 +11,7 @@ unit-tested against a model of the board. None of it has seen a relay.
 pio run                          build for the board
 pio run -t upload                flash over J_SWD with an ST-Link
 pio run -e selftest -t upload    bring-up console on the USB-C port
-pio test -e native               237 host unit tests
+pio test -e native               247 host unit tests
 python tools/gen_dbc.py          regenerate ../docs/rcm.dbc
 python tools/test_rcm_bench.py   self-test the bench tool, no hardware needed
 python tools/rcm_bench.py --help talk to a board over CAN
@@ -215,6 +215,47 @@ All of this is hardware-verified over both transports (2026-09-07): solving flat
 its side, refusing a 34 deg tilt, refusing a flat spin, setting and reading a map over
 CAN, and refusing a repeated axis, a fourth axis, a short frame and a missing magic byte
 sent as raw frames — so the guards are the firmware's, not just the tool's.
+
+### Re-levelling from a switch, with no laptop
+
+A J_AUX pin labelled `FN_IN_IMU_LEVEL` re-levels the IMU when **held for 2 seconds**. That
+is the point of it: a board bolted under a dash can be squared up with a switch instead of
+a CAN adapter and a laptop.
+
+```
+rcm_bench.py ctl auxfunc 2 imulevel     # J_AUX pin 2 becomes the level switch
+rcm_bench.py get aux                    # what the three pins are set to
+```
+
+J_AUX inputs are active-high, same as the channels — feed the pin 12 V through a momentary.
+Until this existed the three J_AUX pins were read, debounced and broadcast, and drove
+nothing at all.
+
+**The LEDs answer you**, because two of the three outcomes are refusals and a refusal
+otherwise looks identical to a press the board never saw:
+
+| While held | green/red alternate at 2 Hz — seen, keep holding. Release early to abort |
+|---|---|
+| **green ×4** | levelled |
+| **red ×2** | moving — stop moving and try again |
+| **red ×3** | not square — retrying will not help, the **mount** is wrong |
+| **red ×4** | no IMU, or the `CFG_IMU_EN` strap is open |
+
+Three deliberate awkwardnesses, each with a test:
+
+- **Held, not tapped.** Re-levelling rewrites how this board reports the car's motion to
+  an ECU; a knock must not do it.
+- **Once per press.** Holding longer does not level repeatedly, and a switch that sticks
+  closed levels once, not forever.
+- **A switch already closed at boot is a baseline, not a press.** Without that, a stuck or
+  shorted pin would re-level two seconds into *every* power-up — and since gravity cannot
+  see yaw, on a board whose map was set by hand that silently replaces a correct map with
+  a wrong one, on every start, with nobody pressing anything.
+
+The result is **never auto-saved**, so even a deliberate press evaporates on the next power
+cycle unless someone commits it with `ctl save`. On a board whose map was set by hand —
+like a keypad mounted with its terminal edge to the side — that is the difference between a
+stray press being an annoyance and being a wrong map baked into EEPROM.
 
 Mount it **rigidly** either way — on a compliant bracket you measure the bracket
 resonating, not the car.
@@ -450,7 +491,7 @@ and also cross-checks the tool's byte packing against the DBC — so bench tool,
 
 ## Testing
 
-237 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
+247 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
 `.cpp` files against a model of the board in `test/stubs/`, so they test the code that
 ships rather than a transcription of it.
 

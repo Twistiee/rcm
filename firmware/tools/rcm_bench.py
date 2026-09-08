@@ -90,6 +90,11 @@ OP = {
     "imumap":       0x1D,
     # solve the map from gravity, with the car standing still.
     "imulevel":     0x1E,
+    # give one of the three J_AUX pins a job.
+    #   auxfunc <pin 1-3> <function>
+    # The one that does anything today is 'imulevel': hold that pin high for 2s and the
+    # board re-levels its IMU, no laptop needed. Held, not tapped, and never auto-saved.
+    "auxfunc":      0x1F,
 }
 # Vehicle axis <- sensor axis. Spelled as axis names because "0x82" is unreadable and
 # getting it wrong is not something the board can detect for you.
@@ -112,11 +117,11 @@ IN_BEH = {"momentary": 0, "toggle": 1, "holdarm": 2}
 # text that lives in the firmware's chnames.cpp, and duplicating them would just create
 # something to drift. These four are derived from the ignition block, never set by hand.
 IGN_FUNCS = {1: "IGNITION", 2: "STARTER", 128: "IN_BRAKE", 129: "IN_ENGINE_RUN",
-             130: "IN_CLUTCH"}
+             130: "IN_CLUTCH", 136: "IN_IMU_LEVEL"}
 # The roles the firmware LOOKS UP. Labelling a channel with one is how it is given that
 # job -- there is no separate channel-number setting to keep in step.
 FUNC_NAMES = {"ignition": 1, "starter": 2, "brake": 128, "enginerun": 129,
-              "clutch": 130, "none": 0}
+              "clutch": 130, "imulevel": 136, "none": 0}
 
 # Named (subsystem, index) pairs for the ECU command table. EVERY TunerStudio command is
 # that shape -- see the cmd_* lines in rusefi's tunerstudio.template.ini -- so the
@@ -435,6 +440,8 @@ CFG_SEL = {
            % (("0x%03X" % _u16(d, 2)) if _u16(d, 2) else "none", _u16(d, 4))),
     0x08: ("ecucmd", 6, lambda d: "channel %s -> subsystem %d index %d%s"
            % (_ch(d[2]), _u16(d, 3), _u16(d, 5), _cmd_name(_u16(d, 3), _u16(d, 5)))),
+    0x0D: ("aux", 1, lambda d: "J_AUX 1=%s 2=%s 3=%s"
+           % (_func_name(d[2]), _func_name(d[3]), _func_name(d[4]))),
     0x0C: ("imu", 1, lambda d: "vehicle X=%s Y=%s Z=%s   (last auto-level: %s%s)"
            % (_axis(d[2]), _axis(d[3]), _axis(d[4]),
               IMU_LEVEL_RESULT.get(d[5], "?"),
@@ -631,6 +638,19 @@ def cmd_ctl(bus, args):
             sys.exit("each sensor axis may be used once -- %s names one twice, which "
                      "is a fold, not a rotation: one axis would never be read at all."
                      % " ".join(args.args))
+
+    elif args.op == "auxfunc":
+        if len(args.args) != 2:
+            sys.exit("auxfunc <pin 1-3> <%s|number> -- gives a J_AUX pin a job. "
+                     "'imulevel' is the useful one: hold that pin high for 2s to "
+                     "re-level the IMU." % "|".join(sorted(FUNC_NAMES)))
+        pin = int(args.args[0], 0)
+        if not 1 <= pin <= 3:
+            sys.exit("J_AUX has three pins, numbered 1-3")
+        fn = FUNC_NAMES.get(args.args[1])
+        if fn is None:
+            fn = int(args.args[1], 0)
+        extra = [pin - 1, fn]
 
     elif args.op == "imulevel":
         extra = [0x5A]

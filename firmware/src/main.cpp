@@ -90,12 +90,56 @@ bool     app_ignition_on(void) { return ign_mv >= IGN_ON_MV; }
  * channel, including the eighteen nobody has wired yet, so every bench board sat there
  * with a fault lamp on. An indicator that is always on tells you nothing at all.
  */
+#define LEVEL_SHOW_MS  3000u   /* how long the result stays on screen        */
+#define LEVEL_PAUSE_MS  400u   /* silence between the hold and the answer    */
+#define LEVEL_BLINK_MS  400u   /* one counted blink: 200 on, 200 off         */
+
 static void leds(uint32_t now)
 {
     /* Only outputs that have been given a job can meaningfully be faulty -- see
      * ch_fault_actionable(), which the CAN status flag uses too so the lamp and the bus
      * cannot tell you different things. */
     const bool fault = ch_fault_actionable();
+
+    /* --- auto-levelling: acknowledge the press, then report the result ---
+     * Held switch  -> green/red alternate at 2 Hz, for as long as it is held. That says
+     *                 "seen, keep holding", and releasing early aborts visibly. Without
+     *                 it you hold a switch for two seconds unsure whether anything
+     *                 registered, and a press that missed looks like one still waiting.
+     * Then a pause, then the answer, counted in blinks because a count is readable
+     * lying under a dash where a colour alone is not:
+     *     green x4  levelled
+     *     red   x2  moving -- stop moving and try again
+     *     red   x3  not square -- retrying will not help, the MOUNT is wrong
+     *     red   x4  no IMU -- hardware or the CFG_IMU_EN strap
+     * The refusals are counted separately on purpose. Collapsing them to one pattern
+     * would make a raked mount look like someone leaning on the car, and you would
+     * retry forever at something no amount of retrying can fix. */
+    const uint32_t lvl_at = imu_level_when();
+    if (lvl_at && (uint32_t)(now - lvl_at) < LEVEL_SHOW_MS) {
+        const uint32_t age = now - lvl_at;
+        if (age < LEVEL_PAUSE_MS) {            /* the beat of silence before the answer */
+            digitalWrite(PIN_LED1, LOW);
+            digitalWrite(PIN_LED2, LOW);
+            return;
+        }
+        const uint32_t t    = age - LEVEL_PAUSE_MS;
+        const uint8_t  res  = imu_level_result();
+        const bool     ok   = (res == RCM_IMU_LEVEL_OK);
+        const uint8_t  n    = ok ? 4 : (res == RCM_IMU_LEVEL_MOVING ? 2
+                                     : (res == RCM_IMU_LEVEL_TILTED ? 3 : 4));
+        const bool on = (t / LEVEL_BLINK_MS) < n && (t % LEVEL_BLINK_MS) < (LEVEL_BLINK_MS / 2);
+        digitalWrite(PIN_LED1, (ok  && on) ? HIGH : LOW);
+        digitalWrite(PIN_LED2, (!ok && on) ? HIGH : LOW);
+        return;
+    }
+
+    if (proto_aux_level_holding()) {
+        const bool phase = (now % 500) < 250;          /* 2 Hz, the two swapping */
+        digitalWrite(PIN_LED1, phase ? HIGH : LOW);
+        digitalWrite(PIN_LED2, phase ? LOW  : HIGH);
+        return;
+    }
 
     bool green;
     if (!can_up) {
