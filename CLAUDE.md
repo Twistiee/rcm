@@ -159,9 +159,10 @@ Things worth knowing before touching it:
 
 ## Enclosure — `enclosure/`, and it is generated, not modelled
 
-A sealed box plus two lids (keypad face, blank plate for the relay role) live in
-[`enclosure/`](enclosure). See `enclosure/README.md` for the dimensions and the
-reasoning; the things worth knowing at this level:
+A box, two lids (keypad face, blank plate for the relay role) and a start/stop
+guard ring live in [`enclosure/`](enclosure). See
+`enclosure/README.md` for the dimensions and the reasoning; the things worth
+knowing at this level:
 
 - **`build_enclosure.py` is the model.** The `.FCStd` files are output and are
   overwritten on every run — never edit them by hand, change `PARAMS` and re-run.
@@ -171,14 +172,65 @@ reasoning; the things worth knowing at this level:
   face, so nothing goes topologically stale.
 - **`Vector.multiply()` mutates in place in FreeCAD.** Use `v * scalar`. This
   silently corrupts a reused axis vector and the failure looks like a geometry bug.
-- **The switch geometry is inherited, not derived.** Ø25.0 through, Ø28.0 × 2.0
-  bezel recess, 35 mm pitch, from `G:\My Drive\CAD\Exocet\Keypad\Keypad-Face.FCStd`,
-  which was printed and fitted. Do not "improve" it without a test print.
+- **The switch geometry is inherited, not derived.** Ø25.0 through and 35 mm
+  pitch come from `G:\My Drive\CAD\Exocet\Keypad\Keypad-Face.FCStd`, which was
+  printed and fitted. Those two are untouched; do not "improve" them without a
+  test print. The recess over the head is now Ø28.2 × 0.5 — see `lid_t` above.
 - **The lid prints face down, and nothing on either part needs support.** The
   bezel recess ends in a 45° cone rather than a square shoulder, because the
-  shoulder was a 1.5 mm horizontal ceiling — the sole support-needing feature.
-  The recess stays full Ø28 for its 2 mm first, so the head is still flush. That
-  cone is why `lid_t` is 6 mm: at 4 it left 0.5 mm of straight bore under it.
+  shoulder was a horizontal ceiling — the sole support-needing feature.
+- **`lid_t` is 3.5 mm and the nut is why.** Every millimetre of lid is a
+  millimetre of thread the nut does not get. It only fits because
+  `sw_bezel_depth` dropped 2.0 → 0.5: that number used to be the whole head
+  thickness (head flush), and is now only a register — the head lands on its
+  O-ring, the O-ring on the chamfer. **The head therefore stands 1.5 mm proud**,
+  which is why `sw_head_d`/`sw_head_t` exist separately from the recess, and why
+  `guard_h` is 6.5 to keep 5 mm of guard above the *button* (checked, not
+  assumed). Do not "restore" the flush recess without giving the thread back.
+- **The model draws the DEUTSCH receptacle, never the mating plug.**
+  `dt_body_in`/`dt_body_d` are the wall-mounted half only; the plug, its wedge
+  lock and the wires sweeping out of it are not drawn. That is why the lid's
+  locating lip fouled the plug on a real print while the model showed 4.4 mm of
+  clearance. The lip is now cut back either side of every port
+  (`lid_lip_port_margin`), keeping the corners so the lid still self-aligns.
+  Do not add checks that pretend to know the plug envelope - measure it.
+- **The start/stop button is `("front", "driver")`, at (-52.5, 17.5)** - the
+  same end the loom comes in. One parameter; the pin holes, checks and corner
+  coupon all follow it.
+- **`Corner-Coupon-Lid/Box` are a matched pair cut from the built parts by
+  intersection** - the lid corner at the start/stop button and the top 20 mm of
+  the box corner under it. Never re-model a coupon; intersect, or it drifts
+  from the part it is testing. Both halves take the same X/Y shift so they
+  still mate.
+- **`boss_wall_bite` exists because the lid bosses used to sit exactly tangent
+  to the cavity walls** - touching along a line, held together only by the
+  floor. Invisible in the whole box, but the corner coupon fell apart into
+  loose posts. They now sit 1 mm into the wall; the screws moved to ±76/±46
+  and a check proves they stay clear of the seal groove.
+- **There is NO seal: `lid_seal` is False.** The wall went 5 -> 2 mm to shrink
+  the box (186 -> 111 cm3), and a 2.4 mm groove will not sit on a 2 mm wall -
+  the land came out at -0.20 mm and the lid screws cut into the groove. The lid
+  now lands flat on the wall top, located by its lip. The groove geometry and
+  cord parameters are all still there, switched off: to restore it, set
+  `lid_seal` True AND `wall` >= `seal_groove_w` + 2.6, and the checks will
+  confirm it. Do not describe this box as sealed.
+- **Two revisions, both built and both kept.** `VARIANTS` in the builder:
+  `revA` is the relay-module box (2-way PWR one end, 4-way CAN the other);
+  `revB-8way` is the **keypad build** — eight wires on one DT04-08PA-L012 at one
+  end. Every part is written with the revision in its filename. `revB` is 2 mm
+  taller because the 8-way flange is, and that 2 mm also takes the harness
+  margin from 1.7 to 3.7 mm and lets the blank +X wall take a mid-span lid
+  screw, halving the 90 mm seal span.
+- **The `dt-8way` footprint is UNVERIFIED and the build says so on every run.**
+  Flange 54.99 × 35.51 and the 45.67 length are confirmed from TE (checked by
+  reading the same fields for the 3-way and getting the flange this model
+  already used). Hole pitch, aperture and body depth are *inferred* from the
+  small shell's proportions because TE's drawing needs a login. Do not set
+  `verified: True` until somebody has measured the part. `Port-Coupon-*` is
+  generated for exactly this — test-fit before printing a box.
+- **Connector sizes live in `DT_FOOTPRINTS`,** and a port names one. Never
+  scatter flange or hole numbers through PARAMS again; the two sizes getting
+  their dimensions crossed is the failure this prevents.
 - **One DEUTSCH footprint fits DT04-2P / -3P / -4P.** All three share the flange
   and the 30.35 × 22.45 hole pattern; their cutouts differ, but a round Ø25.4
   contains the largest (the 4-way's 22.10 × 20.98 R6.35) with 0.09 mm to spare.
@@ -186,8 +238,30 @@ reasoning; the things worth knowing at this level:
 - **`pcb_tall_comp_h` (12 mm, the buck on its headers) sets the box height on its
   own** — the switches sit directly over the buck, so switch tail and component
   stack rather than overlap. It is an estimate and is the first thing to measure.
-- Wire entry is DEUTSCH only; there is deliberately **no USB window**, because an
-  open hole would undo the lid seal. USB is reached by removing the lid.
+- Wire entry is DEUTSCH only; there is deliberately **no USB window**. USB is a
+  service port - reached by removing the lid.
+- **The board in the box is 140 × 80, not 140 × 70.** Edge.Cuts is 140 × 70, but
+  the delivered boards keep their manufacturing rails on the long edges and those
+  are being used as a labelling surface. `pcb_w`/`pcb_d` stay the routed outline
+  so `pcb_holes` remain real KiCad coordinates; `pcb_tab_w` widens the envelope
+  only. Writing 80 into `pcb_d` would silently move every standoff 5 mm, because
+  `board_to_global()` centres the outline.
+- **`car_front` is `-X`: the front of the car is the −X end**, because the loom
+  arrives from the front and the DEUTSCH port is on that wall. With +Z up that
+  makes +Y the car's right, so a RHD driver's side is **+Y**. Never hand-write
+  one of these signs — ask `car_axes()`, or say `("front", "driver")` and let
+  `guard_switch_xy()` resolve it. This was wrong once and put the starter on the
+  diagonally opposite corner; the geometry looked fine throughout, which is why
+  the build now prints every port wall in car terms (`-X wall = front`).
+- **The start/stop guard ring is a separate part on purpose.** The lid prints face
+  down, so anything proud of the front face points into the bed; flipping the lid
+  just moves the problem to the locating lip. The ring prints bond-face up and is
+  located by two pins into blind holes. Do not "tidy" it into the lid.
+- **The harness climbs in the 9 mm channel off the long edges** — every screw
+  terminal is on a long edge — and needs 30 mm above the board's bottom mounting
+  face. It has 31.7. The ceiling is the *corner of the nearest switch nut*, not
+  the lid. `checks()` enforces it, so touching row pitch, lid thickness or
+  standoff height will report back immediately.
 
 ## Conventions inherited from the pdm work
 
