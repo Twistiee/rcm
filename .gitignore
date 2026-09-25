@@ -29,3 +29,6 @@ scratchpad/
 
 # PlatformIO build output
 firmware/.pio/
+
+# sliced gcode -- regenerable from the 3mf in a minute, and printer/profile specific
+*.gcode
