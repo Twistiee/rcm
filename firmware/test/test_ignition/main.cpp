@@ -24,6 +24,7 @@ struct rcm_straps_t straps;
 #define START_CH 4
 #define RUN_CH   11
 #define RUNOUT_CH 6
+#define LAMP_CH  5
 #define HOLD_MS  1000
 #define CRANK_MS 8000
 
@@ -346,6 +347,137 @@ static void test_a_clutch_alone_satisfies_the_crank_prerequisite(void)
     sw = true; tick(50);
     TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(START_CH),
         "a clutch-only car could not crank");
+}
+
+/* --- the start button's own lamp ---------------------------------------------
+ * slow blink = ignition on, fast = starting, solid = running, off = shutting down.
+ * Solid while running is deliberate: it is the lamp that lets you FIND the button in
+ * the dark to stop the car. Patterns are classified by sampling the driver for a few
+ * seconds and counting on-time and transitions, so the tests do not care about phase. */
+
+struct lamp_seen { int on; int edges; int total; };
+
+static lamp_seen watch_lamp(uint32_t ms)
+{
+    lamp_seen r = { 0, 0, 0 };
+    bool prev = sim_driver_on(LAMP_CH);
+    for (uint32_t t = 0; t < ms; t += TICK_MS) {
+        tick(TICK_MS);
+        const bool on = sim_driver_on(LAMP_CH);
+        if (on) r.on++;
+        if (on != prev) r.edges++;
+        prev = on;
+        r.total++;
+    }
+    return r;
+}
+
+static void with_lamp(void)
+{
+    cfg.ch[LAMP_CH].func = FN_IGN_LAMP;
+    cfg.ch[LAMP_CH].mode = CH_OUTPUT;
+}
+
+/* Expected transitions scale with how long we watched: two per period. Checked against
+ * the period itself rather than a fixed count, so a test can watch as long as the state
+ * it is testing actually lasts -- a crank is a fraction of a second. (The first version
+ * hard-coded the 4 s window and failed two correct tests that watched for less.) */
+#define WATCH_MS 4000
+
+static void assert_rate(const lamp_seen &r, uint32_t ms, uint32_t period, const char *msg)
+{
+    char m[160];
+    const int want = (int)(2 * ms / period);
+    snprintf(m, sizeof m, "%s (edges %d, want ~%d; on %d of %d)",
+             msg, r.edges, want, r.on, r.total);
+    TEST_ASSERT_INT_WITHIN_MESSAGE(want / 4 + 1, want, r.edges, m);
+    TEST_ASSERT_INT_WITHIN_MESSAGE(r.total / 8, r.total / 2, r.on, m);   /* ~50% duty */
+}
+#define assert_slow(r, ms, msg) assert_rate(r, ms, LAMP_SLOW_MS, msg)
+#define assert_fast(r, ms, msg) assert_rate(r, ms, LAMP_FAST_MS, msg)
+
+static void test_lamp_slow_blinks_with_the_ignition_on(void)
+{
+    momentary_setup(true);
+    with_lamp();
+    assert_slow(watch_lamp(WATCH_MS), WATCH_MS, "ignition on, not running: expected the slow blink");
+}
+
+static void test_lamp_is_solid_while_the_engine_runs(void)
+{
+    /* The one that matters at night: a lit, steady button is one you can find to stop
+     * the car with. */
+    momentary_setup(true);
+    with_lamp();
+    set_running(true);
+    const lamp_seen r = watch_lamp(WATCH_MS);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(r.total, r.on, "running: lamp should be solid");
+    TEST_ASSERT_EQUAL_INT(0, r.edges);
+}
+
+static void test_lamp_goes_out_when_the_car_is_switched_off(void)
+{
+    momentary_setup(true);
+    with_lamp();
+    set_brake(false);
+    press(100);                                    /* pedal up: switch off */
+    TEST_ASSERT_TRUE(ign_wants_shutdown());
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, watch_lamp(WATCH_MS).on,
+        "lamp still lit while shutting down");
+}
+
+static void test_lamp_fast_blinks_while_the_ECU_is_asked_to_start(void)
+{
+    /* The car this was written for: the ECU owns the starter, so this board never enters
+     * CRANKING -- it sends start/stop and waits. If only CRANKING counted, the lamp would
+     * never show a start on exactly the installation it exists for. */
+    momentary_setup(true);
+    with_lamp();
+    cfg.ch[START_CH].func = FN_NONE;
+    cfg.ign_ecu_flags = IGN_ECU_START_ON_BRAKE;
+    set_brake(true);
+    press(100);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(IGN_ST_IGNITION, ign_state(),
+        "precondition: the board itself is not cranking");
+    assert_fast(watch_lamp(2000), 2000, "ECU start requested: expected the fast blink");
+}
+
+static void test_lamp_goes_solid_once_the_engine_catches(void)
+{
+    momentary_setup(true);
+    with_lamp();
+    cfg.ch[START_CH].func = FN_NONE;
+    cfg.ign_ecu_flags = IGN_ECU_START_ON_BRAKE;
+    set_brake(true);
+    press(100);
+    set_running(true);
+    const lamp_seen r = watch_lamp(WATCH_MS);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(r.total, r.on, "caught, but the lamp is still flashing");
+}
+
+static void test_lamp_stops_claiming_a_start_after_the_crank_window(void)
+{
+    /* A start that never catches must not flash "starting" forever. */
+    momentary_setup(true);
+    with_lamp();
+    cfg.ch[START_CH].func = FN_NONE;
+    cfg.ign_ecu_flags = IGN_ECU_START_ON_BRAKE;
+    set_brake(true);
+    press(100);
+    tick(CRANK_MS + 200);
+    assert_slow(watch_lamp(WATCH_MS), WATCH_MS, "never caught: should be back to the slow blink");
+}
+
+static void test_lamp_fast_blinks_while_this_board_cranks(void)
+{
+    /* The other arrangement: this board owns the starter relay. */
+    momentary_setup(true);
+    with_lamp();
+    set_brake(true);
+    sw = true; tick(100);                          /* held short of the stop hold */
+    TEST_ASSERT_EQUAL_INT(IGN_ST_CRANKING, ign_state());
+    assert_fast(watch_lamp(600), 600, "cranking: expected the fast blink");
+    sw = false; tick(TICK_MS * 4);
 }
 
 static void test_two_button_mode_never_talks_to_the_ecu(void)
@@ -997,6 +1129,13 @@ int main(void)
     RUN_TEST(test_without_a_clutch_the_brake_still_starts);
     RUN_TEST(test_the_read_back_names_the_pedal_that_actually_gates);
     RUN_TEST(test_a_clutch_alone_satisfies_the_crank_prerequisite);
+    RUN_TEST(test_lamp_slow_blinks_with_the_ignition_on);
+    RUN_TEST(test_lamp_is_solid_while_the_engine_runs);
+    RUN_TEST(test_lamp_goes_out_when_the_car_is_switched_off);
+    RUN_TEST(test_lamp_fast_blinks_while_the_ECU_is_asked_to_start);
+    RUN_TEST(test_lamp_goes_solid_once_the_engine_catches);
+    RUN_TEST(test_lamp_stops_claiming_a_start_after_the_crank_window);
+    RUN_TEST(test_lamp_fast_blinks_while_this_board_cranks);
     RUN_TEST(test_two_button_mode_never_talks_to_the_ecu);
     RUN_TEST(test_one_button_press_with_brake_asks_the_ecu_to_start);
     RUN_TEST(test_one_button_press_without_brake_is_still_a_shutdown);

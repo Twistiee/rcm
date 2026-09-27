@@ -123,12 +123,12 @@ IN_BEH = {"momentary": 0, "toggle": 1, "holdarm": 2}
 # Only the four the FIRMWARE acts on are named here. The other ~47 labels are display
 # text that lives in the firmware's chnames.cpp, and duplicating them would just create
 # something to drift. These four are derived from the ignition block, never set by hand.
-IGN_FUNCS = {1: "IGNITION", 2: "STARTER", 128: "IN_BRAKE", 129: "IN_ENGINE_RUN",
+IGN_FUNCS = {1: "IGNITION", 2: "STARTER", 72: "IGN_LAMP", 128: "IN_BRAKE", 129: "IN_ENGINE_RUN",
              130: "IN_CLUTCH", 136: "IN_IMU_LEVEL", 137: "IN_IMU_FWD",
              138: "IN_CFG_SAVE"}
 # The roles the firmware LOOKS UP. Labelling a channel with one is how it is given that
 # job -- there is no separate channel-number setting to keep in step.
-FUNC_NAMES = {"ignition": 1, "starter": 2, "brake": 128, "enginerun": 129,
+FUNC_NAMES = {"ignition": 1, "starter": 2, "ignlamp": 72, "brake": 128, "enginerun": 129,
               "clutch": 130, "imulevel": 136, "imufwd": 137, "cfgsave": 138,
               "none": 0}
 

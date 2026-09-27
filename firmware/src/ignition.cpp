@@ -22,6 +22,7 @@ static uint32_t shutdown_at;    /* when the stop was requested */
 static uint32_t last_activity;  /* for the idle timeout */
 static uint16_t can_rpm;
 static uint32_t can_rpm_at;     /* 0 = never heard */
+static uint32_t start_asked_at; /* when we last asked the ECU to crank, 0 = not asking */
 
 /* RPM older than this is no information at all. Two broadcast periods of slack. */
 #define RPM_STALE_MS 500
@@ -125,6 +126,7 @@ void ign_begin(bool sw_closed_at_boot)
     press_ms = low_since = crank_ms = shutdown_at = last_activity = 0;
     can_rpm = 0;
     can_rpm_at = 0;
+    start_asked_at = 0;
     sw_prev = sw_closed_at_boot;
     /* In momentary mode the press that woke us through the hardware latch may still be
      * happening. Do not let it count as a command -- otherwise a wake with the brake
@@ -189,6 +191,7 @@ static void tick_momentary(uint32_t now, bool sw)
             && read_ch(ign_start_pedal_ch())) {
             wake_start_fired = true;
             proto_send_ecu_cmd(RCM_ECU_SUB_X14, RCM_ECU_IDX_STARTSTOP);
+            start_asked_at = now ? now : 1;
         }
         if (!sw) armed = true;
         return;
@@ -245,6 +248,7 @@ static void tick_momentary(uint32_t now, bool sw)
                 else if (cfg.ign_ecu_flags & IGN_ECU_START_ON_BRAKE) {
                     /* One-button mode: the ECU owns the starter, so ask it. */
                     proto_send_ecu_cmd(RCM_ECU_SUB_X14, RCM_ECU_IDX_STARTSTOP);
+                    start_asked_at = now ? now : 1;
                 }
                 /* Otherwise somebody else's job -- the ECU's, or nobody's. Either way
                  * this press is not a shutdown. */
@@ -310,11 +314,49 @@ static void tick_momentary(uint32_t now, bool sw)
 
 void ign_note_activity(uint32_t now) { last_activity = now; }
 
+/* The start button's lamp. Driven here rather than by a channel behaviour because it has
+ * three patterns, and they come from the ignition state rather than from a command.
+ *
+ *   slow blink  ignition on, engine not running -- "press me to start"
+ *   fast blink  starting
+ *   solid       running -- lit so the button can be FOUND in the dark to stop the car
+ *   off         shutting down
+ *
+ * "Starting" has to cover two quite different things. If this board owns the starter it
+ * is simply IGN_ST_CRANKING. But on a one-button car the ECU owns the starter, and this
+ * board never cranks anything -- it sends start/stop and waits. So a request in flight
+ * counts too, until the engine is seen running or the crank window has passed. Without
+ * that, on exactly the car this was written for, the lamp would never show a start.
+ *
+ * "Running" is only as good as the run source. With none configured, or a CAN RPM source
+ * on a quiet bus, the lamp honestly stays on the slow blink. */
+#define LAMP_SLOW_MS  2000u   /* one second on, one off */
+#define LAMP_FAST_MS   250u   /* 4 Hz */
+
+static void set_lamp(uint32_t now, bool running)
+{
+    const uint8_t ch = cfg_ch_for(FN_IGN_LAMP);
+    if (!ch_configured(ch)) return;
+
+    if (running) start_asked_at = 0;          /* it caught -- the request is answered */
+    if (start_asked_at && (now - start_asked_at) >= cfg.ign_crank_max_ms)
+        start_asked_at = 0;                   /* and if it never catches, stop saying so */
+
+    bool on;
+    if (want_shutdown)                              on = false;
+    else if (state == IGN_ST_CRANKING || start_asked_at)
+                                                    on = (now % LAMP_FAST_MS) < (LAMP_FAST_MS / 2);
+    else if (running)                               on = true;
+    else                                            on = (now % LAMP_SLOW_MS) < (LAMP_SLOW_MS / 2);
+    ch_command(ch, on);
+}
+
 /* --- entry point ------------------------------------------------------------ */
 
 void ign_tick(uint32_t now, bool sw)
 {
     if (want_shutdown) {
+        set_lamp(now, false);
         /* The decision is latched and main() is powering us down -- but keep tracking
          * the button, because ign_may_cut_power() needs to see it released before the
          * latch can actually be dropped. Returning without this leaves sw_prev stuck
@@ -337,6 +379,7 @@ void ign_tick(uint32_t now, bool sw)
     if (cfg.ign_mode != IGN_MOMENTARY && ign_has_run_source())
         state = engine_running(now) ? IGN_ST_RUNNING : IGN_ST_IGNITION;
 
+    set_lamp(now, engine_running(now));
     sw_prev = sw;
 }
 

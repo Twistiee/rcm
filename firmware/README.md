@@ -11,7 +11,7 @@ unit-tested against a model of the board. None of it has seen a relay.
 pio run                          build for the board
 pio run -t upload                flash over J_SWD with an ST-Link
 pio run -e selftest -t upload    bring-up console on the USB-C port
-pio test -e native               261 host unit tests
+pio test -e native               268 host unit tests
 python tools/gen_dbc.py          regenerate ../docs/rcm.dbc
 python tools/test_rcm_bench.py   self-test the bench tool, no hardware needed
 python tools/rcm_bench.py --help talk to a board over CAN
@@ -366,6 +366,40 @@ reads the brake from 5 while every display says 12. Pressing start with a foot o
 brake then does nothing, the configuration looks correct, and you go and suspect the
 switch. One record of a role, so nothing can disagree with it.
 
+### The start button's lamp
+
+Label the channel feeding the start button's LED `FN_IGN_LAMP` and the ignition state
+drives it:
+
+| Lamp | Meaning |
+|---|---|
+| slow blink (1 s on, 1 s off) | ignition on, engine not running |
+| fast blink (4 Hz) | starting |
+| **solid** | **running** -- lit so the button can be *found in the dark* to stop the car |
+| off | shutting down |
+
+```
+rcm_bench.py ctl chmode <ch> out 2      # 2 = CH_F_NO_DIAG, see below
+rcm_bench.py ctl chfunc <ch> ignlamp steady
+```
+
+**Set `CH_F_NO_DIAG`.** An LED cannot pull the channel node up to +12 V through the 10 kΩ
+pull-down the way a relay coil does, so the fuse-sense diagnosis reads it as a permanent
+open circuit and lights the red fault LED. There is nothing to diagnose on an LED.
+
+**"Starting" covers two different things.** If this board owns the starter it is simply
+`IGN_ST_CRANKING`. On a one-button car the **ECU** owns the starter and this board never
+cranks anything -- it sends start/stop and waits. So a start request in flight also counts,
+until the engine is seen running or `ign_crank_max_ms` passes. Without that, on exactly the
+installation this was written for, the lamp would never show a start.
+
+**"Running" is only as good as the run source.** With none configured, or a CAN RPM source
+on a quiet bus, the lamp honestly stays on the slow blink rather than claiming the engine
+is running.
+
+Note the start button's *switch* does not use a channel at all: it goes to `J_IGN`, because
+it has to wake the board through the hardware latch. Only its lamp takes a channel.
+
 ### Which pedal starts the car
 
 **The clutch if a channel is labelled `FN_IN_CLUTCH`, the brake otherwise.** There is no
@@ -509,7 +543,7 @@ and also cross-checks the tool's byte packing against the DBC — so bench tool,
 
 ## Testing
 
-261 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
+268 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
 `.cpp` files against a model of the board in `test/stubs/`, so they test the code that
 ships rather than a transcription of it.
 

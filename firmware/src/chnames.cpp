@@ -49,6 +49,7 @@ static const struct name_entry FUNCS[] = {
     { FN_HEATED_SEAT,       "Heated seat" },
     { FN_AC_CLUTCH,         "A/C clutch" },
     { FN_LINE_LOCK,         "Line lock" },
+    { FN_IGN_LAMP,          "Start button lamp" },
     /* inputs */
     { FN_IN_BRAKE,          "Brake pedal" },
     { FN_IN_ENGINE_RUN,     "Engine running" },

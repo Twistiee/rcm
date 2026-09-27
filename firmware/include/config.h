@@ -115,6 +115,9 @@ enum ch_func_t {
     FN_HEATED_SEAT,
     FN_AC_CLUTCH,
     FN_LINE_LOCK,
+    FN_IGN_LAMP,        /* the start button's own lamp, driven by the ignition state:
+                         * slow blink = ignition on, fast = starting, solid = running.
+                         * Set CH_F_NO_DIAG -- an LED reads as an open coil circuit */
     /* --- inputs --- */
     FN_IN_BRAKE = 128,  /* brake pedal -- the crank interlock reads this */
     FN_IN_ENGINE_RUN,   /* alternator D+, oil pressure, anything that says "turning" */
