@@ -1414,9 +1414,8 @@ is the obvious next thing for the front RCM.
 ### The uaDASH start button
 
 `ECU_CAN_BUS_USER_CONTROL`, **extended** id `0x77000C`, part of rusEFI's bench-test
-protocol. Dash to ECU, so it is the dash asking rusEFI to do something rather than
-anything this board needs: we drive the starter ourselves. Worth knowing it exists if the
-board ever wants to ask the ECU for something instead.
+protocol. Dash to ECU, so it is the dash asking rusEFI to do something. This is now how the
+keypad's start/stop button reaches the ECU too — see `docs/WIRING.md` "Two buttons".
 
 ## The ECU owns the starter — the better arrangement (2026-08-16)
 
@@ -1431,8 +1430,9 @@ call, and not just a wash:
 - `ign_start_ch` simply stays `IGN_CH_NONE`, which is the default, so cranking here is
   disabled outright.
 
-The button is then **shared**: the RCM uses it for wake and shutdown, the ECU watches the
-same signal for its start command.
+Starting is then the ECU's job end to end: the start/stop button is a keypad channel that
+sends the ECU its start/stop command over CAN (`docs/WIRING.md` "Two buttons"), separate
+from the ignition button that wakes and shuts down this board.
 
 ### Which exposed a bug worth having found
 
