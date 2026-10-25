@@ -78,6 +78,10 @@ uint8_t  can_tx_errors(void) { return 0; }
 
 bool imu_ok(void) { return false; }
 
+/* lights.cpp is not in this unit; which channels it claims is set per test. */
+static uint32_t LIGHTS_OWN = 0;
+bool lights_owns(uint8_t ch) { return (LIGHTS_OWN >> ch) & 1u; }
+
 /* Auto-level is exercised properly in test_imu_level against the real solver. Here it
  * only has to record that the opcode reached it, so the magic-byte guard can be tested
  * without a BMI270. */
@@ -1632,11 +1636,119 @@ static void test_peer_mask_bounds_what_it_can_touch(void)
     TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(1), "peer reached outside its mask");
 }
 
+static void test_a_follow_slot_stands_back_from_a_channel_the_lights_own(void)
+{
+    /* Auto headlights: a keypad button followed onto the low-beam channel. That channel
+     * also follows its own switch, so the slot must RECORD its request for the lights
+     * module to OR in -- not command the channel, or the two take turns every frame. */
+    const uint8_t ch = 6;
+    LIGHTS_OWN = 1u << ch;
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_ECU_FOLLOW, 0, ch, 6, 0x41, 0x03 });      /* 0x341 bit 6 */
+    run_ms(TICK_MS * 4);
+    inject(0x341, { 0x40, 0, 0, 0, 0, 0, 0, 0 });                /* button on */
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_TRUE_MESSAGE(proto_follow_requests(ch), "the request was not recorded");
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(ch),
+        "the follow slot drove a channel the lights module owns");
+
+    inject(0x341, { 0x00, 0, 0, 0, 0, 0, 0, 0 });                /* button off */
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_FALSE(proto_follow_requests(ch));
+    LIGHTS_OWN = 0;
+}
+
+static void test_a_follow_slot_still_drives_an_unowned_channel(void)
+{
+    const uint8_t ch = 6;
+    LIGHTS_OWN = 0;
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_ECU_FOLLOW, 0, ch, 6, 0x41, 0x03 });
+    run_ms(TICK_MS * 4);
+    inject(0x341, { 0x40, 0, 0, 0, 0, 0, 0, 0 });
+    run_ms(cfg.output_settle_ms + TICK_MS * 4);
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(ch), "an ordinary follow slot stopped working");
+}
+
 static void test_peer_adds_a_filter(void)
 {
+    /* Two: the peer's INPUTS for mirroring, and its STATUS for "a start is in
+     * progress", which is what lets a relay module shed the headlights for a crank. */
     setup_peer(0x1FFFFF, 0);
-    TEST_ASSERT_EQUAL_UINT32(3, FILTERS.size());
+    TEST_ASSERT_EQUAL_UINT32(4, FILTERS.size());
     TEST_ASSERT_EQUAL_HEX16(PEER_ID, FILTERS[2]);
+    TEST_ASSERT_EQUAL_HEX16(PEER_ID - RCM_F_INPUTS + RCM_F_STATUS, FILTERS[3]);
+}
+
+/* --- "a start is in progress", published and received --------------------- */
+
+static void test_status_publishes_the_starting_bit(void)
+{
+    /* ignition.cpp is compiled into this unit, so its state is reachable directly --
+     * simpler and more honest than stubbing ign_starting() out from under it. */
+    start_asked_at = SIM.now_ms ? SIM.now_ms : 1;   /* asked the ECU to crank */
+    TX.clear();
+    proto_broadcast(SIM.now_ms);
+    TEST_ASSERT_TRUE_MESSAGE(sent(NODE_BASE + RCM_F_STATUS)->data[3] & 0x02,
+        "a start in progress was not published");
+    start_asked_at = 0;
+    TX.clear();
+    proto_broadcast(SIM.now_ms);
+    TEST_ASSERT_FALSE(sent(NODE_BASE + RCM_F_STATUS)->data[3] & 0x02);
+}
+
+static void test_the_peers_starting_bit_is_heard(void)
+{
+    setup_peer(0, 0);
+    const uint16_t peer_status = PEER_ID - RCM_F_INPUTS + RCM_F_STATUS;
+    TEST_ASSERT_FALSE(proto_peer_starting(SIM.now_ms));
+    inject(peer_status, { 1, 0, 0, 0x02, 0, 0, 0, 0 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_TRUE(proto_peer_starting(SIM.now_ms));
+    inject(peer_status, { 1, 0, 0, 0x00, 0, 0, 0, 0 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_FALSE(proto_peer_starting(SIM.now_ms));
+}
+
+static void test_a_peer_that_goes_quiet_mid_start_stops_counting(void)
+{
+    /* A keypad that drops off the bus mid-crank must not leave the headlights off. */
+    setup_peer(0, 0);
+    inject(PEER_ID - RCM_F_INPUTS + RCM_F_STATUS, { 1, 0, 0, 0x02, 0, 0, 0, 0 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_TRUE(proto_peer_starting(SIM.now_ms));
+    run_ms(600);
+    TEST_ASSERT_FALSE_MESSAGE(proto_peer_starting(SIM.now_ms),
+        "a stale 'starting' from a silent peer was still believed");
+}
+
+static void test_another_nodes_status_is_ignored(void)
+{
+    setup_peer(0, 0);
+    /* node 6, not our peer */
+    inject(RCM_CAN_BASE_DEFAULT + 6 * RCM_CAN_NODE_STRIDE + RCM_F_STATUS,
+           { 1, 0, 0, 0x02, 0, 0, 0, 0 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_FALSE(proto_peer_starting(SIM.now_ms));
+}
+
+static void test_aux_invert_is_set_and_read_back(void)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_AUX_FUNC, 0, FN_IN_HEADLIGHT, 0x01 });
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_AUX_FUNC, 1, FN_IN_HIGH_BEAM, 0x01 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_EQUAL_HEX8(0x03, cfg.aux_invert);
+    const can_frame_t *r = ask(RCM_CFG_SEL_AUX);
+    TEST_ASSERT_NOT_NULL(r);
+    TEST_ASSERT_EQUAL_HEX8(0x03, r->data[5]);
+
+    /* and a set WITHOUT the flag byte must not disturb it -- older tools send three */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_AUX_FUNC, 2, FN_IN_CFG_SAVE });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_EQUAL_HEX8(0x03, cfg.aux_invert);
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_AUX_FUNC, 0, FN_IN_HEADLIGHT, 0x00 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_EQUAL_HEX8(0x02, cfg.aux_invert);
 }
 
 int main(void)
@@ -1683,7 +1795,14 @@ int main(void)
     RUN_TEST(test_peer_toggle_mode_fires_once_per_press);
     RUN_TEST(test_first_peer_frame_only_sets_a_baseline);
     RUN_TEST(test_peer_mask_bounds_what_it_can_touch);
+    RUN_TEST(test_a_follow_slot_stands_back_from_a_channel_the_lights_own);
+    RUN_TEST(test_a_follow_slot_still_drives_an_unowned_channel);
     RUN_TEST(test_peer_adds_a_filter);
+    RUN_TEST(test_status_publishes_the_starting_bit);
+    RUN_TEST(test_the_peers_starting_bit_is_heard);
+    RUN_TEST(test_a_peer_that_goes_quiet_mid_start_stops_counting);
+    RUN_TEST(test_another_nodes_status_is_ignored);
+    RUN_TEST(test_aux_invert_is_set_and_read_back);
     RUN_TEST(test_set_peer_takes_node_and_both_masks);
     RUN_TEST(test_set_peer_installs_a_filter_for_the_peers_inputs);
     RUN_TEST(test_set_peer_none_disables_and_drops_the_filter);

@@ -144,6 +144,10 @@ enum ch_func_t {
     FN_IN_HAZARD,
     FN_IN_WIPER,
     FN_IN_WASHER,
+    FN_IN_HIGH_BEAM,    /* the high-beam switch, read so this board can drive the
+                         * high-beam relay -- pairs with FN_HEADLIGHT_HIGH, the way
+                         * FN_IN_HEADLIGHT pairs with FN_HEADLIGHT_LOW. Appended at
+                         * the end so no stored label value moves */
     FN_IN_USER = 250,   /* unlabelled button */
 };
 
@@ -244,7 +248,12 @@ struct rcm_config_t {
      * peer_mask is left alone, so a board can mirror some channels and still take
      * CAN commands for the rest. */
     uint8_t  peer_node;            /* 0..7, or PEER_NONE to disable */
-    uint8_t  _pad;
+    /* J_AUX pins that are ACTIVE-LOW: bit n set = pin n reads pressed when pulled to
+     * ground. For switches that already switch ground and cannot be changed -- a light
+     * switch whose common is shared with park -- fed through a 10 k pull-up to +12 V.
+     * Was padding; reusing it keeps the record layout and needs no version bump, and
+     * every saved record has 0 here, which is the old active-high behaviour. */
+    uint8_t  aux_invert;
     uint32_t peer_mask;            /* channels that follow the peer at all */
     uint32_t peer_toggle_mask;     /* of those, ones where a PRESS toggles rather
                                     * than follows -- momentary button, latching load */

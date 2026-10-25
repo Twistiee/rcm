@@ -333,18 +333,30 @@ void ign_note_activity(uint32_t now) { last_activity = now; }
 #define LAMP_SLOW_MS  2000u   /* one second on, one off */
 #define LAMP_FAST_MS   250u   /* 4 Hz */
 
+/* Is a start in progress? Either this board is cranking, or it has asked the ECU to and
+ * the engine has not caught yet. Published in STATUS so OTHER boards can act on it --
+ * the relay module drops the headlights for the crank -- which is why it lives here and
+ * not inside the lamp: one answer to "are we starting", used everywhere. */
+static void age_start_request(uint32_t now, bool running)
+{
+    if (running) start_asked_at = 0;          /* it caught -- the request is answered */
+    if (start_asked_at && (now - start_asked_at) >= cfg.ign_crank_max_ms)
+        start_asked_at = 0;                   /* and if it never catches, stop saying so */
+}
+
+bool ign_starting(void)
+{
+    return !want_shutdown && (state == IGN_ST_CRANKING || start_asked_at != 0);
+}
+
 static void set_lamp(uint32_t now, bool running)
 {
     const uint8_t ch = cfg_ch_for(FN_IGN_LAMP);
     if (!ch_configured(ch)) return;
 
-    if (running) start_asked_at = 0;          /* it caught -- the request is answered */
-    if (start_asked_at && (now - start_asked_at) >= cfg.ign_crank_max_ms)
-        start_asked_at = 0;                   /* and if it never catches, stop saying so */
-
     bool on;
     if (want_shutdown)                              on = false;
-    else if (state == IGN_ST_CRANKING || start_asked_at)
+    else if (ign_starting())
                                                     on = (now % LAMP_FAST_MS) < (LAMP_FAST_MS / 2);
     else if (running)                               on = true;
     else                                            on = (now % LAMP_SLOW_MS) < (LAMP_SLOW_MS / 2);
@@ -356,6 +368,7 @@ static void set_lamp(uint32_t now, bool running)
 void ign_tick(uint32_t now, bool sw)
 {
     if (want_shutdown) {
+        start_asked_at = 0;
         set_lamp(now, false);
         /* The decision is latched and main() is powering us down -- but keep tracking
          * the button, because ign_may_cut_power() needs to see it released before the
@@ -379,6 +392,7 @@ void ign_tick(uint32_t now, bool sw)
     if (cfg.ign_mode != IGN_MOMENTARY && ign_has_run_source())
         state = engine_running(now) ? IGN_ST_RUNNING : IGN_ST_IGNITION;
 
+    age_start_request(now, engine_running(now));
     set_lamp(now, engine_running(now));
     sw_prev = sw;
 }

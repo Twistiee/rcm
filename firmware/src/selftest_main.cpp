@@ -266,12 +266,18 @@ static void imu_level(void)
 
     switch (r) {
     case RCM_IMU_LEVEL_OK:
-        Serial.printf("  solved, %d deg off square.\n", t);
-        for (uint8_t i = 0; i < 3; i++)
-            Serial.printf("    vehicle %c = %csensor %c\n", AX[i],
-                          (cfg.imu_map[i] & 0x80) ? '-' : '+', AX[cfg.imu_map[i] & 0x03]);
-        Serial.println(F("  UP is now right. FORWARD is a guess -- gravity cannot see it."));
-        Serial.println(F("  Check it on a drive: braking should read NEGATIVE vehicle X."));
+        Serial.printf("  solved, %d deg off square -- that lean is CORRECTED, not\n", t);
+        Serial.println(F("  ignored: the orientation is a rotation, not an axis swap."));
+        {
+            float R[3][3]; uint8_t m[3]; float off;
+            imu_current_basis(R);
+            imu_nearest_map(R, m, &off);
+            for (uint8_t i = 0; i < 3; i++)
+                Serial.printf("    vehicle %c ~ %csensor %c\n", AX[i],
+                              (m[i] & 0x80) ? '-' : '+', AX[m[i] & 0x03]);
+        }
+        Serial.println(F("  UP was measured and FORWARD kept. Set forward with the J_AUX"));
+        Serial.println(F("  forward switch or IMU_FORWARD -- gravity cannot see yaw."));
         Serial.println(F("  Not saved yet. Send the SAVE_CONFIG opcode to keep it."));
         break;
     case RCM_IMU_LEVEL_MOVING: {

@@ -8,6 +8,7 @@
 #include "channels.h"
 #include "config.h"
 #include "ignition.h"
+#include "lights.h"
 #include "imu.h"
 #include "protocol.h"
 #include "app.h"
@@ -78,6 +79,18 @@ static bool     reboot_pending;
  * rather than continuously while the button is held. */
 static uint32_t peer_prev;
 static bool     peer_seen;
+/* The peer's "start in progress" bit, and when we last heard its STATUS. Stale means
+ * not starting: a keypad that drops off the bus mid-crank must not leave the headlights
+ * shed. Its STATUS goes out every broadcast_ms, so a few hundred ms is many frames. */
+#define PEER_STATUS_STALE_MS 500u
+static bool     peer_starting;
+/* Channel bits that follow slots are currently asking to be on. For most channels the
+ * slot simply commands the channel. For one the lights module OWNS -- a headlight with
+ * its own switch -- it must not: the switch and the slot would take turns, each frame
+ * overwriting the other. So the request is recorded here and the lights module ORs it
+ * with the switch, which is what wired-OR means on the board side. */
+static uint32_t follow_req;
+static uint32_t peer_status_at;
 
 uint16_t proto_node_base(void)
 {
@@ -136,6 +149,9 @@ void proto_begin(void)
     for (uint8_t i = 0; i < RCM_ECU_FOLLOWS; i++) follow_seen[i] = millis();
     peer_prev = 0;
     peer_seen = false;
+    peer_starting = false;
+    peer_status_at = 0;
+    follow_req = 0;
 
     /* Hardware filters, not software ones. bxCAN has 28 banks and a running engine
      * bus is busy enough that letting every frame through would mean waking up for
@@ -155,9 +171,13 @@ static void install_filters(void)
     can_filters_reset();
     can_filter_block(proto_node_base(), 0x7F0);
     can_filter_id(proto_global_id());
-    if (cfg.peer_node != PEER_NONE)
+    if (cfg.peer_node != PEER_NONE) {
         can_filter_id((uint16_t)(cfg.can_base_id + cfg.peer_node * RCM_CAN_NODE_STRIDE
                                  + RCM_F_INPUTS));
+        /* ...and its STATUS, which carries "a start is in progress" */
+        can_filter_id((uint16_t)(cfg.can_base_id + cfg.peer_node * RCM_CAN_NODE_STRIDE
+                                 + RCM_F_STATUS));
+    }
     /* rusEFI's verbose broadcast, for engine speed. */
     if (cfg.ecu_rpm_can_id) can_filter_id(cfg.ecu_rpm_can_id);
     /* ...and for any frame a follow slot watches. One filter per DISTINCT id: several
@@ -243,7 +263,9 @@ void proto_broadcast(uint32_t now_ms)
     d[0] = RCM_FW_MAJOR;
     d[1] = RCM_FW_MINOR;
     d[2] = RCM_FW_PATCH;
-    d[3] = (uint8_t)(can_bus_off() ? 1 : 0);
+    /* bit 0 bus-off, bit 1 a START IS IN PROGRESS on this board -- read by the relay
+     * module to shed the headlights for the crank. See ign_starting(). */
+    d[3] = (uint8_t)((can_bus_off() ? 0x01 : 0) | (ign_starting() ? 0x02 : 0));
     const uint16_t ign_mv = app_ignition_mv();
     d[4] = (uint8_t)ign_mv;
     d[5] = (uint8_t)(ign_mv >> 8);
@@ -320,6 +342,7 @@ static void send_cfg_reply(uint8_t sel, uint8_t idx)
         break;
     case RCM_CFG_SEL_AUX:
         p[0] = cfg.aux_func[0]; p[1] = cfg.aux_func[1]; p[2] = cfg.aux_func[2];
+        p[3] = cfg.aux_invert;
         break;
     case RCM_CFG_SEL_IMU: {
         /* Reported as the NEAREST square mounting plus how far off square it really is.
@@ -476,8 +499,15 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
         break;
 
     case RCM_OP_SET_AUX_FUNC:
-        if (f->len >= 3 && f->data[1] < RCM_AUX_INPUTS)
+        if (f->len >= 3 && f->data[1] < RCM_AUX_INPUTS) {
             cfg.aux_func[f->data[1]] = f->data[2];
+            /* optional b3 bit 0: this pin is active-low */
+            if (f->len >= 4) {
+                const uint8_t bit = (uint8_t)(1u << f->data[1]);
+                if (f->data[3] & 0x01) cfg.aux_invert |= bit;
+                else                   cfg.aux_invert &= (uint8_t)~bit;
+            }
+        }
         break;
 
     case RCM_OP_IMU_LEVEL:
@@ -664,13 +694,25 @@ void proto_poll(uint32_t now_ms)
                 const uint8_t byte = (uint8_t)(fl->bit >> 3);
                 if (byte >= f.len) continue;      /* short frame: say nothing */
                 if (cfg.ch[fl->ch].mode != CH_OUTPUT) continue;
-                ch_command(fl->ch, (f.data[byte] >> (fl->bit & 7)) & 1u);
+                const bool want = (f.data[byte] >> (fl->bit & 7)) & 1u;
+                if (want) follow_req |=  (1u << fl->ch);
+                else      follow_req &= ~(1u << fl->ch);
+                if (!lights_owns(fl->ch)) ch_command(fl->ch, want);
             }
             if (matched) continue;
         }
 
         if (f.id == peer) {
             handle_peer_inputs(&f);
+        } else if (cfg.peer_node != PEER_NONE
+                   && f.id == (uint16_t)(peer - RCM_F_INPUTS + RCM_F_STATUS)) {
+            /* Like the ECU's broadcast, the peer talking is not somebody commanding US,
+             * so it does not hold off the failsafe. */
+            if (f.len >= 4) {
+                peer_starting  = (f.data[3] & 0x02) != 0;
+                peer_status_at = now_ms ? now_ms : 1;
+            }
+            ours = false;
         } else if (f.id == global) {
             handle_ctl(&f, true);
         } else if (f.id == (uint16_t)(base + RCM_F_CMD_SET)) {
@@ -771,7 +813,10 @@ void proto_poll(uint32_t now_ms)
             if (!fl->can_id || fl->ch >= RCM_CHANNELS) continue;
             if (cfg.ch[fl->ch].mode != CH_OUTPUT) continue;
             if ((uint32_t)(now_ms - follow_seen[i]) <= cfg.ecu_follow_stale_ms) continue;
-            ch_command(fl->ch, (cfg.failsafe_state >> fl->ch) & 1u);
+            const bool fs = (cfg.failsafe_state >> fl->ch) & 1u;
+            if (fs) follow_req |=  (1u << fl->ch);
+            else    follow_req &= ~(1u << fl->ch);
+            if (!lights_owns(fl->ch)) ch_command(fl->ch, fs);
         }
     }
 
@@ -822,5 +867,16 @@ bool proto_aux_level_holding(void)
 }
 
 uint32_t proto_saved_when(void) { return aux_saved_at; }
+
+bool proto_follow_requests(uint8_t ch)
+{
+    return ch < RCM_CHANNELS && ((follow_req >> ch) & 1u);
+}
+
+bool proto_peer_starting(uint32_t now_ms)
+{
+    return peer_starting && peer_status_at
+        && (uint32_t)(now_ms - peer_status_at) <= PEER_STATUS_STALE_MS;
+}
 bool     proto_saved_ok(void)   { return aux_save_ok; }
 uint32_t proto_last_rx(void) { return last_rx_ms; }

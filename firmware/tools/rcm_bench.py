@@ -125,11 +125,12 @@ IN_BEH = {"momentary": 0, "toggle": 1, "holdarm": 2}
 # something to drift. These four are derived from the ignition block, never set by hand.
 IGN_FUNCS = {1: "IGNITION", 2: "STARTER", 72: "IGN_LAMP", 128: "IN_BRAKE", 129: "IN_ENGINE_RUN",
              130: "IN_CLUTCH", 136: "IN_IMU_LEVEL", 137: "IN_IMU_FWD",
-             138: "IN_CFG_SAVE"}
+             138: "IN_CFG_SAVE", 143: "IN_HEADLIGHT", 149: "IN_HIGH_BEAM"}
 # The roles the firmware LOOKS UP. Labelling a channel with one is how it is given that
 # job -- there is no separate channel-number setting to keep in step.
 FUNC_NAMES = {"ignition": 1, "starter": 2, "ignlamp": 72, "brake": 128, "enginerun": 129,
               "clutch": 130, "imulevel": 136, "imufwd": 137, "cfgsave": 138,
+              "headlight": 143, "highbeam": 149,
               "none": 0}
 
 # Named (subsystem, index) pairs for the ECU command table. EVERY TunerStudio command is
@@ -449,8 +450,10 @@ CFG_SEL = {
            % (("0x%03X" % _u16(d, 2)) if _u16(d, 2) else "none", _u16(d, 4))),
     0x08: ("ecucmd", 6, lambda d: "channel %s -> subsystem %d index %d%s"
            % (_ch(d[2]), _u16(d, 3), _u16(d, 5), _cmd_name(_u16(d, 3), _u16(d, 5)))),
-    0x0D: ("aux", 1, lambda d: "J_AUX 1=%s 2=%s 3=%s"
-           % (_func_name(d[2]), _func_name(d[3]), _func_name(d[4]))),
+    0x0D: ("aux", 1, lambda d: "J_AUX 1=%s%s 2=%s%s 3=%s%s"
+           % (_func_name(d[2]), " (active-low)" if d[5] & 1 else "",
+              _func_name(d[3]), " (active-low)" if d[5] & 2 else "",
+              _func_name(d[4]), " (active-low)" if d[5] & 4 else "")),
     0x0C: ("imu", 1, lambda d: "nearest square X=%s Y=%s Z=%s, %d deg off square"
            "   (last calibration: %s)"
            % (_axis(d[2]), _axis(d[3]), _axis(d[4]), d[7],
@@ -672,8 +675,10 @@ def cmd_ctl(bus, args):
         extra = [ms & 0xFF, ms >> 8]
 
     elif args.op == "auxfunc":
-        if len(args.args) != 2:
-            sys.exit("auxfunc <pin 1-3> <%s|number> -- gives a J_AUX pin a job. "
+        if len(args.args) not in (2, 3):
+            sys.exit("auxfunc <pin 1-3> <%s|number> [low] -- gives a J_AUX pin a job; "
+                     "'low' makes it active-low, for a switch that grounds the pin "
+                     "through a 10k pull-up. "
                      "'imulevel' is the useful one: hold that pin high for 2s to "
                      "re-level the IMU." % "|".join(sorted(FUNC_NAMES)))
         pin = int(args.args[0], 0)
@@ -683,6 +688,10 @@ def cmd_ctl(bus, args):
         if fn is None:
             fn = int(args.args[1], 0)
         extra = [pin - 1, fn]
+        if len(args.args) == 3:
+            if args.args[2] not in ("low", "high"):
+                sys.exit("the optional third word is 'low' (active-low) or 'high'")
+            extra.append(1 if args.args[2] == "low" else 0)
 
     elif args.op in ("imulevel", "imufwd"):
         extra = [0x5A]

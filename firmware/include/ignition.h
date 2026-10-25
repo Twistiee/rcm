@@ -63,6 +63,11 @@ bool ign_wants_shutdown(void);
 bool ign_cranking(void);
 bool ign_engine_running(void);
 
+/* A start is in progress: this board is cranking, or it has asked the ECU to crank and
+ * the engine has not caught (bounded by ign_crank_max_ms). Published in STATUS so the
+ * relay module can shed the headlights for the crank. */
+bool ign_starting(void);
+
 /* True once a stop has been requested. main() drops the RUN output immediately and then
  * holds the board up for cfg.ign_shutdown_ms before cutting its own power, so the ECU
  * gets the same graceful ignition-off it would get from a key. */

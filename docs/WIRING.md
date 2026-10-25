@@ -145,33 +145,30 @@ Everything with a shared ground is a relay, whatever its current.
 
 ## Channel budget
 
-**Relay module** (node 0, configured and saved on the board 2026-10-25):
+**Relay module** (node 0, configured and saved 2026-10-26). The authoritative record of
+this car's configuration is `keypad-rcm.md` in the harness repo; this is a summary.
 
-| Ch | Function | Coil also switched by |
-|---|---|---|
-| 1 | `FN_FAN_1` | the physical fan switch |
-| 2 | `FN_TAIL` (park) | the physical light switch |
-| 3 | `FN_HEADLIGHT_LOW` | the physical light switch |
-| 4 | `FN_HEADLIGHT_HIGH` | the physical high-beam switch |
-| 5 | `FN_HORN` | the horn button |
+| Ch | Relay | Driven by | Diag |
+|---|---|---|---|
+| 1 | Park | wired-OR with the light switch, plus R2 (auto headlights) | off |
+| 2 | Headlight low | **this board only** -- its switch on `J_AUX` 1, OR R2 | on |
+| 3 | Headlight high | **this board only** -- its switch on `J_AUX` 2 | on |
+| 4 | Horn | wired-OR with the horn button | off |
+| 5 | Fan | wired-OR with the ECU's fan output, plus R3 (fan override) | off |
+| 6 | Rear power | this board only, nothing yet | on |
 
-**Every one of these is dual-driven**: the physical switch and the channel both pull the
-relay coil's low side to ground, so either energises it. The switches work with the board
-dead or absent; the channel is there so software features can be added later without
-rewiring. Nothing else is planned on this board -- the remaining sixteen channels are
-unallocated. The brake and clutch inputs live on the keypad, not here.
+**Park, horn and fan are wired-OR**: the switch (or ECU) and the channel both ground the
+relay coil's 85, so either energises it and neither can switch off the other. Park has to
+stay this way because it must work with the car off. Those channels need `CH_F_NO_DIAG` --
+with the switch closed the node reads "off but low", which the fuse sense calls a fault.
 
-**Set `CH_F_NO_DIAG` on every dual-driven channel** (`chmode <ch> out 2`). The fuse sense
-reports a fault when the driver is off and the node is not at +12 V -- which is exactly
-what the node looks like whenever the physical switch is on. Without the flag the red
-fault LED lights every time the lights are switched on by hand. With it, the channel
-loses blown-fuse detection, and that is unavoidable: "driver off, node low" is the same
-reading for a closed switch and a dead coil feed.
-
-The upside is free: the raw sense bits are still broadcast in the INPUTS frame, so the
-board can always see whether a physical switch is closed. That is the hook for the later
-software features -- the board knows the headlights are on even when it did not turn
-them on.
+**Low and high beam are driven by this board alone**, from their switches, so the board
+can drop them while the engine cranks. The switches are ground-switching (their common is
+shared with park) and come in on `J_AUX` as **active-low** inputs, each through a
+**10 kΩ pull-up to +12 V**. `J_AUX` rather than a channel because it has no 10 kΩ
+pull-down to fight -- on a channel the pull-up would have to be ~470 Ω. Since nothing
+else grounds those coils, their fuse diagnostics work again. See "Headlights the board
+can drop for a crank" in `firmware/README.md`.
 
 Main, starter and fuel pump are absent because
 the ECU drives them. The starter would be absent regardless: the firmware masks it out of
@@ -184,41 +181,25 @@ five are unallocated. Brake on ch 21, clutch on ch 20.
 Buttons switch **+12V into the channel** — inputs sense high, and need more than 10.87 V
 at the terminal to read as pressed.
 
-## Two buttons: ignition, and start/stop
+## One button: ignition and start
 
-With buttons to spare, split the two jobs rather than overloading one.
+This car uses **one button** -- R1 on the keypad -- for ignition and start, the VW way:
 
-| Button | Goes to | Does |
-|---|---|---|
-| **Ignition** | `J_IGN` on the relay module | press to wake, hold to shut the car down |
-| **Start/stop** | a keypad channel, bound to the ECU's start/stop command | cranks, and stops a running engine |
+| Press | Does |
+|---|---|
+| press | wake the keypad |
+| press with the clutch down | ask the ECU to start (over CAN, `0x77000C`) |
+| press with the clutch up | switch the car off |
+| hold while running | ask the ECU to stop, then power down |
 
-**Start/stop goes to the ECU over CAN.** The button is an ordinary keypad channel bound in
-`ecu_cmd[]` (see "Asking the ECU to do things" below). Each press sends
-`ECU_CAN_BUS_USER_CONTROL`, **extended id `0x77000C`** -- the same frame uaDASH's on-screen
-start button sends -- which lands on rusEFI's `startStopButtonToggle()`, the same entry
-point as a physical start button. So this board only asks; the ECU decides. rusEFI owns
-`starterControlPin` and `startCrankingDuration`, has RPM off the crank sensor rather than
-through a divider that goes unreadable during a crank, and applies its own interlocks. No
-start/stop input pin on the ECU is used.
+R1's switch goes to the **keypad's** `J_IGN` (permanent 12 V on its common), because it has
+to wake the board through the hardware latch. The keypad's `+12V_SW` is then the car's
+"key on": it feeds the ECU's ignition sense and the relay module's `J_IGN`, which runs in
+steady (level) mode and simply follows it. The ECU owns the starter relay and applies its
+own interlocks; the keypad only asks.
 
-### What splitting them buys
-
-**The brake dependency leaves this board completely.** `ign_brake_ch` stays
-`IGN_CH_NONE`, and the whole "the brake decides what this press means" branch becomes
-dead code for this install -- the ignition button can no longer be mistaken for a start
-attempt, because starting is not its job. The interlock still exists, in the ECU, where
-the RPM signal actually is.
-
-Ignition and start become independent: killing ignition cannot be misread as a start, and
-a start press cannot end in a shutdown.
-
-The sequence is then exactly a modern car:
-
-1. press **ignition** -- relay module latches, `+12V_SW` comes up, ECU boots
-2. press **start/stop** -- ECU cranks, on its own timeout and interlocks
-3. press **start/stop** again -- ECU stops the engine; the board stays awake
-4. hold **ignition** -- board powers down, `+12V_SW` drops, ECU goes with it
+While a start is in progress the keypad sets a **starting** bit in its STATUS frame, and
+the relay module uses it to drop the headlights for the crank.
 
 ## Asking the ECU to do things
 
@@ -245,19 +226,18 @@ once per press, with real switch bounce.
 
 ### One button or two
 
-`ign_ecu_flags` decides whether the IGNITION button also talks to the ECU. **Both bits
-default off, which is the two-button car** -- the ignition button only powers the board,
-and a separate button in `ecu_cmd[]` starts the engine. That is the simpler thing to
-reason about and the recommended arrangement.
-
-Set both bits for the one-button VW arrangement:
+`ign_ecu_flags` decides whether the ignition button also talks to the ECU. Both bits
+default off, in which case the ignition button only powers the board and starting needs
+a separate button bound in `ecu_cmd[]`. **This car sets both bits** -- one button for
+ignition and start. The start pedal is the **clutch** here, because a channel is labelled
+`FN_IN_CLUTCH`; on a car with only a brake labelled, read "brake" below.
 
 | Gesture | Result |
 |---|---|
 | single press from off | wakes the board, nothing else |
-| wake press **held** with the brake down | wakes the board, then asks the ECU to start |
-| press with the brake down, engine off | asks the ECU to start |
-| press with the brake **up** | shuts the car down |
+| wake press **held** with the pedal down | wakes the board, then asks the ECU to start |
+| press with the pedal down, engine off | asks the ECU to start |
+| press with the pedal **up** | shuts the car down |
 | **hold** while running | asks the ECU to stop, then powers down after `ign_shutdown_ms` |
 
 A short press while running does nothing on purpose: stopping takes a deliberate hold, so

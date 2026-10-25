@@ -11,7 +11,7 @@ unit-tested against a model of the board. None of it has seen a relay.
 pio run                          build for the board
 pio run -t upload                flash over J_SWD with an ST-Link
 pio run -e selftest -t upload    bring-up console on the USB-C port
-pio test -e native               268 host unit tests
+pio test -e native               289 host unit tests
 python tools/gen_dbc.py          regenerate ../docs/rcm.dbc
 python tools/test_rcm_bench.py   self-test the bench tool, no hardware needed
 python tools/rcm_bench.py --help talk to a board over CAN
@@ -400,6 +400,51 @@ is running.
 Note the start button's *switch* does not use a channel at all: it goes to `J_IGN`, because
 it has to wake the board through the hardware latch. Only its lamp takes a channel.
 
+### Headlights the board can drop for a crank
+
+Label a switch input `FN_IN_HEADLIGHT` (low beam) or `FN_IN_HIGH_BEAM`, on a channel or a
+`J_AUX` pin, and this board drives the paired `FN_HEADLIGHT_LOW` / `FN_HEADLIGHT_HIGH`
+output from it. With no switch labelled, the output is left alone entirely.
+
+A headlight is **on when its switch is on OR a follow slot asks for it** (auto headlights
+from a keypad button), and **off while any board is starting the car**:
+
+- the **keypad** publishes "a start is in progress" as bit 1 of STATUS byte 3 -- set from
+  the moment it asks the ECU to crank until the engine is running or `ign_crank_max_ms`
+  passes. The relay module reads it from its **peer** (`ctl peer 4 none none`: a peer
+  with nothing mirrored, there only to be listened to).
+- a peer whose STATUS stops arriving counts as **not** starting after 500 ms, so a keypad
+  that drops off the bus mid-crank brings the headlights straight back.
+
+Follow slots aimed at an owned headlight **record** their request for this module to OR
+in, instead of commanding the channel -- otherwise the switch and the slot would take
+turns, each frame overwriting the other.
+
+#### Ground-switching switches: active-low `J_AUX`
+
+A switch that grounds its signal cannot drive an ordinary input: inputs are active-high
+and every channel has a 10 kΩ pull-down, so the node is already at ground. Put it on a
+`J_AUX` pin with a **10 kΩ pull-up to +12 V** and mark the pin active-low:
+
+```
+rcm_bench.py ctl auxfunc 1 headlight low
+rcm_bench.py ctl auxfunc 2 highbeam low
+```
+
+`J_AUX` is the right place because it has no 10 kΩ pull-down: the pull-up only has to beat
+the 1.27 MΩ sense divider, so the pin sits at 99% of the supply. On a channel the same job
+needs ~470 Ω and 25 mA. Like every input it needs the supply above ~11 V to read
+correctly; below that an active-low pin reads as **pressed**, which here means headlights
+on -- and during a crank that is overridden anyway.
+
+An inverted pin reports nothing until its first debounce completes. Its stored state
+starts at zero, and on an active-low pin zero means pressed, so without that every boot
+would flick the headlight relay for 25 ms with the switch off.
+
+Verified on the bench with the WeAct pretending to be the keypad: the crank drops low and
+high beam including when auto headlights asked for them, park stays on, and a keypad
+that goes silent mid-start gets the headlights back in 0.49 s.
+
 ### Which pedal starts the car
 
 **The clutch if a channel is labelled `FN_IN_CLUTCH`, the brake otherwise.** There is no
@@ -543,7 +588,7 @@ and also cross-checks the tool's byte packing against the DBC — so bench tool,
 
 ## Testing
 
-268 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
+289 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
 `.cpp` files against a model of the board in `test/stubs/`, so they test the code that
 ships rather than a transcription of it.
 

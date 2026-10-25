@@ -57,6 +57,7 @@ static uint32_t in_primed;
 static uint32_t in_since[RCM_CHANNELS];
 
 static uint8_t  aux_stable;
+static uint8_t  aux_settled;     /* pins that have completed one debounce since boot */
 static uint8_t  aux_last_raw;
 static uint8_t  aux_ct[RCM_AUX_INPUTS];
 
@@ -118,7 +119,7 @@ void ch_begin(void)
     in_reported = in_prev = in_latched = in_primed = 0;
     memset(in_since, 0, sizeof(in_since));
     memset(aux_ct, 0, sizeof(aux_ct));
-    aux_stable = aux_last_raw = 0;
+    aux_stable = aux_last_raw = aux_settled = 0;
     diag_inhibited = false;
 
     uint32_t now = millis();
@@ -274,6 +275,7 @@ void ch_tick(uint32_t now_ms)
         if (r == (bool)((aux_last_raw >> a) & 1u)) { if (aux_ct[a] < 255) aux_ct[a]++; }
         else                                       { aux_ct[a] = 0; }
         if (aux_ct[a] >= need) {
+            aux_settled |= (uint8_t)(1u << a);
             if (r) aux_stable |=  (uint8_t)(1u << a);
             else   aux_stable &= (uint8_t)~(1u << a);
         }
@@ -326,7 +328,17 @@ void ch_tick(uint32_t now_ms)
 uint32_t ch_commanded(void) { return commanded; }
 uint32_t ch_requested(void) { return requested; }
 uint32_t ch_sense_raw(void) { return stable_sense; }
-uint8_t  ch_aux(void)       { return aux_stable; }
+/* Debounced J_AUX bits in LOGICAL sense: inverted pins are flipped here, once, so every
+ * consumer -- the lights, the calibration switches, the INPUTS frame -- sees "pressed"
+ * the same way.
+ *
+ * A pin reports nothing until it has completed one debounce. aux_stable starts at zero,
+ * and on an inverted pin zero means PRESSED -- so without this an active-low headlight
+ * switch would read "on" for the first 25 ms of every boot and flick the relay. */
+uint8_t  ch_aux(void)
+{
+    return (uint8_t)((aux_stable ^ cfg.aux_invert) & aux_settled);
+}
 uint32_t ch_fault_open(void)  { return fault_open; }
 uint32_t ch_fault_short(void) { return fault_short; }
 

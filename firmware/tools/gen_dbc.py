@@ -129,6 +129,7 @@ for node in range(NODES):
         sig("%s_FwMinor" % p, 8, 8, hi=255),
         sig("%s_FwPatch" % p, 16, 8, hi=255),
         sig("%s_CanBusOff" % p, 24, 1),
+        sig("%s_Starting" % p, 25, 1),     # a start is in progress (ign_starting)
         sig("%s_IgnitionMv" % p, 32, 16, hi=65535, unit="mV"),
         sig("%s_CanRxErr" % p, 48, 8, hi=255),
         sig("%s_CanTxErr" % p, 56, 8, hi=255),

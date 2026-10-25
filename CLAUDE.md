@@ -106,6 +106,15 @@ Things worth knowing before touching it:
   reported on the bus; only the LED is decoupled. Red lights only for outputs with a
   function label, via `ch_fault_actionable()`, which the `RCM_ST_ANY_FAULT` flag uses too
   so the lamp and the bus cannot disagree. The per-channel `FAULTS` frame stays unfiltered.
+- **Headlights are owned by `lights.cpp` once their switch input is labelled**, and a
+  follow slot aimed at an owned channel must RECORD its request (`follow_req`) rather than
+  command the channel -- `lights_owns()` gates that in protocol.cpp. Commanding it directly
+  makes the switch and the slot fight every frame. The crank shed comes from the peer's
+  STATUS byte 3 bit 1 (`ign_starting()` on the keypad), stale after 500 ms.
+- **Inserting a label mid-enum shifts every value after it.** `FN_IN_IMU_LEVEL` and
+  friends were inserted after `FN_IN_TRACTION_CTL` and moved `FN_IN_LAUNCH_ARM` onward;
+  nothing had been saved with those yet, so no harm, but append new labels at the END of
+  their block from now on (as `FN_IN_HIGH_BEAM` is).
 - **Which pedal starts the car is decided by the channel LABEL, not a setting** — the
   clutch if a channel is labelled `FN_IN_CLUTCH`, the brake otherwise, resolved by
   `ign_start_pedal_ch()`. A manual starts on the clutch (the interlock that stops a crank

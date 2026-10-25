@@ -143,6 +143,7 @@ BO_ 771 RM0_Status: 8 RCM
  SG_ RM0_FwMinor : 8|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ RM0_FwPatch : 16|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ RM0_CanBusOff : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ RM0_Starting : 25|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ RM0_IgnitionMv : 32|16@1+ (1,0) [0|65535] "mV" Vector__XXX
  SG_ RM0_CanRxErr : 48|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ RM0_CanTxErr : 56|8@1+ (1,0) [0|255] "" Vector__XXX
@@ -330,6 +331,7 @@ BO_ 787 RM1_Status: 8 RCM
  SG_ RM1_FwMinor : 8|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ RM1_FwPatch : 16|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ RM1_CanBusOff : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ RM1_Starting : 25|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ RM1_IgnitionMv : 32|16@1+ (1,0) [0|65535] "mV" Vector__XXX
  SG_ RM1_CanRxErr : 48|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ RM1_CanTxErr : 56|8@1+ (1,0) [0|255] "" Vector__XXX
@@ -517,6 +519,7 @@ BO_ 803 RM2_Status: 8 RCM
  SG_ RM2_FwMinor : 8|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ RM2_FwPatch : 16|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ RM2_CanBusOff : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ RM2_Starting : 25|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ RM2_IgnitionMv : 32|16@1+ (1,0) [0|65535] "mV" Vector__XXX
  SG_ RM2_CanRxErr : 48|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ RM2_CanTxErr : 56|8@1+ (1,0) [0|255] "" Vector__XXX
@@ -704,6 +707,7 @@ BO_ 819 RM3_Status: 8 RCM
  SG_ RM3_FwMinor : 8|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ RM3_FwPatch : 16|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ RM3_CanBusOff : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ RM3_Starting : 25|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ RM3_IgnitionMv : 32|16@1+ (1,0) [0|65535] "mV" Vector__XXX
  SG_ RM3_CanRxErr : 48|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ RM3_CanTxErr : 56|8@1+ (1,0) [0|255] "" Vector__XXX
@@ -891,6 +895,7 @@ BO_ 835 KP0_Status: 8 RCM
  SG_ KP0_FwMinor : 8|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ KP0_FwPatch : 16|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ KP0_CanBusOff : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ KP0_Starting : 25|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ KP0_IgnitionMv : 32|16@1+ (1,0) [0|65535] "mV" Vector__XXX
  SG_ KP0_CanRxErr : 48|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ KP0_CanTxErr : 56|8@1+ (1,0) [0|255] "" Vector__XXX
@@ -1078,6 +1083,7 @@ BO_ 851 KP1_Status: 8 RCM
  SG_ KP1_FwMinor : 8|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ KP1_FwPatch : 16|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ KP1_CanBusOff : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ KP1_Starting : 25|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ KP1_IgnitionMv : 32|16@1+ (1,0) [0|65535] "mV" Vector__XXX
  SG_ KP1_CanRxErr : 48|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ KP1_CanTxErr : 56|8@1+ (1,0) [0|255] "" Vector__XXX
@@ -1265,6 +1271,7 @@ BO_ 867 KP2_Status: 8 RCM
  SG_ KP2_FwMinor : 8|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ KP2_FwPatch : 16|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ KP2_CanBusOff : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ KP2_Starting : 25|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ KP2_IgnitionMv : 32|16@1+ (1,0) [0|65535] "mV" Vector__XXX
  SG_ KP2_CanRxErr : 48|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ KP2_CanTxErr : 56|8@1+ (1,0) [0|255] "" Vector__XXX
@@ -1452,6 +1459,7 @@ BO_ 883 KP3_Status: 8 RCM
  SG_ KP3_FwMinor : 8|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ KP3_FwPatch : 16|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ KP3_CanBusOff : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ KP3_Starting : 25|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ KP3_IgnitionMv : 32|16@1+ (1,0) [0|65535] "mV" Vector__XXX
  SG_ KP3_CanRxErr : 48|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ KP3_CanTxErr : 56|8@1+ (1,0) [0|255] "" Vector__XXX

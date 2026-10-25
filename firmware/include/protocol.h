@@ -210,6 +210,13 @@ bool proto_aux_level_holding(void);
 /* When a J_AUX save last happened, and whether it worked. A save changes nothing
  * observable about the board, so the LEDs are the only confirmation there is. */
 uint32_t proto_saved_when(void);
+
+/* The peer board (cfg.peer_node) reports a start in progress, and said so recently.
+ * Stale counts as false. */
+bool proto_peer_starting(uint32_t now_ms);
+
+/* A follow slot is currently asking for channel `ch` to be on. */
+bool proto_follow_requests(uint8_t ch);
 bool     proto_saved_ok(void);
 
 /* Send one TunerStudio command to the ECU. */

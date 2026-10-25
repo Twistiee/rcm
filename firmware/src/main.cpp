@@ -39,6 +39,7 @@
 #include "channels.h"
 #include "config.h"
 #include "ignition.h"
+#include "lights.h"
 #include "imu.h"
 #include "protocol.h"
 #include "shiftreg.h"
@@ -338,6 +339,7 @@ void loop(void)
         ch_tick(now);
         read_ignition();
         ign_tick(now, app_ignition_on());
+        lights_tick(now);
         IWatchdog.reload();
     }
 
