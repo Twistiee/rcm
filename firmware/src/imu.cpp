@@ -293,7 +293,19 @@ uint8_t imu_set_forward(void)
 }
 
 /* The live rotation, for whoever has to report it. */
-void imu_current_basis(float R[3][3]) { memcpy(R, basis, sizeof basis); }
+/* The live rotation, for whoever has to report it.
+ *
+ * Built on demand if nothing has built it yet. rebuild_basis() normally runs from
+ * imu_begin(), which is gated on the CFG_IMU_EN strap -- so on a board with the IMU
+ * switched off the matrix was never built, and `get imu` reported an all-zero matrix
+ * ("X=Y=Z=+sensor X, 90 deg off square") instead of the stored orientation. Found
+ * flashing a fresh relay module. The host test could not see it: its stub of this
+ * function builds from cfg, which is exactly what the real one failed to do. */
+void imu_current_basis(float R[3][3])
+{
+    if (!basis_ok) rebuild_basis();
+    memcpy(R, basis, sizeof basis);
+}
 
 /* Adopt vectors that someone else wrote straight into cfg. */
 void imu_reload_basis(void) { rebuild_basis(); }
