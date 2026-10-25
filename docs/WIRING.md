@@ -109,9 +109,9 @@ Two that look like they need one and do not:
   board gains nothing by being in that circuit.
 - **Brake lights** — hardwired, deliberately. A mechanical switch is simpler and more
   reliable than anything running on a microcontroller, and there is no upside to
-  inserting one. Tap the switched feed into a spare input if the board should *know*
-  about the brake (the ignition state machine needs this), but keep it out of the lamp
-  circuit.
+  inserting one. The brake switch's feed is tapped into a **keypad** input (ch 21) so the
+  board knows about it, but it stays out of the lamp circuit. The clutch switch goes to
+  keypad ch 20, and on this car it is the clutch, not the brake, that gates starting.
 
 ### Indicators and hazards: keep the flasher
 
@@ -137,7 +137,6 @@ If a future set of rear lamps can be grounded per function, revisit this.
 
 Only loads with their own ground, under ~600 mA:
 
-- rain light, if it is a separate unit rather than part of a cluster
 - shift light, warning buzzers
 - boost solenoid, line lock
 - anything you add later with a dedicated earth
@@ -146,27 +145,41 @@ Everything with a shared ground is a relay, whatever its current.
 
 ## Channel budget
 
-**Relay module** (node 0-3, channels default to outputs):
+**Relay module** (node 0, configured and saved on the board 2026-10-25):
 
-| Ch | Function | Notes |
+| Ch | Function | Coil also switched by |
 |---|---|---|
-| 1 | `FN_FAN_1` | relay |
-| 2 | `FN_TAIL` | relay — shared cluster ground |
-| 3 | `FN_HEADLIGHT_LOW` | relay |
-| 4 | `FN_HEADLIGHT_HIGH` | relay |
-| 5 | `FN_HORN` | relay; `OUT_PULSE` if you want a chirp |
-| 6 | `FN_RAIN_LIGHT` | direct, if it is a separate unit with its own earth |
-| 7-9 | spare outputs | |
-| 10 | `FN_IN_BRAKE` (input) | from the hardwired brake switch |
-| 11 | spare input | |
+| 1 | `FN_FAN_1` | the physical fan switch |
+| 2 | `FN_TAIL` (park) | the physical light switch |
+| 3 | `FN_HEADLIGHT_LOW` | the physical light switch |
+| 4 | `FN_HEADLIGHT_HIGH` | the physical high-beam switch |
+| 5 | `FN_HORN` | the horn button |
 
-Eleven of twenty-one, with plenty in hand. Main, starter and fuel pump are absent because
+**Every one of these is dual-driven**: the physical switch and the channel both pull the
+relay coil's low side to ground, so either energises it. The switches work with the board
+dead or absent; the channel is there so software features can be added later without
+rewiring. Nothing else is planned on this board -- the remaining sixteen channels are
+unallocated. The brake and clutch inputs live on the keypad, not here.
+
+**Set `CH_F_NO_DIAG` on every dual-driven channel** (`chmode <ch> out 2`). The fuse sense
+reports a fault when the driver is off and the node is not at +12 V -- which is exactly
+what the node looks like whenever the physical switch is on. Without the flag the red
+fault LED lights every time the lights are switched on by hand. With it, the channel
+loses blown-fuse detection, and that is unavoidable: "driver off, node low" is the same
+reading for a closed switch and a dead coil feed.
+
+The upside is free: the raw sense bits are still broadcast in the INPUTS frame, so the
+board can always see whether a physical switch is closed. That is the hook for the later
+software features -- the board knows the headlights are on even when it did not turn
+them on.
+
+Main, starter and fuel pump are absent because
 the ECU drives them. The starter would be absent regardless: the firmware masks it out of
 every CAN and peer path so a stray or replayed frame cannot crank the engine.
 
-**Keypad** (node 4-7): ten buttons and their lamps, alternating input/output -- see "The
-keypad board" above. Headlights, high beam, horn, rain light, fan override, pump prime,
-traction/launch/map-select, start/stop.
+**Keypad** (node 4): eight buttons and their lamps, alternating input/output -- see "The
+keypad board" above. Confirmed: start/stop, traction control, launch control. The other
+five are unallocated. Brake on ch 21, clutch on ch 20.
 
 Buttons switch **+12V into the channel** — inputs sense high, and need more than 10.87 V
 at the terminal to read as pressed.
