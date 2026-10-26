@@ -63,20 +63,6 @@ static bool run_source_live(uint32_t now)
     return (now - can_rpm_at) <= RPM_STALE_MS;
 }
 
-/* Do we POSITIVELY know the engine is stopped? Only then may the start/stop TOGGLE go
- * to the ECU -- rusEFI's startStopButtonToggle() cranks a stopped engine and STOPS a
- * running one, so sending it on a guess is sending "stop" on a guess.
- *
- * "Not running" alone is not enough: with the RPM broadcast stale it reads not-running
- * whatever the engine is doing, and a clutch-down press would then cut a running engine.
- * So it must be a LIVE run source reading stopped. No run source, or a CAN source that
- * has gone quiet, means we do not know, and the toggle is not sent. Stopping is
- * unaffected: that is TS_STOP_ENGINE, which is not a toggle, plus our own power-down. */
-static bool known_stopped(uint32_t now)
-{
-    return run_source_live(now) && !engine_running(now);
-}
-
 void ign_note_rpm(uint16_t rpm, uint32_t now)
 {
     can_rpm = rpm;
@@ -202,8 +188,7 @@ static void tick_momentary(uint32_t now, bool sw)
             && (cfg.ign_ecu_flags & IGN_ECU_START_ON_BRAKE)
             && cfg.ign_wake_start_ms
             && (now - press_ms) >= cfg.ign_wake_start_ms
-            && read_ch(ign_start_pedal_ch())
-            && known_stopped(now)) {
+            && read_ch(ign_start_pedal_ch())) {
             wake_start_fired = true;
             proto_send_ecu_cmd(RCM_ECU_SUB_X14, RCM_ECU_IDX_STARTSTOP);
             start_asked_at = now ? now : 1;
@@ -260,9 +245,8 @@ static void tick_momentary(uint32_t now, bool sw)
                     crank_ms = now;
                     set_starter(true);
                 }
-                else if ((cfg.ign_ecu_flags & IGN_ECU_START_ON_BRAKE) && known_stopped(now)) {
-                    /* One-button mode: the ECU owns the starter, so ask it -- but only
-                     * when we KNOW the engine is stopped, because this is a toggle. */
+                else if (cfg.ign_ecu_flags & IGN_ECU_START_ON_BRAKE) {
+                    /* One-button mode: the ECU owns the starter, so ask it. */
                     proto_send_ecu_cmd(RCM_ECU_SUB_X14, RCM_ECU_IDX_STARTSTOP);
                     start_asked_at = now ? now : 1;
                 }

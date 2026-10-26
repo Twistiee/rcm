@@ -480,11 +480,9 @@ static void test_lamp_fast_blinks_while_this_board_cranks(void)
     sw = false; tick(TICK_MS * 4);
 }
 
-/* --- the start/stop command is a TOGGLE ---------------------------------------
- * rusEFI's startStopButtonToggle() cranks a stopped engine and STOPS a running one, so
- * the keypad may only send it when it positively knows the engine is stopped. "Not
- * running" is not the same thing: with the RPM broadcast gone stale it reads not-running
- * whatever the engine is doing, and a clutch-down press would cut a running engine. */
+/* --- a running engine is only ever sent the explicit stop ----------------------
+ * rusEFI's start/stop command is a toggle. The keypad never sends it once the engine is
+ * seen running: a short press does nothing, and a hold sends TS_STOP_ENGINE. */
 
 static void tick_rpm(uint32_t ms, uint16_t rpm)
 {
@@ -504,47 +502,6 @@ static void can_rpm_one_button(void)
     cfg.ecu_rpm_can_id = 0x201;
     cfg.ign_run_rpm = 450;
     ECU_CMDS.clear();
-}
-
-static void test_toggle_sent_when_rpm_says_stopped(void)
-{
-    can_rpm_one_button();
-    SIM.wiring[BRAKE_CH] = SIM_BUTTON_PRESSED;
-    tick_rpm(cfg.input_debounce_ms + 50, 0);      /* ECU up, engine stopped */
-    sw = true;  tick_rpm(50, 0);
-    sw = false; tick_rpm(20, 0);
-    TEST_ASSERT_EQUAL_INT(1, (int)ECU_CMDS.size());
-    TEST_ASSERT_EQUAL_HEX16(RCM_ECU_IDX_STARTSTOP, ECU_CMDS[0].idx);
-}
-
-static void test_no_toggle_when_rpm_has_gone_quiet(void)
-{
-    /* The engine may well be running -- we simply stopped hearing about it. Sending the
-     * toggle now would stop it. */
-    can_rpm_one_button();
-    SIM.wiring[BRAKE_CH] = SIM_BUTTON_PRESSED;
-    tick_rpm(cfg.input_debounce_ms + 50, 2500);   /* running ... */
-    tick(1000);                                   /* ... and then the broadcast stops */
-    sw = true;  tick(50);
-    sw = false; tick(20);
-    for (const auto &c : ECU_CMDS)
-        TEST_ASSERT_FALSE_MESSAGE(c.sub == RCM_ECU_SUB_X14 && c.idx == RCM_ECU_IDX_STARTSTOP,
-            "sent the start/stop TOGGLE without knowing the engine was stopped");
-}
-
-static void test_no_toggle_without_any_run_source(void)
-{
-    momentary_setup(false);
-    cfg.ch[START_CH].func = FN_NONE;
-    cfg.ign_ecu_flags = IGN_ECU_START_ON_BRAKE;
-    cfg.ecu_rpm_can_id = 0;
-    ECU_CMDS.clear();
-    SIM.wiring[BRAKE_CH] = SIM_BUTTON_PRESSED;
-    tick(cfg.input_debounce_ms + 50);
-    sw = true;  tick(50);
-    sw = false; tick(20);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, (int)ECU_CMDS.size(),
-        "no way to know the engine state, but the toggle was sent anyway");
 }
 
 static void test_running_hold_sends_the_explicit_stop_not_the_toggle(void)
@@ -595,9 +552,7 @@ static void test_two_button_mode_never_talks_to_the_ecu(void)
 
 static void test_one_button_press_with_brake_asks_the_ecu_to_start(void)
 {
-    /* With a run source: the start/stop TOGGLE is only sent when the engine is KNOWN
-     * stopped, and an open run input is exactly that. */
-    momentary_setup(true);
+    momentary_setup(false);
     cfg.ch[START_CH].func = FN_NONE;          /* the ECU owns the starter */
     cfg.ign_ecu_flags = IGN_ECU_START_ON_BRAKE;
     ECU_CMDS.clear();
@@ -639,10 +594,6 @@ static void test_a_wake_hold_with_the_brake_asks_the_ecu_to_start(void)
     cfg.ign_wake_start_ms = 2000;
     cfg.ch[BRAKE_CH].mode = CH_INPUT;
     SIM.wiring[BRAKE_CH] = SIM_BUTTON_PRESSED;
-    /* a live run source reading stopped -- the toggle needs to KNOW, see known_stopped() */
-    cfg.ch[RUN_CH].func = FN_IN_ENGINE_RUN;
-    cfg.ch[RUN_CH].mode = CH_INPUT;
-    SIM.wiring[RUN_CH]  = SIM_BUTTON_OPEN;
     ch_begin();
     ECU_CMDS.clear();
 
@@ -1236,9 +1187,6 @@ int main(void)
     RUN_TEST(test_lamp_goes_solid_once_the_engine_catches);
     RUN_TEST(test_lamp_stops_claiming_a_start_after_the_crank_window);
     RUN_TEST(test_lamp_fast_blinks_while_this_board_cranks);
-    RUN_TEST(test_toggle_sent_when_rpm_says_stopped);
-    RUN_TEST(test_no_toggle_when_rpm_has_gone_quiet);
-    RUN_TEST(test_no_toggle_without_any_run_source);
     RUN_TEST(test_running_hold_sends_the_explicit_stop_not_the_toggle);
     RUN_TEST(test_short_press_while_running_sends_nothing);
     RUN_TEST(test_two_button_mode_never_talks_to_the_ecu);
