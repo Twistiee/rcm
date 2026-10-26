@@ -11,7 +11,7 @@ unit-tested against a model of the board. None of it has seen a relay.
 pio run                          build for the board
 pio run -t upload                flash over J_SWD with an ST-Link
 pio run -e selftest -t upload    bring-up console on the USB-C port
-pio test -e native               289 host unit tests
+pio test -e native               294 host unit tests
 python tools/gen_dbc.py          regenerate ../docs/rcm.dbc
 python tools/test_rcm_bench.py   self-test the bench tool, no hardware needed
 python tools/rcm_bench.py --help talk to a board over CAN
@@ -400,6 +400,20 @@ is running.
 Note the start button's *switch* does not use a channel at all: it goes to `J_IGN`, because
 it has to wake the board through the hardware latch. Only its lamp takes a channel.
 
+### The start/stop command is a toggle
+
+What a one-button car sends to start is rusEFI's start/stop command -- the same
+`0x77000C` frame uaDASH's on-screen button sends. It lands on `startStopButtonToggle()`,
+which **cranks a stopped engine and stops a running one**. So the keypad only sends it
+when it **positively knows the engine is stopped**: a LIVE run source reading below the
+running threshold.
+
+"Not running" is not enough on its own. If the RPM broadcast goes stale, the engine reads
+as not running whatever it is actually doing, and a clutch-down press would send the
+toggle and cut a running engine. With no run source at all, or a CAN source that has gone
+quiet, the toggle is simply not sent. Stopping never uses it: a hold while running sends
+`TS_STOP_ENGINE`, which is not a toggle, and then powers the car down.
+
 ### Headlights the board can drop for a crank
 
 Label a switch input `FN_IN_HEADLIGHT` (low beam) or `FN_IN_HIGH_BEAM`, on a channel or a
@@ -588,7 +602,7 @@ and also cross-checks the tool's byte packing against the DBC — so bench tool,
 
 ## Testing
 
-289 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
+294 host unit tests, run with `pio test -e native`. They compile the firmware's **own**
 `.cpp` files against a model of the board in `test/stubs/`, so they test the code that
 ships rather than a transcription of it.
 
