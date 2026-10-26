@@ -309,6 +309,35 @@ Two things worth knowing about that consumer, neither of which we control:
 Raising the ceiling here would mean a non-blocking or DMA I2C read. Not worth it unless a
 strategy is ever shown to need fresher than 10 ms.
 
+### The core runs from the crystal -- and for a long time it did not
+
+`src/sysclock.cpp` overrides the STM32duino variant's `SystemClock_Config()` to feed the
+PLL from the **8 MHz crystal (HSE)**. The variant's default feeds it from **HSI**, the
+internal 16 MHz RC oscillator, and until 2026-10-26 nothing overrode it: **the crystal on
+the board was never used.** `HSE_VALUE=8000000U` in `platformio.ini` only tells the HAL how
+fast the crystal is; it does not select it.
+
+HSI is trimmed to ±1 % at 25 °C and drifts with temperature, and CAN's bit timing is
+derived from it. Measured on the keypad against a PC, by counting its broadcast sequence
+number: **+1.3 % fast one day, +3.5 % another**. The symptom was a CAN transmit error count
+swinging between 0 and ~240 and whole seconds with nothing getting through. It was chased
+as a wiring fault for an hour -- connectors swapped, leads moved, termination measured --
+because nothing about it looks like a clock problem from the outside. On the crystal: clock
+error **0.00 %**, transmit errors **0**, full frame rate.
+
+The clue that should have been caught a month earlier: an IMU rate sweep measured **101.3
+Hz** at a 10 ms setting. The scheduler can only ever run *slower* than its setting, so
+faster than nominal can only mean the board's clock is fast.
+
+The configuration is the variant's own with exactly two numbers changed. The crystal is
+half the HSI frequency, so both PLL input dividers halve -- `PLLM` 8 → 4 and `PLLSAIM` 16 → 8
+-- and every clock downstream is identical: 180 MHz core, 45 MHz APB1 for CAN, 48 MHz USB.
+If the crystal will not start, it falls back to HSI rather than hanging, and **STATUS
+byte 3 bit 2** reports it, so a failed crystal is visible from the bus.
+
+To check a board over SWD: `RCC_CR` bit 17 (HSERDY) set and `RCC_PLLCFGR` bit 22 (PLLSRC)
+set mean it is on the crystal.
+
 ### Bitrate
 
 Solved for at runtime from the actual APB1 clock, targeting an 87.5% sample point, and
@@ -561,7 +590,13 @@ python-can only reaches some of them through its `seeedstudio` interface and it 
 fight. Buying on price here costs an evening.
 
 **Wiring and termination.** CANH and CANL to `J_CAN1` or `J_CAN2`, and tie the grounds
-together. A CAN bus wants exactly **two** 120Ω terminators, one at each physical end:
+together. **Never leave an unpowered ST-Link on `J_SWD`.** With its USB unplugged but its cable
+still on the header, the dead probe drags the board's lines down through its own circuitry
+-- most likely NRST -- and holds the MCU in reset. It presents as a board that dies the
+moment the ST-Link is unplugged and will not come up on ignition, with every supply rail
+measuring correctly. Take the cable off the board, not just the USB off the PC.
+
+A CAN bus wants exactly **two** 120Ω terminators, one at each physical end:
 
 - *bench, adapter plus board only* — enable both. `SW_CFG` position 1 on the board, and
   the adapter's own termination jumper.

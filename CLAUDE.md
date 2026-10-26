@@ -106,6 +106,15 @@ Things worth knowing before touching it:
   reported on the bus; only the LED is decoupled. Red lights only for outputs with a
   function label, via `ch_fault_actionable()`, which the `RCM_ST_ANY_FAULT` flag uses too
   so the lamp and the bus cannot disagree. The per-channel `FAULTS` frame stays unfiltered.
+- **The core MUST run from the crystal -- `src/sysclock.cpp` overrides the variant's
+  HSI-based `SystemClock_Config()`.** Until 2026-10-26 nothing did, and the board ran on
+  the internal RC oscillator the whole time: +1.3 % to +3.5 % fast, drifting with heat,
+  which made CAN error-prone in a way that looked exactly like a wiring fault. If CAN ever
+  shows transmit errors on a short clean bench bus, measure the clock FIRST (count the
+  INPUTS sequence number against the PC clock -- it should be 20.000 Hz) before touching
+  wiring. Do not name a header `clock.h`: the Arduino core has one and it gets shadowed.
+- **An unpowered ST-Link left on `J_SWD` holds the board in reset.** Remove the cable, not
+  just the USB. It looks like a dead power rail that measures perfectly.
 - **Headlights are owned by `lights.cpp` once their switch input is labelled**, and a
   follow slot aimed at an owned channel must RECORD its request (`follow_req`) rather than
   command the channel -- `lights_owns()` gates that in protocol.cpp. Commanding it directly

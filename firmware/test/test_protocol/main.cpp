@@ -77,6 +77,7 @@ uint8_t  can_rx_errors(void) { return 0; }
 uint8_t  can_tx_errors(void) { return 0; }
 
 bool imu_ok(void) { return false; }
+bool clock_on_crystal(void) { return true; }   /* clock.cpp needs the real HAL */
 
 /* lights.cpp is not in this unit; which channels it claims is set per test. */
 static uint32_t LIGHTS_OWN = 0;

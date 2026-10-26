@@ -8,6 +8,7 @@
 #include "channels.h"
 #include "config.h"
 #include "ignition.h"
+#include "sysclock.h"
 #include "lights.h"
 #include "imu.h"
 #include "protocol.h"
@@ -265,7 +266,11 @@ void proto_broadcast(uint32_t now_ms)
     d[2] = RCM_FW_PATCH;
     /* bit 0 bus-off, bit 1 a START IS IN PROGRESS on this board -- read by the relay
      * module to shed the headlights for the crank. See ign_starting(). */
-    d[3] = (uint8_t)((can_bus_off() ? 0x01 : 0) | (ign_starting() ? 0x02 : 0));
+    /* bit 2: running on the internal RC oscillator because the crystal did not start.
+     * That oscillator's drift is enough to make CAN unreliable, so it is worth seeing
+     * from the bus rather than finding by elimination. See sysclock.cpp. */
+    d[3] = (uint8_t)((can_bus_off() ? 0x01 : 0) | (ign_starting() ? 0x02 : 0)
+                   | (clock_on_crystal() ? 0 : 0x04));
     const uint16_t ign_mv = app_ignition_mv();
     d[4] = (uint8_t)ign_mv;
     d[5] = (uint8_t)(ign_mv >> 8);

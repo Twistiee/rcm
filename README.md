@@ -30,7 +30,8 @@ nothing about it is rusEFI-specific beyond the choice of message IDs.
 ## Status — read this first
 
 **revA has been built, powered and brought up.** Every subsystem has run on real
-hardware: the MCU and its 8 MHz crystal, USB, the DIP straps, the EEPROM, CAN through the
+hardware: the MCU and its 8 MHz crystal (in use only since 2026-10-26 -- see "The core
+runs from the crystal" in `firmware/README.md`), USB, the DIP straps, the EEPROM, CAN through the
 transceiver onto a real bus, the IMU, the 12 V sense, the self-latching power, the
 watchdog, the output drivers under a real relay load, a stored configuration surviving a
 full save-reset-read cycle, and the board switching itself off. 289 host unit tests pass
