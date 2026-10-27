@@ -339,6 +339,11 @@ uint8_t  ch_aux(void)
 {
     return (uint8_t)((aux_stable ^ cfg.aux_invert) & aux_settled);
 }
+/* Toggle latches, for latches.cpp to save and restore. Restoring only sets the latch;
+ * it manufactures no edge, so nothing downstream sees a "press". */
+uint32_t ch_latched(void)             { return in_latched; }
+void     ch_set_latched(uint32_t bits) { in_latched = bits; }
+
 uint32_t ch_fault_open(void)  { return fault_open; }
 uint32_t ch_fault_short(void) { return fault_short; }
 

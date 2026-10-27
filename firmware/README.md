@@ -429,6 +429,30 @@ is running.
 Note the start button's *switch* does not use a channel at all: it goes to `J_IGN`, because
 it has to wake the board through the hardware latch. Only its lamp takes a channel.
 
+### Toggles that remember their state
+
+A toggle input normally comes back **off** at every power-up -- its state lives in RAM.
+Set `CH_F_REMEMBER` on it and the state is written to the EEPROM when it changes and
+restored at boot, so auto headlights left on come back on with the car:
+
+```
+rcm_bench.py ctl chmode 7 in 4      # 4 = CH_F_REMEMBER (add 2 for no-diag etc.)
+```
+
+- Only `IN_TOGGLE` inputs. Written **once a change has been stable for 500 ms**, so a burst
+  of presses is one write. A change made inside that window before power-off is lost and
+  the previous state comes back -- intact, never garbled. At shutdown the board holds its
+  own power up for seconds, so in practice a change just before switching off lands.
+- Its own six-byte record at `0x0800`, page-aligned and clear of both config copies, with
+  a CRC. Blank or corrupt means everything comes back off.
+- A channel no longer flagged, or reassigned, does not inherit a stored state.
+- **Wear is not a concern.** The M95640 is rated for millions of cycles per byte, and a
+  write only happens when a remembered toggle actually changes -- fifty presses a day is
+  centuries of rating.
+- This is *not* "take the switch position at boot", which the channel layer still refuses
+  so a stuck or wet button cannot bring its load up with the board. A restore sets the
+  state; it produces no edge, so nothing downstream sees a press.
+
 ### Headlights the board can drop for a crank
 
 Label a switch input `FN_IN_HEADLIGHT` (low beam) or `FN_IN_HIGH_BEAM`, on a channel or a

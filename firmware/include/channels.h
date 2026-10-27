@@ -38,6 +38,8 @@ uint8_t  ch_aux(void);           /* debounced J_AUX bits */
 
 /* Confirmed faults. Both are only ever set on CH_OUTPUT channels without CH_F_NO_DIAG,
  * and only after the condition has held for fault_confirm_ms. */
+uint32_t ch_latched(void);               /* toggle latch bits, per channel */
+void     ch_set_latched(uint32_t bits);  /* restore them -- no edge is produced */
 uint32_t ch_fault_open(void);    /* driver off but the node is not at +12V:
                                   * blown fuse, missing relay, open coil, broken wire */
 uint32_t ch_fault_short(void);   /* driver on but the node stays at +12V:

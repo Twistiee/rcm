@@ -35,6 +35,8 @@ enum ch_mode_t {
  * looks broken -- an output feeding something other than a relay coil, typically. */
 #define CH_F_INVERT   0x01
 #define CH_F_NO_DIAG  0x02
+#define CH_F_REMEMBER 0x04   /* a TOGGLE input keeps its state across a power cycle --
+                              * see latches.h. Ignored on anything but IN_TOGGLE. */
 
 #define PEER_NONE     0xFFu
 

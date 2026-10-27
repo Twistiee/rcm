@@ -40,6 +40,7 @@
 #include "config.h"
 #include "ignition.h"
 #include "lights.h"
+#include "latches.h"
 #include "imu.h"
 #include "protocol.h"
 #include "shiftreg.h"
@@ -264,6 +265,7 @@ void setup(void)
     proto_sanitise_base();
 
     ch_begin();
+    latches_restore();          /* remembered toggles: after cfg and channels */
 
     const bool wdg_reset = IWatchdog.isReset(true);
 
@@ -340,6 +342,7 @@ void loop(void)
         read_ignition();
         ign_tick(now, app_ignition_on());
         lights_tick(now);
+        latches_tick(now);
         IWatchdog.reload();
     }
 

@@ -21,6 +21,8 @@
  * primary that loses power halfway leaves the backup intact and CRC-valid. */
 #define EEP_ADDR_CFG_A 0x0000u
 #define EEP_ADDR_CFG_B 0x0400u
+/* Remembered toggle states (latches.cpp). Page-aligned, clear of both config copies. */
+#define EEP_ADDR_LATCH 0x0800u
 
 void store_begin(void);
 bool store_present(void);                                    /* status register responds */
