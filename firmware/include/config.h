@@ -150,6 +150,12 @@ enum ch_func_t {
                          * high-beam relay -- pairs with FN_HEADLIGHT_HIGH, the way
                          * FN_IN_HEADLIGHT pairs with FN_HEADLIGHT_LOW. Appended at
                          * the end so no stored label value moves */
+    FN_IN_LIGHT_SENSOR, /* light sensor: ACTIVE = DARK. Gates the auto-lights follow
+                         * slots that drive a HEADLIGHT (RCM_FOLLOW_F_AUTO_LIGHT -- park
+                         * on such a slot ignores it, as a DRL); with nothing carrying this
+                         * label they treat it as always dark. A sensor that pulls to
+                         * ground in daylight wants a pull-up on its pin, so an unplugged
+                         * sensor reads dark and fails to lights ON. Appended. */
     FN_IN_USER = 250,   /* unlabelled button */
 };
 
@@ -362,7 +368,16 @@ struct rcm_config_t {
      * the 60-120 that indicator regulations ask for. */
     uint16_t flash_period_ms;
 
-    uint8_t  reserved[2];
+    /* Follow slots that are an AUTO LIGHTS request (bit n = slot n): a keypad's
+     * auto-headlights button, say. Such a slot only lights its channel while the engine
+     * is running (ign_engine_running(), so it needs a run source such as `runsrc`) and
+     * nothing is cranking. A HEADLIGHT channel additionally needs dark (FN_IN_LIGHT_SENSOR,
+     * or always, with no sensor labelled); any other channel -- park -- does not, which
+     * makes it a daytime running light. The channel is then driven by the lights module,
+     * which ORs in any manual switch and ordinary follow slots, so a stalk switch still
+     * works with the engine off.
+     * Was reserved[2]; every saved record has 0 here, so no version bump. */
+    uint16_t auto_light_slots;
     uint16_t crc;                  /* CRC-16/CCITT over every byte before this */
 } __attribute__((packed, aligned(4)));
 

@@ -1671,6 +1671,43 @@ static void test_a_follow_slot_still_drives_an_unowned_channel(void)
     TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(ch), "an ordinary follow slot stopped working");
 }
 
+static void test_the_auto_lights_flag_sets_reads_back_and_clears(void)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_ECU_FOLLOW, 3, 1, 6, 0x41, 0x03, RCM_FOLLOW_F_AUTO_LIGHT });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_HEX16(1u << 3, cfg.auto_light_slots);
+    const can_frame_t *r = ask(RCM_CFG_SEL_FOLLOW, 3);
+    TEST_ASSERT_NOT_NULL(r);
+    TEST_ASSERT_EQUAL_HEX8_MESSAGE(RCM_FOLLOW_F_AUTO_LIGHT, r->data[6], "flag did not read back");
+    TEST_ASSERT_EQUAL_HEX8(0, ask(RCM_CFG_SEL_FOLLOW, 2)->data[6]);
+    /* The six-byte form, as an older tool sends it, clears the flag rather than leaving
+     * a slot gated that its owner thinks is ordinary. */
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_ECU_FOLLOW, 3, 1, 6, 0x41, 0x03 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_HEX16(0, cfg.auto_light_slots);
+}
+
+static void test_an_auto_lights_slot_records_its_request_apart(void)
+{
+    /* It must go to the auto request -- the one the lights module gates on running and
+     * dark -- and never into the ordinary request, which is not gated. */
+    const uint8_t ch = 1;
+    LIGHTS_OWN = 1u << ch;                 /* lights_owns() claims every auto target */
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_ECU_FOLLOW, 0, ch, 6, 0x41, 0x03, RCM_FOLLOW_F_AUTO_LIGHT });
+    run_ms(TICK_MS * 4);
+    inject(0x341, { 0x40, 0, 0, 0, 0, 0, 0, 0 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_TRUE_MESSAGE(proto_auto_requests(ch), "auto request not recorded");
+    TEST_ASSERT_FALSE_MESSAGE(proto_follow_requests(ch), "auto request leaked into the ungated one");
+    TEST_ASSERT_FALSE(sim_driver_on(ch));
+    inject(0x341, { 0x00, 0, 0, 0, 0, 0, 0, 0 });
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_FALSE(proto_auto_requests(ch));
+    LIGHTS_OWN = 0;
+}
+
 static void test_peer_adds_a_filter(void)
 {
     /* Two: the peer's INPUTS for mirroring, and its STATUS for "a start is in
@@ -1798,6 +1835,8 @@ int main(void)
     RUN_TEST(test_peer_mask_bounds_what_it_can_touch);
     RUN_TEST(test_a_follow_slot_stands_back_from_a_channel_the_lights_own);
     RUN_TEST(test_a_follow_slot_still_drives_an_unowned_channel);
+    RUN_TEST(test_the_auto_lights_flag_sets_reads_back_and_clears);
+    RUN_TEST(test_an_auto_lights_slot_records_its_request_apart);
     RUN_TEST(test_peer_adds_a_filter);
     RUN_TEST(test_status_publishes_the_starting_bit);
     RUN_TEST(test_the_peers_starting_bit_is_heard);

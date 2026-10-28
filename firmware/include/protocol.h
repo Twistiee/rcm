@@ -116,7 +116,11 @@
                                       * hold-to-arm -- could only be set by recompiling. */
 #define RCM_OP_SET_ECU_FOLLOW 0x1C   /* b1 slot, b2 OUTPUT channel or 0xFF, b3 bit 0..63,
                                       * b4..b5 LE frame id. Drives that channel from that
-                                      * bit of the ECU's broadcast. */
+                                      * bit of the ECU's broadcast. Optional b6 flags:
+                                      * RCM_FOLLOW_F_AUTO_LIGHT. Without b6 the slot's
+                                      * flags are cleared, so an old tool resets them. */
+#define RCM_FOLLOW_F_AUTO_LIGHT 0x01 /* auto-lights request: lit only while running, and a
+                                      * headlight only when dark -- cfg.auto_light_slots */
 #define RCM_OP_SET_IMU_MAP    0x1D   /* b1..b3 the map for vehicle X, Y, Z. Each byte is
                                       * the SENSOR axis (0..2) that feeds that vehicle
                                       * axis, bit 7 set to negate it. Vehicle axes are the
@@ -158,7 +162,7 @@
 #define RCM_CFG_SEL_RUNSRC    0x07   /* ecu rpm can id (2), running rpm (2)           */
 #define RCM_CFG_SEL_ECUCMD    0x08   /* index = slot: ch, subsystem (2), index (2)    */
 #define RCM_CFG_SEL_CHANNEL   0x09   /* index = channel: mode, flags, func, beh, param*/
-#define RCM_CFG_SEL_FOLLOW    0x0A   /* index = slot: ch, bit, frame id (2)           */
+#define RCM_CFG_SEL_FOLLOW    0x0A   /* index = slot: ch, bit, frame id (2), flags    */
 #define RCM_CFG_SEL_TIMING2   0x0B   /* ECU follow stale ms (2), IMU publish ms (2)   */
 #define RCM_CFG_SEL_IMU       0x0C   /* map X, Y, Z, last auto-level result, tilt deg  */
 #define RCM_CFG_SEL_AUX       0x0D   /* the three J_AUX function labels               */
@@ -217,6 +221,8 @@ bool proto_peer_starting(uint32_t now_ms);
 
 /* A follow slot is currently asking for channel `ch` to be on. */
 bool proto_follow_requests(uint8_t ch);
+/* ...and the same for an auto-headlight slot, before the running / dark gate. */
+bool proto_auto_requests(uint8_t ch);
 bool     proto_saved_ok(void);
 
 /* Send one TunerStudio command to the ECU. */

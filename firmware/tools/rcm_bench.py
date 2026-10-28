@@ -79,7 +79,7 @@ OP = {
     #   ecucmd <slot 0-5> <channel|none> <preset | subsystem index>
     "ecucmd":       0x19,
     # drive one of our channels from a bit in the ECU's broadcast.
-    #   ecufollow <slot 0-5> <channel|none> <preset | frame-id bit>
+    #   ecufollow <slot 0-11> <channel|none> <preset | frame-id bit> [auto]
     "ecufollow":    0x1C,
     # channel function label + behaviour + param.
     #   chfunc <channel> <func> <behaviour> [param-ms]
@@ -125,12 +125,13 @@ IN_BEH = {"momentary": 0, "toggle": 1, "holdarm": 2}
 # something to drift. These four are derived from the ignition block, never set by hand.
 IGN_FUNCS = {1: "IGNITION", 2: "STARTER", 72: "IGN_LAMP", 128: "IN_BRAKE", 129: "IN_ENGINE_RUN",
              130: "IN_CLUTCH", 136: "IN_IMU_LEVEL", 137: "IN_IMU_FWD",
-             138: "IN_CFG_SAVE", 143: "IN_HEADLIGHT", 149: "IN_HIGH_BEAM"}
+             138: "IN_CFG_SAVE", 143: "IN_HEADLIGHT", 149: "IN_HIGH_BEAM",
+             150: "IN_LIGHT_SENSOR"}
 # The roles the firmware LOOKS UP. Labelling a channel with one is how it is given that
 # job -- there is no separate channel-number setting to keep in step.
 FUNC_NAMES = {"ignition": 1, "starter": 2, "ignlamp": 72, "brake": 128, "enginerun": 129,
               "clutch": 130, "imulevel": 136, "imufwd": 137, "cfgsave": 138,
-              "headlight": 143, "highbeam": 149,
+              "headlight": 143, "highbeam": 149, "lightsensor": 150,
               "none": 0}
 
 # Named (subsystem, index) pairs for the ECU command table. EVERY TunerStudio command is
@@ -460,8 +461,10 @@ CFG_SEL = {
               IMU_LEVEL_RESULT.get(d[5], "?"))),
     0x0B: ("timing2", 1, lambda d: "ECU follow stale after %dms, IMU publish %dms (%d Hz)"
            % (_u16(d, 2), _u16(d, 4), (1000 // _u16(d, 4)) if _u16(d, 4) else 0)),
-    0x0A: ("follow", 12, lambda d: "channel %s <- frame 0x%03X bit %d%s"
-           % (_ch(d[2]), _u16(d, 4), d[3], _bit_name(_u16(d, 4), d[3]))),
+    0x0A: ("follow", 12, lambda d: "channel %s <- frame 0x%03X bit %d%s%s"
+           % (_ch(d[2]), _u16(d, 4), d[3], _bit_name(_u16(d, 4), d[3]),
+              "  AUTO LIGHTS (engine running; a headlight also waits for dark)"
+              if len(d) > 6 and d[6] & 1 else "")),
     0x09: ("channel", CHANNELS, lambda d: "%-6s %-9s flags 0x%02X func %-14s param %d"
            % (["unused", "out", "in"][d[2]] if d[2] < 3 else "?",
               _beh_name(d[2], d[5]), d[3], _func_name(d[4]), _u16(d, 6))),
@@ -698,10 +701,16 @@ def cmd_ctl(bus, args):
 
     elif args.op == "ecufollow":
         if len(args.args) < 2:
-            sys.exit("ecufollow <slot 0-11> <channel|none> <%s | frame-id bit> -- a lamp "
+            sys.exit("ecufollow <slot 0-11> <channel|none> <%s | frame-id bit> [auto] -- a lamp "
                      "can follow a relay module OUTPUTS frame too: bit N-1 of "
                      "that node base id is its channel N"
                      % "|".join(sorted(ECU_BITS)))
+        # trailing "auto": an auto-lights request -- lit only while the engine runs,
+        # and a headlight channel only while the light sensor says dark
+        flags = 0
+        if args.args[-1] == "auto":
+            flags = 0x01
+            args.args = args.args[:-1]
         slot = int(args.args[0], 0)
         ch = _chan_arg(args.args[1])
         if len(args.args) >= 3 and args.args[2] in ECU_BITS:
@@ -713,7 +722,7 @@ def cmd_ctl(bus, args):
         else:
             sys.exit("give a preset (%s) or a frame id and bit"
                      % ", ".join(sorted(ECU_BITS)))
-        extra = [slot, ch, bit, cid & 0xFF, cid >> 8]
+        extra = [slot, ch, bit, cid & 0xFF, cid >> 8, flags]
     elif args.op == "chfunc":
         if len(args.args) < 3:
             sys.exit("chfunc <channel> <%s|number> <%s|%s> [param-ms]"

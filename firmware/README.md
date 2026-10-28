@@ -473,6 +473,31 @@ Follow slots aimed at an owned headlight **record** their request for this modul
 in, instead of commanding the channel -- otherwise the switch and the slot would take
 turns, each frame overwriting the other.
 
+#### Auto lights
+
+Flag a follow slot as an **auto-lights request** -- `ctl ecufollow <slot> <ch> 0x341 6 auto`
+for a keypad's auto-headlights button -- and it only lights its channel while:
+
+- the **engine is running** (`ign_engine_running()`, so the board needs a run source:
+  `ctl runsrc 0x201 450`), and nothing is cranking; and
+- for a **headlight** channel (`FN_HEADLIGHT_LOW` / `_HIGH`) only, it is **dark**: an input
+  labelled `FN_IN_LIGHT_SENSOR` reads active. With no input carrying that label it is
+  always dark, so the button alone decides.
+
+Anything else on an auto slot -- park -- ignores the sensor, which makes it a **daytime
+running light**: park on whenever the engine runs, headlights added when it gets dark.
+The manual switches are not gated at all; a stalk still works with just the ignition on.
+
+The sensor is any input labelled `FN_IN_LIGHT_SENSOR`, active = dark. A **relay-output
+twilight switch** suits a channel best: relay common on the ignition feed, the contact that
+closes in the dark to the channel. That is an ordinary positive-switched input, wetting
+current from the channel's 10 kΩ pull-down included. An open channel reads low, i.e.
+daylight; to fail to lights **on** instead, wire the contact that closes in daylight and set
+the channel `CH_F_INVERT`. A sensor that can only pull its output to ground belongs on
+`J_AUX` with a 10 kΩ pull-up, since a channel's pull-down would hold it low. Leave the label
+off until a sensor is fitted -- no label means always dark. The flag reads back as
+`AUTO LIGHTS` in `get follow`.
+
 #### Ground-switching switches: active-low `J_AUX`
 
 A switch that grounds its signal cannot drive an ordinary input: inputs are active-high

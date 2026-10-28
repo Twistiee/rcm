@@ -24,6 +24,10 @@ bool proto_peer_starting(uint32_t) { return PEER_STARTING; }
 bool ign_starting(void)            { return SELF_STARTING; }
 static uint32_t FOLLOW_REQ = 0;     /* what follow slots are asking for, per channel */
 bool proto_follow_requests(uint8_t ch) { return (FOLLOW_REQ >> ch) & 1u; }
+static uint32_t AUTO_REQ = 0;       /* ...and auto-lights slots, before the gate */
+bool proto_auto_requests(uint8_t ch)   { return (AUTO_REQ >> ch) & 1u; }
+static bool RUNNING = false;
+bool ign_engine_running(void)          { return RUNNING; }
 
 #include "../../src/lights.cpp"
 
@@ -65,6 +69,8 @@ void setUp(void)
     cfg.aux_invert = (1u << PIN_LOW) | (1u << PIN_HIGH);
     PEER_STARTING = SELF_STARTING = false;
     FOLLOW_REQ = 0;
+    AUTO_REQ = 0;
+    RUNNING = false;
     low_switch(false);
     high_switch(false);
 
@@ -232,6 +238,123 @@ static void test_it_only_claims_the_headlights_it_has_a_switch_for(void)
     TEST_ASSERT_FALSE_MESSAGE(lights_owns(HIGH_OUT), "claimed a headlight with no switch labelled");
 }
 
+/* --- auto lights: R2 on the keypad, gated by the engine and the light sensor ------ */
+
+#define PARK_OUT  1      /* ch 2 */
+#define PIN_SENS  2      /* J_AUX 3 */
+
+/* The keypad's R2 as two auto-lights follow slots: park and low beam. */
+static void auto_slots(void)
+{
+    cfg.ch[PARK_OUT].func = FN_TAIL;
+    cfg.ecu_follow[0] = (struct ecu_follow_t){ PARK_OUT, 6, 0x341 };
+    cfg.ecu_follow[1] = (struct ecu_follow_t){ LOW_OUT,  6, 0x341 };
+    cfg.auto_light_slots = 0x0003;
+}
+static void r2(bool on) { AUTO_REQ = on ? ((1u << PARK_OUT) | (1u << LOW_OUT)) : 0; }
+/* The sensor on a pulled-up J_AUX pin: high = dark, pulled to ground = daylight. */
+static void sensor(bool dark_) { cfg.aux_func[PIN_SENS] = FN_IN_LIGHT_SENSOR; SIM.aux[PIN_SENS] = dark_ ? 1 : 0; }
+
+static void test_auto_lights_wait_for_the_engine(void)
+{
+    auto_slots(); r2(true);
+    run_ms(SETTLE);
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(LOW_OUT),  "auto low beam on with the engine off");
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(PARK_OUT), "auto park on with the engine off");
+    RUNNING = true;
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_TRUE(sim_driver_on(LOW_OUT));
+    TEST_ASSERT_TRUE(sim_driver_on(PARK_OUT));
+    RUNNING = false;                             /* stopped */
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_FALSE(sim_driver_on(LOW_OUT));
+    TEST_ASSERT_FALSE(sim_driver_on(PARK_OUT));
+}
+
+static void test_auto_lights_need_the_button(void)
+{
+    auto_slots(); r2(false); RUNNING = true;
+    run_ms(SETTLE);
+    TEST_ASSERT_FALSE(sim_driver_on(LOW_OUT));
+    TEST_ASSERT_FALSE(sim_driver_on(PARK_OUT));
+}
+
+static void test_no_sensor_counts_as_dark(void)
+{
+    auto_slots(); r2(true); RUNNING = true;
+    run_ms(SETTLE);
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(LOW_OUT), "no sensor labelled, low beam stayed off");
+}
+
+static void test_daylight_drops_the_headlights_but_park_stays_as_a_drl(void)
+{
+    auto_slots(); r2(true); RUNNING = true; sensor(false);
+    run_ms(SETTLE);
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(LOW_OUT), "low beam on in daylight");
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(PARK_OUT), "park (DRL) went off in daylight");
+    sensor(true);                                /* dusk, or a tunnel */
+    run_ms(SETTLE);
+    TEST_ASSERT_TRUE(sim_driver_on(LOW_OUT));
+    TEST_ASSERT_TRUE(sim_driver_on(PARK_OUT));
+}
+
+static void test_a_crank_drops_auto_park_too(void)
+{
+    auto_slots(); r2(true); RUNNING = true;
+    run_ms(SETTLE);
+    PEER_STARTING = true;
+    run_ms(TICK_MS * 2);
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(PARK_OUT), "auto park stayed on during the crank");
+    TEST_ASSERT_FALSE(sim_driver_on(LOW_OUT));
+}
+
+static void test_the_stalk_works_with_the_engine_off_in_auto(void)
+{
+    /* Auto mode must not take the manual switch with it. */
+    auto_slots(); r2(true); sensor(false);
+    low_switch(true);
+    run_ms(SETTLE);
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(LOW_OUT), "stalk dead with auto on and the engine off");
+}
+
+static void test_an_ordinary_follow_on_park_is_not_gated(void)
+{
+    /* Only auto slots are gated -- a plain follow slot on the same channel still works
+     * with the engine off, and through a crank. */
+    auto_slots(); r2(false);
+    FOLLOW_REQ = 1u << PARK_OUT;
+    PEER_STARTING = true;
+    run_ms(SETTLE);
+    TEST_ASSERT_TRUE(sim_driver_on(PARK_OUT));
+}
+
+static void test_auto_targets_are_owned(void)
+{
+    auto_slots();
+    TEST_ASSERT_TRUE_MESSAGE(lights_owns(PARK_OUT), "auto park not owned -- the slot would command it ungated");
+    cfg.auto_light_slots = 0x0002;               /* park's slot back to an ordinary follow */
+    TEST_ASSERT_FALSE(lights_owns(PARK_OUT));
+}
+
+static void test_an_inverted_sensor_channel_with_nothing_plugged_in_reads_dark(void)
+{
+    /* The car's arrangement: the Kemo's DAYLIGHT contact on ch 7, inverted. With nothing
+     * plugged in the channel's pull-down reads low, inverted = dark, so R2 still brings
+     * the low beam on with the engine -- and it must from the first tick after boot,
+     * not only after some edge the channel layer would otherwise wait for. */
+    auto_slots(); r2(true); RUNNING = true;
+    cfg.ch[6].mode  = CH_INPUT;
+    cfg.ch[6].flags = CH_F_INVERT;
+    cfg.ch[6].func  = FN_IN_LIGHT_SENSOR;
+    SIM.wiring[6]   = SIM_UNCONNECTED;           /* nothing connected */
+    run_ms(SETTLE);
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(LOW_OUT), "unplugged inverted sensor did not read dark");
+    SIM.wiring[6] = SIM_BUTTON_PRESSED;          /* daylight contact closed: 12 V in */
+    run_ms(SETTLE);
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(LOW_OUT), "daylight contact did not drop the low beam");
+    TEST_ASSERT_TRUE(sim_driver_on(PARK_OUT));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -249,5 +372,14 @@ int main(void)
     RUN_TEST(test_the_switch_still_works_with_auto_headlights_off);
     RUN_TEST(test_a_crank_cuts_auto_headlights_too);
     RUN_TEST(test_it_only_claims_the_headlights_it_has_a_switch_for);
+    RUN_TEST(test_auto_lights_wait_for_the_engine);
+    RUN_TEST(test_auto_lights_need_the_button);
+    RUN_TEST(test_no_sensor_counts_as_dark);
+    RUN_TEST(test_daylight_drops_the_headlights_but_park_stays_as_a_drl);
+    RUN_TEST(test_a_crank_drops_auto_park_too);
+    RUN_TEST(test_the_stalk_works_with_the_engine_off_in_auto);
+    RUN_TEST(test_an_ordinary_follow_on_park_is_not_gated);
+    RUN_TEST(test_auto_targets_are_owned);
+    RUN_TEST(test_an_inverted_sensor_channel_with_nothing_plugged_in_reads_dark);
     return UNITY_END();
 }

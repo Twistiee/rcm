@@ -91,7 +91,20 @@ static bool     peer_starting;
  * overwriting the other. So the request is recorded here and the lights module ORs it
  * with the switch, which is what wired-OR means on the board side. */
 static uint32_t follow_req;
+/* The same, for follow slots flagged as an auto-headlight request. Kept apart because the
+ * lights module gates these (engine running, dark) and must not gate the others. */
+static uint32_t auto_req;
 static uint32_t peer_status_at;
+
+/* One follow slot's verdict on its channel. A slot whose channel the lights module owns
+ * -- every auto-headlight slot's channel, by construction -- only records the request. */
+static void follow_apply(uint8_t slot, uint8_t ch, bool want)
+{
+    uint32_t *req = ((cfg.auto_light_slots >> slot) & 1u) ? &auto_req : &follow_req;
+    if (want) *req |=  (1u << ch);
+    else      *req &= ~(1u << ch);
+    if (!lights_owns(ch)) ch_command(ch, want);
+}
 
 uint16_t proto_node_base(void)
 {
@@ -153,6 +166,7 @@ void proto_begin(void)
     peer_starting = false;
     peer_status_at = 0;
     follow_req = 0;
+    auto_req = 0;
 
     /* Hardware filters, not software ones. bxCAN has 28 banks and a running engine
      * bus is busy enough that letting every frame through would mean waking up for
@@ -369,6 +383,7 @@ static void send_cfg_reply(uint8_t sel, uint8_t idx)
         p[1] = cfg.ecu_follow[idx].bit;
         p[2] = (uint8_t)cfg.ecu_follow[idx].can_id;
         p[3] = (uint8_t)(cfg.ecu_follow[idx].can_id >> 8);
+        p[4] = ((cfg.auto_light_slots >> idx) & 1u) ? RCM_FOLLOW_F_AUTO_LIGHT : 0;
         break;
     case RCM_CFG_SEL_CHANNEL:
         if (idx >= RCM_CHANNELS) return;
@@ -455,6 +470,11 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
             fl->ch     = f->data[2];
             fl->bit    = f->data[3];
             fl->can_id = (uint16_t)(f->data[4] | (f->data[5] << 8));
+            const uint16_t slot_bit = (uint16_t)(1u << f->data[1]);
+            if (f->len >= 7 && (f->data[6] & RCM_FOLLOW_F_AUTO_LIGHT))
+                cfg.auto_light_slots |= slot_bit;
+            else
+                cfg.auto_light_slots &= (uint16_t)~slot_bit;
             follow_seen[f->data[1]] = millis();   /* do not start out already stale */
             filters_dirty = true;                 /* the frame needs a filter */
         }
@@ -699,10 +719,7 @@ void proto_poll(uint32_t now_ms)
                 const uint8_t byte = (uint8_t)(fl->bit >> 3);
                 if (byte >= f.len) continue;      /* short frame: say nothing */
                 if (cfg.ch[fl->ch].mode != CH_OUTPUT) continue;
-                const bool want = (f.data[byte] >> (fl->bit & 7)) & 1u;
-                if (want) follow_req |=  (1u << fl->ch);
-                else      follow_req &= ~(1u << fl->ch);
-                if (!lights_owns(fl->ch)) ch_command(fl->ch, want);
+                follow_apply(i, fl->ch, (f.data[byte] >> (fl->bit & 7)) & 1u);
             }
             if (matched) continue;
         }
@@ -818,10 +835,7 @@ void proto_poll(uint32_t now_ms)
             if (!fl->can_id || fl->ch >= RCM_CHANNELS) continue;
             if (cfg.ch[fl->ch].mode != CH_OUTPUT) continue;
             if ((uint32_t)(now_ms - follow_seen[i]) <= cfg.ecu_follow_stale_ms) continue;
-            const bool fs = (cfg.failsafe_state >> fl->ch) & 1u;
-            if (fs) follow_req |=  (1u << fl->ch);
-            else    follow_req &= ~(1u << fl->ch);
-            if (!lights_owns(fl->ch)) ch_command(fl->ch, fs);
+            follow_apply(i, fl->ch, (cfg.failsafe_state >> fl->ch) & 1u);
         }
     }
 
@@ -876,6 +890,11 @@ uint32_t proto_saved_when(void) { return aux_saved_at; }
 bool proto_follow_requests(uint8_t ch)
 {
     return ch < RCM_CHANNELS && ((follow_req >> ch) & 1u);
+}
+
+bool proto_auto_requests(uint8_t ch)
+{
+    return ch < RCM_CHANNELS && ((auto_req >> ch) & 1u);
 }
 
 bool proto_peer_starting(uint32_t now_ms)
