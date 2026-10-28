@@ -96,14 +96,39 @@ static uint32_t follow_req;
 static uint32_t auto_req;
 static uint32_t peer_status_at;
 
+/* ECU command acknowledgement. When a command with an ack lamp is SENT, that lamp flashes
+ * until the state it follows changes -- the ECU doing what was asked -- or the timeout.
+ * ack_since = when it was sent (0 = not waiting); ack_base = the lamp's followed state at
+ * that moment, so "changed" means changed from that. */
+static uint32_t ack_since[RCM_ECU_CMDS];
+static uint8_t  ack_base;
+
+/* Slot i's ack lamp as a 0-based OUTPUT channel, or RCM_CHANNELS if it has none. */
+static uint8_t ack_ch(uint8_t i)
+{
+    const uint8_t n = cfg.ecu_cmd[i].ack_lamp;
+    if (n == 0 || n > RCM_CHANNELS) return RCM_CHANNELS;
+    return cfg.ch[n - 1].mode == CH_OUTPUT ? (uint8_t)(n - 1) : RCM_CHANNELS;
+}
+
+/* Is a lamp mid-acknowledgement? Its follow slot then only records, so the flash is not
+ * overwritten by every frame the ECU sends while it decides. */
+static bool ack_busy(uint8_t ch)
+{
+    for (uint8_t i = 0; i < RCM_ECU_CMDS; i++)
+        if (ack_since[i] && ack_ch(i) == ch) return true;
+    return false;
+}
+
 /* One follow slot's verdict on its channel. A slot whose channel the lights module owns
- * -- every auto-headlight slot's channel, by construction -- only records the request. */
+ * -- every auto-headlight slot's channel, by construction -- only records the request,
+ * and so does one whose lamp is busy acknowledging a command. */
 static void follow_apply(uint8_t slot, uint8_t ch, bool want)
 {
     uint32_t *req = ((cfg.auto_light_slots >> slot) & 1u) ? &auto_req : &follow_req;
     if (want) *req |=  (1u << ch);
     else      *req &= ~(1u << ch);
-    if (!lights_owns(ch)) ch_command(ch, want);
+    if (!lights_owns(ch) && !ack_busy(ch)) ch_command(ch, want);
 }
 
 uint16_t proto_node_base(void)
@@ -167,6 +192,8 @@ void proto_begin(void)
     peer_status_at = 0;
     follow_req = 0;
     auto_req = 0;
+    memset(ack_since, 0, sizeof(ack_since));
+    ack_base = 0;
 
     /* Hardware filters, not software ones. bxCAN has 28 banks and a running engine
      * bus is busy enough that letting every frame through would mean waking up for
@@ -352,6 +379,7 @@ static void send_cfg_reply(uint8_t sel, uint8_t idx)
         p[2] = (uint8_t)(cfg.ecu_cmd[idx].subsystem >> 8);
         p[3] = (uint8_t)cfg.ecu_cmd[idx].index;
         p[4] = (uint8_t)(cfg.ecu_cmd[idx].index >> 8);
+        p[5] = cfg.ecu_cmd[idx].ack_lamp;
         break;
     case RCM_CFG_SEL_TIMING2:
         p[0] = (uint8_t)cfg.ecu_follow_stale_ms;
@@ -555,6 +583,8 @@ static void handle_ctl(const struct can_frame_t *f, bool global)
             c->ch        = f->data[2];
             c->subsystem = (uint16_t)(f->data[3] | (f->data[4] << 8));
             c->index     = (uint16_t)(f->data[5] | (f->data[6] << 8));
+            c->ack_lamp  = (f->len >= 8 && f->data[7] <= RCM_CHANNELS) ? f->data[7] : 0;
+            ack_since[f->data[1]] = 0;
             ecu_seed();          /* re-seed, for the same reason proto_begin() does */
         }
         break;
@@ -773,9 +803,41 @@ void proto_poll(uint32_t now_ms)
         const struct ecu_cmd_t *c = &cfg.ecu_cmd[i];
         if (!input_ch_ok(c->ch)) { ecu_prev &= (uint8_t)~(1u << i); continue; }
         const bool pressed = (ch_inputs() >> c->ch) & 1u;
-        if (pressed && !((ecu_prev >> i) & 1u)) proto_send_ecu_cmd(c->subsystem, c->index);
+        if (pressed && !((ecu_prev >> i) & 1u)) {
+            proto_send_ecu_cmd(c->subsystem, c->index);
+            /* Sent -- not pressed. A hold-to-arm input only reports once the hold is
+             * done, so the lamp never claims a command went that did not. */
+            const uint8_t lamp = ack_ch(i);
+            if (lamp < RCM_CHANNELS) {
+                ack_since[i] = now_ms ? now_ms : 1;
+                if ((follow_req >> lamp) & 1u) ack_base |=  (uint8_t)(1u << i);
+                else                           ack_base &= (uint8_t)~(1u << i);
+            }
+        }
         if (pressed) ecu_prev |= (uint8_t)(1u << i);
         else         ecu_prev &= (uint8_t)~(1u << i);
+    }
+
+    /* Acknowledging lamps. Flash until the followed state moves off where it was when
+     * the command went, then show that state; give up after the timeout and show the
+     * state anyway, so a command nobody acted on visibly comes to nothing. The flash runs
+     * from the send, starting OPPOSITE to the lamp's state, so it changes the instant the
+     * command goes rather than up to half a period later. */
+    for (uint8_t i = 0; i < RCM_ECU_CMDS; i++) {
+        if (!ack_since[i]) continue;
+        const uint8_t lamp = ack_ch(i);
+        if (lamp >= RCM_CHANNELS) { ack_since[i] = 0; continue; }
+        const bool cur  = (follow_req >> lamp) & 1u;
+        const bool base = (ack_base >> i) & 1u;
+        const uint32_t age = now_ms - ack_since[i];
+        if (cur != base || age >= RCM_ECU_ACK_TIMEOUT_MS) {
+            ack_since[i] = 0;
+            ch_command(lamp, cur);
+            continue;
+        }
+        const uint16_t p = cfg.flash_period_ms ? cfg.flash_period_ms : 800;
+        const bool first_half = (age % p) < (uint32_t)(p / 2);
+        ch_command(lamp, first_half ? !base : base);
     }
 
     /* --- J_AUX jobs ---

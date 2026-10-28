@@ -1708,6 +1708,145 @@ static void test_an_auto_lights_slot_records_its_request_apart(void)
     LIGHTS_OWN = 0;
 }
 
+/* --- a lamp acknowledging an ECU command ------------------------------------------
+ * The keypad's performance column: hold 1 s, the command goes, the lamp flashes until the
+ * ECU's Lua reports the flipped state in 0x390, then shows it. */
+
+#define ACK_BTN  0      /* ch 1: L1, hold-to-arm */
+#define ACK_LAMP 1      /* ch 2: its lamp, following 0x390 bit 0 */
+
+static bool ECU_STATE;
+
+/* Run with the ECU's state frame going out every 100 ms, as the Lua script would. Counts
+ * lamp-on ticks so a test can tell flashing from solid. */
+static int run_ecu(uint32_t ms, int *on_ticks = nullptr, int *ticks = nullptr)
+{
+    int on = 0, n = 0;
+    for (uint32_t t = 0; t < ms; t += TICK_MS) {
+        if ((SIM.now_ms % 100) == 0) inject(0x390, { (uint8_t)(ECU_STATE ? 1 : 0), 0, 0, 0, 0, 0, 0, 0 });
+        run_ms(TICK_MS);
+        n++;
+        if (sim_driver_on(ACK_LAMP)) on++;
+    }
+    if (on_ticks) *on_ticks = on;
+    if (ticks) *ticks = n;
+    return on;
+}
+
+static void setup_ack(bool ecu_on)
+{
+    cfg.ch[ACK_BTN].mode = CH_INPUT;
+    cfg.ch[ACK_BTN].behaviour = IN_HOLD_ARM;
+    cfg.ch[ACK_BTN].param = 1000;
+    SIM.wiring[ACK_BTN] = SIM_BUTTON_OPEN;
+    cfg.ch[ACK_LAMP].flags = CH_F_NO_DIAG;
+    cfg.ecu_follow[0] = (struct ecu_follow_t){ ACK_LAMP, 0, 0x390 };
+    ch_begin();
+    proto_begin();
+    inject(NODE_BASE + RCM_F_CMD_CTL,
+           { RCM_OP_SET_ECU_CMD, 1, ACK_BTN, RCM_ECU_SUB_BENCH, 0, RCM_ECU_IDX_LUA1, 0, ACK_LAMP + 1 });
+    ECU_STATE = ecu_on;
+    run_ecu(500);
+    EXT_TX.clear();
+}
+
+/* Press and hold until the command has gone; returns with the clock at the send. */
+static void hold_until_sent(void)
+{
+    SIM.wiring[ACK_BTN] = SIM_BUTTON_PRESSED;
+    for (int i = 0; i < 400 && count_ecu_cmds() == 0; i++) run_ecu(TICK_MS);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, count_ecu_cmds(), "the hold never sent the command");
+}
+
+static void test_no_flash_while_holding(void)
+{
+    setup_ack(false);
+    SIM.wiring[ACK_BTN] = SIM_BUTTON_PRESSED;
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, run_ecu(900), "lamp lit during the hold, before anything was sent");
+    TEST_ASSERT_EQUAL_INT(0, count_ecu_cmds());
+}
+
+static void test_released_early_sends_nothing_and_never_flashes(void)
+{
+    setup_ack(false);
+    SIM.wiring[ACK_BTN] = SIM_BUTTON_PRESSED;
+    run_ecu(600);
+    SIM.wiring[ACK_BTN] = SIM_BUTTON_OPEN;
+    TEST_ASSERT_EQUAL_INT(0, run_ecu(2000));
+    TEST_ASSERT_EQUAL_INT(0, count_ecu_cmds());
+}
+
+static void test_flashes_from_the_send_until_the_ecu_turns_it_on(void)
+{
+    setup_ack(false);
+    hold_until_sent();
+    run_ms(TICK_MS);
+    TEST_ASSERT_TRUE_MESSAGE(sim_driver_on(ACK_LAMP), "the flash did not start the moment it was sent");
+    int on, n;
+    run_ecu(1200, &on, &n);                         /* ECU has not acted yet */
+    TEST_ASSERT_TRUE_MESSAGE(on > 0 && on < n, "not flashing while waiting for the ECU");
+    ECU_STATE = true;                               /* Lua flips it */
+    run_ecu(150);
+    run_ecu(1000, &on, &n);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(n, on, "not solid once the ECU reported on");
+}
+
+static void test_settles_off_when_the_ecu_turns_it_off(void)
+{
+    setup_ack(true);
+    TEST_ASSERT_TRUE(sim_driver_on(ACK_LAMP));
+    hold_until_sent();
+    run_ms(TICK_MS);
+    TEST_ASSERT_FALSE_MESSAGE(sim_driver_on(ACK_LAMP), "flash did not start opposite to an ON lamp");
+    int on, n;
+    run_ecu(600, &on, &n);
+    TEST_ASSERT_TRUE(on > 0 && on < n);
+    ECU_STATE = false;
+    run_ecu(150);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, run_ecu(1000), "not off once the ECU reported off");
+}
+
+static void test_no_reply_gives_up_after_three_seconds(void)
+{
+    setup_ack(false);
+    hold_until_sent();
+    int on, n;
+    run_ecu(2800, &on, &n);
+    TEST_ASSERT_TRUE_MESSAGE(on > 0 && on < n, "stopped flashing before the timeout");
+    run_ecu(400);                                   /* past 3 s */
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, run_ecu(1500), "still flashing after the timeout");
+}
+
+static void test_still_flashes_with_no_script_running(void)
+{
+    /* The likeliest real failure: Lua not loaded, so 0x390 never comes. The lamp's follow
+     * slot goes stale and falls back to off every tick -- which must not swallow the
+     * flash, or the one case the flash is there to show would show nothing. */
+    setup_ack(false);
+    run_ms(cfg.ecu_follow_stale_ms + 500);          /* no 0x390 at all now: stale */
+    SIM.wiring[ACK_BTN] = SIM_BUTTON_PRESSED;
+    for (int i = 0; i < 400 && count_ecu_cmds() == 0; i++) run_ms(TICK_MS);
+    TEST_ASSERT_EQUAL_INT(1, count_ecu_cmds());
+    int on = 0, n = 0;
+    for (uint32_t t = 0; t < 2000; t += TICK_MS) { run_ms(TICK_MS); n++; if (sim_driver_on(ACK_LAMP)) on++; }
+    TEST_ASSERT_TRUE_MESSAGE(on > 0 && on < n, "a stale follow slot swallowed the flash");
+    run_ms(1500);                                    /* past 3 s */
+    TEST_ASSERT_FALSE(sim_driver_on(ACK_LAMP));
+}
+
+static void test_the_ack_lamp_reads_back_and_the_old_form_clears_it(void)
+{
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_ECU_CMD, 2, 4, 22, 0, 34, 0, 6 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT8(6, cfg.ecu_cmd[2].ack_lamp);
+    const can_frame_t *r = ask(RCM_CFG_SEL_ECUCMD, 2);
+    TEST_ASSERT_NOT_NULL(r);
+    TEST_ASSERT_EQUAL_UINT8(6, r->data[7]);
+    inject(NODE_BASE + RCM_F_CMD_CTL, { RCM_OP_SET_ECU_CMD, 2, 4, 22, 0, 34, 0 });
+    run_ms(TICK_MS * 4);
+    TEST_ASSERT_EQUAL_UINT8(0, cfg.ecu_cmd[2].ack_lamp);
+}
+
 static void test_peer_adds_a_filter(void)
 {
     /* Two: the peer's INPUTS for mirroring, and its STATUS for "a start is in
@@ -1837,6 +1976,13 @@ int main(void)
     RUN_TEST(test_a_follow_slot_still_drives_an_unowned_channel);
     RUN_TEST(test_the_auto_lights_flag_sets_reads_back_and_clears);
     RUN_TEST(test_an_auto_lights_slot_records_its_request_apart);
+    RUN_TEST(test_no_flash_while_holding);
+    RUN_TEST(test_released_early_sends_nothing_and_never_flashes);
+    RUN_TEST(test_flashes_from_the_send_until_the_ecu_turns_it_on);
+    RUN_TEST(test_settles_off_when_the_ecu_turns_it_off);
+    RUN_TEST(test_no_reply_gives_up_after_three_seconds);
+    RUN_TEST(test_still_flashes_with_no_script_running);
+    RUN_TEST(test_the_ack_lamp_reads_back_and_the_old_form_clears_it);
     RUN_TEST(test_peer_adds_a_filter);
     RUN_TEST(test_status_publishes_the_starting_bit);
     RUN_TEST(test_the_peers_starting_bit_is_heard);

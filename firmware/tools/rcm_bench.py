@@ -76,7 +76,7 @@ OP = {
     # channel-for-channel: peer channel N drives channel N here.
     "peer":         0x18,
     # bind an input channel to a TunerStudio command sent to the ECU over CAN.
-    #   ecucmd <slot 0-5> <channel|none> <preset | subsystem index>
+    #   ecucmd <slot 0-5> <channel|none> <preset | subsystem index> [lamp <ch>]
     "ecucmd":       0x19,
     # drive one of our channels from a bit in the ECU's broadcast.
     #   ecufollow <slot 0-11> <channel|none> <preset | frame-id bit> [auto]
@@ -449,8 +449,9 @@ CFG_SEL = {
            if d[1] == 0 else "toggles %s" % (_chlist(unpack21(d[2:5])) or "nothing")),
     0x07: ("runsrc", 1, lambda d: "ECU rpm id %s, running at %d rpm"
            % (("0x%03X" % _u16(d, 2)) if _u16(d, 2) else "none", _u16(d, 4))),
-    0x08: ("ecucmd", 6, lambda d: "channel %s -> subsystem %d index %d%s"
-           % (_ch(d[2]), _u16(d, 3), _u16(d, 5), _cmd_name(_u16(d, 3), _u16(d, 5)))),
+    0x08: ("ecucmd", 6, lambda d: "channel %s -> subsystem %d index %d%s%s"
+           % (_ch(d[2]), _u16(d, 3), _u16(d, 5), _cmd_name(_u16(d, 3), _u16(d, 5)),
+              ("  ack lamp ch %d" % d[7]) if len(d) > 7 and d[7] else "")),
     0x0D: ("aux", 1, lambda d: "J_AUX 1=%s%s 2=%s%s 3=%s%s"
            % (_func_name(d[2]), " (active-low)" if d[5] & 1 else "",
               _func_name(d[3]), " (active-low)" if d[5] & 2 else "",
@@ -742,8 +743,16 @@ def cmd_ctl(bus, args):
         extra = [ch, func, bval, param & 0xFF, param >> 8]
     elif args.op == "ecucmd":
         if len(args.args) < 2:
-            sys.exit("ecucmd <slot 0-%d> <channel|none> <%s | subsystem index>"
+            sys.exit("ecucmd <slot 0-%d> <channel|none> <%s | subsystem index> [lamp <ch>]"
                      % (5, "|".join(sorted(ECU_CMDS))))
+        # trailing "lamp N": channel N flashes once the command is sent, until the state
+        # it follows changes (the ECU acted) or 3 s pass
+        lamp = 0
+        if len(args.args) >= 2 and args.args[-2] == "lamp":
+            lamp = int(args.args[-1], 0)
+            if not 0 <= lamp <= CHANNELS:
+                sys.exit("lamp must be a channel 1..%d, or 0 for none" % CHANNELS)
+            args.args = args.args[:-2]
         slot = int(args.args[0], 0)
         ch = 0xFF if args.args[1] in ("none", "off") else int(args.args[1], 0) - 1
         if ch != 0xFF and not 0 <= ch < CHANNELS:
@@ -757,7 +766,7 @@ def cmd_ctl(bus, args):
         else:
             sys.exit("give a preset name (%s) or a raw subsystem and index"
                      % ", ".join(sorted(ECU_CMDS)))
-        extra = [slot, ch, sub & 0xFF, sub >> 8, idx & 0xFF, idx >> 8]
+        extra = [slot, ch, sub & 0xFF, sub >> 8, idx & 0xFF, idx >> 8, lamp]
     elif args.op == "chmode":
         if len(args.args) < 2:
             sys.exit("chmode <channel> <out|in|unused> [flags]")

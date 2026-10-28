@@ -220,6 +220,13 @@ needs a firmware change here.
 Stored as a raw (subsystem, index) pair rather than a list of named commands, because
 every TunerStudio command is that shape. Adding one is a config change, not a release.
 
+**A lamp can acknowledge the command:** `rcm_bench ctl ecucmd 1 1 lua1 lamp 2`. Once the
+command is *sent* -- after a hold-to-arm completes, never during it -- channel 2 flashes
+until the state it follows (a follow slot on the Lua script's state frame) changes, then
+shows that state. With no change in 3 s it stops flashing and shows the state it had, so a
+press the ECU never acted on is visible. Works with the follow slot stale too, which is
+exactly the "script not loaded" case.
+
 Verified on revA: a touch of +12 V to a bound channel put
 `T 0077000C 8 6600140009000000` on the wire -- a `T` record, so genuinely extended --
 once per press, with real switch bounce.

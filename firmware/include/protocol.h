@@ -103,7 +103,10 @@
                                       * peer channel N drives channel N here. */
 #define RCM_OP_SET_ECU_CMD    0x19   /* b1 slot 0..RCM_ECU_CMDS-1, b2 input channel or
                                       * 0xFF for unused, b3..b4 LE subsystem,
-                                      * b5..b6 LE index */
+                                      * b5..b6 LE index. Optional b7: acknowledging
+                                      * lamp, 1-based channel, 0 = none; omitted = none */
+#define RCM_ECU_ACK_TIMEOUT_MS 3000u /* a lamp gives up flashing this long after its
+                                      * command was sent with no change from the ECU */
 #define RCM_OP_GET_CFG        0x1A   /* b1 selector, b2 index. The board answers on
                                       * RCM_F_CFG_REPLY. Every other opcode is a SETTER:
                                       * without this a tool can configure a board but
@@ -160,7 +163,7 @@
 #define RCM_CFG_SEL_IGNTIME2  0x05   /* off hold, idle timeout s, wake start (2+2+2)  */
 #define RCM_CFG_SEL_PEER      0x06   /* index 0: node + follow mask; index 1: toggle  */
 #define RCM_CFG_SEL_RUNSRC    0x07   /* ecu rpm can id (2), running rpm (2)           */
-#define RCM_CFG_SEL_ECUCMD    0x08   /* index = slot: ch, subsystem (2), index (2)    */
+#define RCM_CFG_SEL_ECUCMD    0x08   /* index = slot: ch, subsystem (2), index (2), ack lamp */
 #define RCM_CFG_SEL_CHANNEL   0x09   /* index = channel: mode, flags, func, beh, param*/
 #define RCM_CFG_SEL_FOLLOW    0x0A   /* index = slot: ch, bit, frame id (2), flags    */
 #define RCM_CFG_SEL_TIMING2   0x0B   /* ECU follow stale ms (2), IMU publish ms (2)   */

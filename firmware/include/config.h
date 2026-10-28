@@ -209,7 +209,12 @@ struct ecu_follow_t {
 
 struct ecu_cmd_t {
     uint8_t  ch;          /* input channel whose PRESS sends it; IGN_CH_NONE = unused */
-    uint8_t  _pad;
+    /* The lamp that acknowledges it, 1-BASED (0 = none -- every record saved before this
+     * existed has 0 here, so this was the old padding byte with no version bump). Once
+     * the command is SENT the lamp flashes until the state it follows changes -- the ECU
+     * acting on it -- or RCM_ECU_ACK_TIMEOUT_MS passes, then shows the state again.
+     * Never during a hold-to-arm: nothing has been sent yet. Must be an OUTPUT. */
+    uint8_t  ack_lamp;
     uint16_t subsystem;   /* ts_command_e   -- e.g. 20 TS_X14, 22 TS_BENCH_CATEGORY */
     uint16_t index;       /* ts_14_command / bench_mode_e, depending on the subsystem */
 };
